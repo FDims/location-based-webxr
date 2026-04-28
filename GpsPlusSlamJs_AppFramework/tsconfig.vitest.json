@@ -4,17 +4,8 @@
     "noUncheckedIndexedAccess": false,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
     "checkJs": true,
-    "types": ["vitest/globals", "node"],
-    "paths": {
-      "gps-plus-slam-js": ["../GpsPlusSlamJs/src/index.ts"]
-    }
+    "types": ["vitest/globals", "node"]
   },
-  "include": ["src/**/*.ts", "../GpsPlusSlamJs/src/**/*.ts"],
-  "exclude": [
-    "dist",
-    "coverage",
-    "node_modules",
-    "../GpsPlusSlamJs/src/**/*.test.ts",
-    "../GpsPlusSlamJs/src/**/*.spec.ts"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "coverage", "node_modules"]
 }

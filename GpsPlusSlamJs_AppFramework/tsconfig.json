@@ -13,12 +13,9 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "declaration": true,
-    "sourceMap": true,
-    "paths": {
-      "gps-plus-slam-js": ["../GpsPlusSlamJs/src/index.ts"]
-    }
+    "sourceMap": true
   },
-  "include": ["src/**/*.ts", "../GpsPlusSlamJs/src/**/*.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": [
     "dist",
     "coverage",
@@ -27,9 +24,6 @@
     "src/**/*.spec.ts",
     "src/**/*.property.test.ts",
     "src/test-utils/**",
-    "src/test-setup.ts",
-    "../GpsPlusSlamJs/src/**/*.test.ts",
-    "../GpsPlusSlamJs/src/**/*.spec.ts",
-    "../GpsPlusSlamJs/src/perf/**"
+    "src/test-setup.ts"
   ]
 }
