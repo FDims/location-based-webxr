@@ -135,6 +135,13 @@ export async function waitForTestHooks(page) {
       window.testHooks?.validateEnterButton &&
       window.testHooks?.updatePermissionStatus &&
       window.testHooks?.setPermissionsReady &&
+      // Log panel hooks (Issue #5)
+      window.testHooks?.showLogPanel &&
+      window.testHooks?.hideLogPanel &&
+      window.testHooks?.toggleLogPanel &&
+      window.testHooks?.logInfo &&
+      window.testHooks?.logWarn &&
+      window.testHooks?.logError &&
       // GPS event visualizer hooks
       window.testHooks?.getGpsEventVisualizerCounts &&
       window.testHooks?.setGpsEventVisualizerZeroRef &&
