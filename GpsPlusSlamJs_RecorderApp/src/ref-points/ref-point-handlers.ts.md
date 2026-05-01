@@ -38,6 +38,7 @@ Factory that creates ref-point handlers with injected dependencies.
 - `reset()` does **not** interact with the store — the caller manages store lifecycle.
 - Observation persistence uses `saveRefPointObservation` with the current scenario handle and session name.
 - When the alignment matrix is available at mark time, `buildRefPointObservation` computes `fusedGpsPoint` via `fusedGpsFromOdom(alignmentMatrix, odomPosition, zeroRef)` (helper in `utils/fused-path.ts`). The `altitude` from the aligned VIO pipeline is included when the GPS origin carries altitude; otherwise it is `undefined`. The field is omitted entirely when no alignment matrix exists (early recording, legacy data).
+- `visualizeRefPoint` mirrors the loader's per-field fallback (Option B, see `2026-04-29-ref-points-user-feedback.md` Finding 1): fused lat/lon are preferred, but each field independently falls back to the raw `lastGpsPoint` when missing. This keeps the in-session red sphere co-located with the future-session green sphere even for recordings that pre-date the calcGpsCoords altitude fix.
 - `visualizeRefPoint` also prefers `fusedGpsPoint` over raw `gpsPoint` when present, so the current-session red sphere sits at the same position where the next session's green sphere will appear (loader-side behavior in `ref-point-loader.ts#flattenRefPointsToMarks`). See `GpsPlusSlamJs_Docs/docs/2026-04-24-refpoint-positioning-investigation.md` §7.
 
 ## Examples

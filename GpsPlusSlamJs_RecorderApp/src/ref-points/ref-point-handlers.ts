@@ -207,14 +207,18 @@ export function createRefPointHandlers(
   ): void {
     // Prefer fused GPS so the red current-session sphere sits where the
     // next session's green sphere will appear (loader also prefers fused —
-    // see 2026-04-24-refpoint-positioning-investigation.md §7). Select
-    // the source object first so lat/lon and altitude always come from
-    // the same source (never mix fused horizontals with raw altitude).
-    const src = fusedGpsPoint ?? lastGpsPoint;
+    // see 2026-04-24-refpoint-positioning-investigation.md §7).
+    //
+    // Per-field fallback (Option B, 2026-04-29 user-feedback Finding 1):
+    // mirrors `flattenRefPointsToMarks` in the loader. Fused altitude may
+    // be undefined on legacy recordings (calcGpsCoords altitude-discard
+    // bug); falling back to raw altitude recovers the value the recorder
+    // originally intended. New recordings (post-fix) populate fused
+    // altitude themselves, so the fallback only fires for legacy data.
     const gpsPosition = {
-      lat: src.latitude,
-      lon: src.longitude,
-      altitude: src.altitude,
+      lat: fusedGpsPoint?.latitude ?? lastGpsPoint.latitude,
+      lon: fusedGpsPoint?.longitude ?? lastGpsPoint.longitude,
+      altitude: fusedGpsPoint?.altitude ?? lastGpsPoint.altitude,
     };
     const refPointMark: RefPointMark = {
       id: refPointId,

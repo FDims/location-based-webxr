@@ -859,11 +859,16 @@ describe('ref-point-loader', () => {
     });
 
     /**
-     * Why: fused altitude is optional and independent of lat/lon; missing
-     * altitude must not be silently replaced by the raw altitude (that
-     * would mix data sources for a single mark).
+     * Why: legacy recordings persisted `fusedGpsPoint.altitude = undefined`
+     * because of the calcGpsCoords altitude-discard bug (fixed 2026-04-30,
+     * see 2026-04-29-ref-points-user-feedback.md Finding 1). To rescue
+     * those recordings we per-field fall back to raw altitude when fused
+     * altitude is missing. Mixing is acceptable here because fused altitude
+     * was *intended* to equal raw altitude — the recorder derives both from
+     * the same odom Y. New recordings (post-fix) populate fused altitude
+     * themselves, so the fallback only fires for legacy data.
      */
-    it('uses fusedGpsPoint altitude (even when undefined) — does not mix sources', () => {
+    it('falls back to raw altitude when fused altitude is undefined (Option B legacy rescue)', () => {
       const refPointDefs: RefPointDefinition[] = [
         {
           id: 'pointA',
@@ -883,7 +888,7 @@ describe('ref-point-loader', () => {
               fusedGpsPoint: {
                 latitude: 48.1005,
                 longitude: 2.1005,
-                // altitude intentionally omitted
+                // altitude intentionally omitted (legacy recording)
               },
             },
           ],
@@ -891,10 +896,11 @@ describe('ref-point-loader', () => {
       ];
 
       const marks = flattenRefPointsToMarks(refPointDefs);
+      // Fused lat/lon (sub-metre) preserved; altitude rescued from raw.
       expect(marks[0].gpsPosition).toEqual({
         lat: 48.1005,
         lon: 2.1005,
-        altitude: undefined,
+        altitude: 100,
       });
     });
   });

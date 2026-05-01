@@ -377,14 +377,23 @@ export function flattenRefPointsToMarks(
     def.observations.map((obs): RefPointMark => {
       // Prefer fused GPS when available (sub-metre vs 3–10 m raw scatter).
       // See 2026-04-24-refpoint-positioning-investigation.md §7 for the
-      // design rationale. Select the source object first so lat/lon and
-      // altitude always come from the same source (never mix fused
-      // horizontals with raw altitude).
-      const src = obs.fusedGpsPoint ?? obs.gpsPoint;
+      // design rationale.
+      //
+      // Per-field fallback (Option B, 2026-04-29 user-feedback Finding 1):
+      // Legacy recordings persisted `fusedGpsPoint.altitude = undefined`
+      // due to a bug in `calcGpsCoords` that discarded altitude when the
+      // GPS-zero origin had no altitude. Mixing fused lat/lon with raw
+      // altitude is acceptable here because fused altitude was *intended*
+      // to equal raw altitude (the recorder builds fused from the same
+      // odom Y), so the fallback recovers the lost value rather than
+      // mixing independent sources. New recordings (post-fix) carry
+      // their own altitude in fusedGpsPoint, so the fallback only fires
+      // for legacy data.
+      const fused = obs.fusedGpsPoint;
       const gpsPosition = {
-        lat: src.latitude,
-        lon: src.longitude,
-        altitude: src.altitude,
+        lat: fused?.latitude ?? obs.gpsPoint.latitude,
+        lon: fused?.longitude ?? obs.gpsPoint.longitude,
+        altitude: fused?.altitude ?? obs.gpsPoint.altitude,
       };
       return {
         id: def.id,

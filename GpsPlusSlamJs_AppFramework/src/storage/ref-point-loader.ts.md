@@ -30,7 +30,7 @@ Manages loading, saving, and transforming reference points from the scenario's `
 - Reference points stored in `/<ScenarioName>/refPoints/<id>.json`
 - Each JSON file contains all observations across all sessions
 - `RefPointMark` is the canonical type for visualization (re-exported by `store.ts`)
-- `flattenRefPointsToMarks` handles undefined altitude gracefully and **prefers `obs.fusedGpsPoint` over `obs.gpsPoint`** when present (lat/lon and altitude are taken from the same source to avoid mixing). See `2026-04-24-refpoint-positioning-investigation.md` §7.
+- `flattenRefPointsToMarks` handles undefined altitude gracefully and **prefers `obs.fusedGpsPoint` over `obs.gpsPoint`** when present, with **per-field fallback** (Option B): when the fused value lacks `altitude` it falls back to the raw `obs.gpsPoint.altitude` while keeping fused lat/lon. This rescues legacy recordings where `fusedGpsPoint.altitude` was persisted as `undefined` due to the calcGpsCoords altitude-discard bug fixed 2026-04-30. See `2026-04-24-refpoint-positioning-investigation.md` §7 and `2026-04-29-ref-points-user-feedback.md` Finding 1.
 - File operations are async and may throw on permission errors
 - **Safe write pattern**: `saveRefPointObservation` uses try/finally with `writable.abort()` on failure to release OPFS file locks, preventing `InvalidStateError` on subsequent writes when storage is full
 - **Deep validation**: `isRefPointDefinition` type guard validates nested observation structure (arPose.position, arPose.rotation, gpsPoint.latitude, gpsPoint.longitude) to prevent runtime crashes from corrupted files
