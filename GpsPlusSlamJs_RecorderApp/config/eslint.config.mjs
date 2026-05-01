@@ -36,6 +36,21 @@ export default defineConfig(
       'no-extend-native': 'error',
       complexity: ['warn', 10],
       'max-depth': ['warn', 4],
+      // App code must consume the closed-source core library only via the
+      // curated `gps-plus-slam-app-framework/core` re-export. See
+      // 2026-05-01-app-single-package-dep-analysis.md (Option C).
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'gps-plus-slam-js',
+              message:
+                "Import core symbols from 'gps-plus-slam-app-framework/core' instead. The framework curates the public surface of gps-plus-slam-js for app consumers.",
+            },
+          ],
+        },
+      ],
     },
   },
 

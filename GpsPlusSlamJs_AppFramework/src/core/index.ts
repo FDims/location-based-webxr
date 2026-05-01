@@ -1,0 +1,58 @@
+/**
+ * Curated re-export surface of `gps-plus-slam-js` (the closed-source core
+ * library) for app consumers of `gps-plus-slam-app-framework`.
+ *
+ * Apps should import core symbols from here rather than from `gps-plus-slam-js`
+ * directly so that:
+ *   - Apps need only one direct npm dependency (the framework). The core is
+ *     declared as a `peerDependency` of the framework and auto-installed by
+ *     pnpm — see 2026-05-01-app-single-package-dep-analysis.md (Option C).
+ *   - The framework can curate which core symbols are part of the public app
+ *     surface, providing a real architectural boundary.
+ *   - Coordinated releases only need to update the framework's peer-dep range,
+ *     not pin sites scattered across every app `package.json`.
+ *
+ * Library-only consumers (no framework) can still depend on `gps-plus-slam-js`
+ * directly; this barrel does not replace it.
+ *
+ * NOTE on `RootState`: the library exports a type named `RootState` that
+ * refers to the *core* store's state shape. The framework also exports a
+ * `RootState` that refers to the *framework* (recorder) store's state shape.
+ * To avoid a name collision we re-export the library's type as both
+ * `RootState` (here, in this dedicated namespace) and as `LibraryRootState`
+ * (a convenience alias for tests that want to disambiguate at the import
+ * site). Import as:
+ *
+ *   import { type LibraryRootState } from 'gps-plus-slam-app-framework/core';
+ */
+
+export {
+  // Coordinate transforms
+  webxrToNUE,
+  calcGpsCoords,
+  isIdentityMatrix4,
+
+  // Actions
+  odometryTrackingRestarted,
+
+  // Store factory (test/integration use)
+  createGpsSlamStore,
+} from 'gps-plus-slam-js';
+
+export type {
+  // Geometry tuples
+  Vector3,
+  Quaternion,
+  Matrix4,
+
+  // GPS types
+  LatLong,
+  GpsPoint,
+
+  // Library root state (renamed to avoid collision with framework RootState)
+  RootState as LibraryRootState,
+} from 'gps-plus-slam-js';
+
+// Also re-export the library RootState under its original name for callers
+// that import from this dedicated subpath and don't need disambiguation.
+export type { RootState } from 'gps-plus-slam-js';

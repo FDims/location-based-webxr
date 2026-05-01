@@ -445,8 +445,10 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   getDepthSampleCount: vi.fn().mockReturnValue(0),
 }));
 
-// Mock gps-plus-slam-js library — provides odometryTrackingRestarted action creator
-vi.mock('gps-plus-slam-js', () => ({
+// Mock the framework's core re-export — provides odometryTrackingRestarted action creator.
+// (After the Option-C migration, app code imports core symbols via
+// `gps-plus-slam-app-framework/core` rather than directly from `gps-plus-slam-js`.)
+vi.mock('gps-plus-slam-app-framework/core', () => ({
   odometryTrackingRestarted: mockOdometryTrackingRestarted,
 }));
 

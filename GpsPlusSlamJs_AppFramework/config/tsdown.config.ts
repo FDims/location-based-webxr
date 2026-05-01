@@ -31,6 +31,9 @@ const entryFiles = [
   'src/ar/xr-camera-texture.ts',
   'src/ar/xr-error-handler.ts',
 
+  // core/ (curated re-export of gps-plus-slam-js for app consumers)
+  'src/core/index.ts',
+
   // licensing/
   'src/licensing/index.ts',
   'src/licensing/community-license-key.ts',

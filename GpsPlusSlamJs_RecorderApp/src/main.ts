@@ -114,8 +114,8 @@ import {
   requestAllPermissions,
 } from 'gps-plus-slam-app-framework/sensors/permission-checker';
 
-import type { LatLong } from 'gps-plus-slam-js';
-import { odometryTrackingRestarted } from 'gps-plus-slam-js';
+import type { LatLong } from 'gps-plus-slam-app-framework/core';
+import { odometryTrackingRestarted } from 'gps-plus-slam-app-framework/core';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import {

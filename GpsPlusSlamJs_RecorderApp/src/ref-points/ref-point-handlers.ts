@@ -45,8 +45,8 @@ import {
   gpsToH3,
   findNearbyRefPoint,
 } from 'gps-plus-slam-app-framework/ref-points/h3-ref-point';
-import { webxrToNUE } from 'gps-plus-slam-js';
-import type { Vector3, Quaternion } from 'gps-plus-slam-js';
+import { webxrToNUE } from 'gps-plus-slam-app-framework/core';
+import type { Vector3, Quaternion } from 'gps-plus-slam-app-framework/core';
 import type { RecorderStore } from 'gps-plus-slam-app-framework/state/store';
 
 const log = createLogger('RefPointHandlers');

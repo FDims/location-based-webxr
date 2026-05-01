@@ -13,6 +13,7 @@
       "entry": [
         "src/index.ts",
         "src/ar/index.ts",
+        "src/core/index.ts",
         "src/sensors/index.ts",
         "src/state/index.ts",
         "src/storage/index.ts",
@@ -40,8 +41,7 @@
       ]
     },
     "GpsPlusSlamJs_MinimalExample": {
-      "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["gps-plus-slam-js"]
+      "project": ["src/**/*.ts"]
     }
   }
 }

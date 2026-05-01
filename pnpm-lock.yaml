@@ -104,9 +104,6 @@ importers:
       gps-plus-slam-app-framework:
         specifier: ^1.0.0
         version: 1.0.0(@sentry/browser@10.50.0)(@zip.js/zip.js@2.8.26)(h3-js@4.4.0)(leaflet@1.9.4)(three@0.184.0)
-      gps-plus-slam-js:
-        specifier: ^1.0.0
-        version: 1.0.1
       three:
         specifier: ^0.184.0
         version: 0.184.0
@@ -141,9 +138,6 @@ importers:
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
-      gps-plus-slam-js:
-        specifier: ^1.0.0
-        version: 1.0.1
       h3-js:
         specifier: ^4.4.0
         version: 4.4.0

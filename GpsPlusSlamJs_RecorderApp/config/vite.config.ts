@@ -33,22 +33,35 @@ function readPkgVersion(relPath: string): string {
 
 function readInstalledPkgVersion(pkgName: string): string {
   // Read the package's own package.json from RecorderApp's node_modules. This
-  // works for both npm-installed packages (gps-plus-slam-js) and pnpm
-  // workspace symlinks (gps-plus-slam-app-framework). Reading via
-  // `require.resolve('<pkg>/package.json')` does not work when the package
-  // restricts subpath access via its `exports` field.
-  const pkgJsonPath = fileURLToPath(
-    new URL(`../node_modules/${pkgName}/package.json`, import.meta.url)
-  );
-  const parsed: unknown = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+  // works for both top-level installs and transitive deps that pnpm has
+  // nested under another package (e.g. `gps-plus-slam-js` is now reached via
+  // the framework's nested `node_modules/`, not at the top level).
+  // Reading via `require.resolve('<pkg>/package.json')` does not work when the
+  // package restricts subpath access via its `exports` field.
+  const candidates = [
+    `../node_modules/${pkgName}/package.json`,
+    `../node_modules/gps-plus-slam-app-framework/node_modules/${pkgName}/package.json`,
+  ];
 
-  if (!isPackageJsonWithVersion(parsed)) {
-    throw new Error(
-      `Package JSON for ${pkgName} does not contain a string version.`
-    );
+  let lastErr: unknown;
+  for (const rel of candidates) {
+    const abs = fileURLToPath(new URL(rel, import.meta.url));
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(abs, 'utf-8'));
+      if (!isPackageJsonWithVersion(parsed)) {
+        throw new Error(
+          `Package JSON for ${pkgName} at ${abs} does not contain a string version.`
+        );
+      }
+      return parsed.version;
+    } catch (err) {
+      lastErr = err;
+    }
   }
 
-  return parsed.version;
+  throw new Error(
+    `Could not locate package.json for ${pkgName} in any expected node_modules location. Last error: ${String(lastErr)}`
+  );
 }
 
 function gitCommitHash(): string {

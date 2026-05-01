@@ -11,7 +11,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Vector3, Quaternion, GpsPoint } from 'gps-plus-slam-js';
+import type {
+  Vector3,
+  Quaternion,
+  GpsPoint,
+} from 'gps-plus-slam-app-framework/core';
 import type { ARPose } from 'gps-plus-slam-app-framework/types/ar-types';
 import type * as StoreModule from 'gps-plus-slam-app-framework/state/store';
 import type { RecorderStore } from 'gps-plus-slam-app-framework/state/store';

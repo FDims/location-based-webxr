@@ -86,8 +86,8 @@ import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gp
 import { refPointVisualizer } from 'gps-plus-slam-app-framework/visualization/reference-points';
 import { computeFusedPath } from 'gps-plus-slam-app-framework/utils/fused-path';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
-import type { LatLong, Matrix4 } from 'gps-plus-slam-js';
-import { calcGpsCoords } from 'gps-plus-slam-js';
+import type { LatLong, Matrix4 } from 'gps-plus-slam-app-framework/core';
+import { calcGpsCoords } from 'gps-plus-slam-app-framework/core';
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import { getBuildInfo } from '../utils/build-info';
 

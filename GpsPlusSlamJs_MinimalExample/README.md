@@ -12,12 +12,9 @@ the store.
    [recorder app](../GpsPlusSlamJs_RecorderApp/) is too big to read as
    a "hello world". This example is intentionally trivial so the wiring
    is obvious.
-2. **Anonymous-install proof.** The package declares
-   `gps-plus-slam-js: ^1.0.0` from the public npm registry and
-   `gps-plus-slam-app-framework: workspace:*` for the sibling package.
-   A clean `pnpm install` at the public-repo root that successfully
-   resolves both is the runtime evidence behind C9 of the
-   [Separate Public Repository Plan](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-30-separate-public-repo-plan.md).
+2. **Anonymous-install proof.** The package declares only
+   `gps-plus-slam-app-framework: workspace:*` for the sibling package - A clean `pnpm install` at the public-repo root that
+   successfully resolves the framework.
 
 ## Run it
 

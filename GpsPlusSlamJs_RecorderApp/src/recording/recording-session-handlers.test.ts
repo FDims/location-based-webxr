@@ -293,7 +293,7 @@ vi.mock('gps-plus-slam-app-framework/sensors/gps-error-handler', () => ({
   createGpsErrorHandler: mockCreateGpsErrorHandler,
 }));
 
-vi.mock('gps-plus-slam-js', () => ({
+vi.mock('gps-plus-slam-app-framework/core', () => ({
   calcGpsCoords: mockCalcGpsCoords,
 }));
 

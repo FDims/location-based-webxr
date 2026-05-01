@@ -33,8 +33,8 @@ import {
 import {
   createGpsSlamStore,
   isIdentityMatrix4,
-  type RootState as LibraryRootState,
-} from 'gps-plus-slam-js';
+  type LibraryRootState,
+} from 'gps-plus-slam-app-framework/core';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-app-framework/licensing';
 import {
   produceTestZip,

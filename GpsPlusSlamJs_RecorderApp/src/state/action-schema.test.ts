@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { LatLong } from 'gps-plus-slam-js';
+import type { LatLong } from 'gps-plus-slam-app-framework/core';
 import type { RecordedAction } from 'gps-plus-slam-app-framework/storage/zip-reader';
 import {
   createRecorderStore,
