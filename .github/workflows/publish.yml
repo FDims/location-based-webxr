@@ -34,15 +34,15 @@ jobs:
     if: startsWith(github.event.release.tag_name, 'app-framework@')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Check out the exact tagged commit so a later push to main cannot
           # change what gets published.
           ref: ${{ github.event.release.tag_name }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           # Node 24 is the current Active LTS. npm Trusted Publishing
           # requires Node ≥22.14.0 / npm ≥11.5.1; Node 24 ships npm 11.x.
@@ -52,6 +52,11 @@ jobs:
           # Even with Trusted Publishing (no token), the registry-url line
           # in .npmrc is still required so pnpm targets the public registry.
           registry-url: "https://registry.npmjs.org"
+
+      - name: Pin npm to latest
+        # See the matching note in the private repo's publish.yml: ensures
+        # the freshest Trusted Publishing OIDC code path.
+        run: npm install -g npm@latest
 
       - name: Verify tag matches package.json version
         # Two-version model: package.json#version is the source of truth
