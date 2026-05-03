@@ -12,15 +12,17 @@ import type { StorageBackend, CreateSessionResult } from './storage-backend';
 import { formatTimestamp } from './file-system-utils';
 
 export class NullStorageBackend implements StorageBackend {
-  async createSession(
+  createSession(
     timestamp: Date,
     _contextTag?: string
   ): Promise<CreateSessionResult> {
-    return { sessionName: `recording-${formatTimestamp(timestamp)}` };
+    return Promise.resolve({
+      sessionName: `recording-${formatTimestamp(timestamp)}`,
+    });
   }
 
-  async listSessions(): Promise<string[]> {
-    return [];
+  listSessions(): Promise<string[]> {
+    return Promise.resolve([]);
   }
 
   async writeAction(_action: unknown, _index: number): Promise<void> {

@@ -117,9 +117,9 @@ export async function produceTestZip(
 
   try {
     await initOpfsStorage();
-    const { scenarioName, sessionName } = await createSession(
-      options.scenarioName,
-      options.sessionTimestamp
+    const { sessionName } = await createSession(
+      options.sessionTimestamp,
+      options.scenarioName
     );
 
     const allActions: RecordedAction[] = [];
@@ -218,7 +218,7 @@ export async function produceTestZip(
       endedAt: new Date(
         options.sessionTimestamp.getTime() + actionIndex * 1000 + 5000
       ).toISOString(),
-      scenarioName: options.scenarioName,
+      contextTag: options.scenarioName,
       actionCount: actionIndex,
       frameCount: options.frameCount,
       userAgent: options.deviceInfo,
@@ -226,7 +226,7 @@ export async function produceTestZip(
     await writeSessionMetadata(metadata);
 
     // --- Export as zip ---
-    const { blob } = await exportSessionAsZip(scenarioName, sessionName);
+    const { blob } = await exportSessionAsZip(sessionName);
     const zipData = new Uint8Array(await blob.arrayBuffer());
 
     return {

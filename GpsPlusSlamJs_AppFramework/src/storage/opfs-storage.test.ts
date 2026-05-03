@@ -346,7 +346,7 @@ describe('opfs-storage', () => {
       const sessionHandle =
         getSessionHandle() as unknown as MockOPFSDirectoryHandle;
       const content = sessionHandle.getStoredContentAsString('session.json');
-      const parsed = JSON.parse(content!);
+      const parsed = JSON.parse(content!) as { contextTag?: string };
       expect(parsed.contextTag).toBe('my-scenario');
     });
 

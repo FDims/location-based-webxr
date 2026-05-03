@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ZIP Export Module Tests
  *
  * Tests for exporting OPFS session data as ZIP files.
@@ -23,6 +23,7 @@ import {
 import { BlobReader, ZipReader, Uint8ArrayWriter } from '@zip.js/zip.js';
 import type { MockOPFSDirectoryHandle } from '../test-utils/browser-mocks';
 import { installOPFSMocks } from '../test-utils/browser-mocks';
+import { formatTimestamp } from './file-system-utils';
 import type {
   RefPointDefinition,
   RefPointObservation,
@@ -36,7 +37,8 @@ import {
   writeFrame,
   writeSessionMetadata,
   resetOpfsStorage,
-  getScenarioHandle,
+  getAppRootHandle,
+  setSessionHandles,
   type SessionMetadata,
 } from './opfs-storage';
 import {
@@ -66,6 +68,52 @@ async function unzipBlob(blob: Blob): Promise<Map<string, Uint8Array>> {
   return files;
 }
 
+/**
+ * Build a scenario-layout session under OPFS for tests that exercise
+ * the framework's legacy scenario branch in `exportSessionAsZip`.
+ *
+ * Creates `gps-recorder/scenarios/{scenarioName}/recording-{ts}/`
+ * with empty `actions/` and `frames/` subdirectories, and wires the
+ * handles into opfs-storage so subsequent `writeAction` / `writeFrame` /
+ * `writeSessionMetadata` calls target this session.
+ *
+ * Until the recorder owns scenarios via `ScenarioWrappingStorageBackend`
+ * (Iter 0/3 of the boundary plan), framework tests build the layout
+ * directly to keep coverage on the legacy branch.
+ */
+async function createScenarioSession(
+  scenarioName: string,
+  timestamp: Date
+): Promise<{
+  scenarioName: string;
+  sessionName: string;
+  scenarioHandle: FileSystemDirectoryHandle;
+}> {
+  const appRoot = getAppRootHandle();
+  if (!appRoot) {
+    throw new Error('OPFS not initialized - call initOpfsStorage first');
+  }
+  const scenariosDir = await appRoot.getDirectoryHandle('scenarios', {
+    create: true,
+  });
+  const scenarioHandle = await scenariosDir.getDirectoryHandle(scenarioName, {
+    create: true,
+  });
+  const ts = formatTimestamp(timestamp);
+  const sessionName = `recording-${ts}`;
+  const sessionHandle = await scenarioHandle.getDirectoryHandle(sessionName, {
+    create: true,
+  });
+  const actions = await sessionHandle.getDirectoryHandle('actions', {
+    create: true,
+  });
+  const frames = await sessionHandle.getDirectoryHandle('frames', {
+    create: true,
+  });
+  setSessionHandles(sessionHandle, actions, frames);
+  return { scenarioName, sessionName, scenarioHandle };
+}
+
 describe('zip-export', () => {
   let _opfsRoot: MockOPFSDirectoryHandle;
   let cleanup: () => void;
@@ -85,7 +133,7 @@ describe('zip-export', () => {
     it('creates a valid ZIP blob', async () => {
       // Why: ZIP must be readable by native OS tools
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'test-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -94,7 +142,7 @@ describe('zip-export', () => {
         version: 1,
         startedAt: '2026-01-26T10:00:00.000Z',
         endedAt: '2026-01-26T10:30:00.000Z',
-        scenarioName: 'test-scenario',
+        contextTag: 'test-scenario',
         actionCount: 1,
         frameCount: 0,
         userAgent: 'Test Browser',
@@ -115,7 +163,7 @@ describe('zip-export', () => {
     it('includes session.json at root level', async () => {
       // Why: Session metadata must be easily accessible
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'test-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -124,7 +172,7 @@ describe('zip-export', () => {
         version: 1,
         startedAt: '2026-01-26T10:00:00.000Z',
         endedAt: '2026-01-26T10:30:00.000Z',
-        scenarioName: 'test-scenario',
+        contextTag: 'test-scenario',
         actionCount: 0,
         frameCount: 0,
         userAgent: 'Test Browser',
@@ -139,14 +187,14 @@ describe('zip-export', () => {
 
       expect(files.has('session.json')).toBe(true);
       const content = new TextDecoder().decode(files.get('session.json'));
-      const parsed = JSON.parse(content) as { scenarioName: string };
-      expect(parsed.scenarioName).toBe('test-scenario');
+      const parsed = JSON.parse(content) as { contextTag: string };
+      expect(parsed.contextTag).toBe('test-scenario');
     });
 
     it('includes actions in actions/ folder', async () => {
       // Why: Actions must be in correct location for replay
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'test-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -172,7 +220,7 @@ describe('zip-export', () => {
     it('includes frames in frames/ folder', async () => {
       // Why: Frames must be in correct location for replay
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'test-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -194,7 +242,7 @@ describe('zip-export', () => {
     it('preserves binary frame data exactly', async () => {
       // Why: Image corruption would make recordings useless
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'test-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -228,7 +276,7 @@ describe('zip-export', () => {
     it('throws for non-existent session', async () => {
       // Why: Clear error for invalid export request
       await initOpfsStorage();
-      await createSession(
+      await createScenarioSession(
         'existing-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -241,7 +289,7 @@ describe('zip-export', () => {
     it('uses store mode (no compression) for fast packaging', async () => {
       // Why: Uncompressed ZIP is faster to create; images are already compressed
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'test-scenario',
         new Date('2026-01-26T10:00:00Z')
       );
@@ -266,7 +314,7 @@ describe('zip-export', () => {
     it('returns a ZipExportResult with blob and fileCount', async () => {
       // Why: Issue #2+#3 (2026-02-06) need blob + file count for share/stats
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'meta-test',
         new Date('2026-02-06T10:00:00Z')
       );
@@ -275,7 +323,7 @@ describe('zip-export', () => {
         version: 1,
         startedAt: '2026-02-06T10:00:00.000Z',
         endedAt: '2026-02-06T10:30:00.000Z',
-        scenarioName: 'meta-test',
+        contextTag: 'meta-test',
         actionCount: 2,
         frameCount: 1,
         userAgent: 'Test Browser',
@@ -334,12 +382,12 @@ describe('zip-export', () => {
       // Why: This is the core fix for Problem 3 — ref points must appear in
       // exported ZIPs so they can be recovered after OPFS loss.
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'refpt-scenario',
         new Date('2026-04-13T10:00:00Z')
       );
 
-      const scenarioHandle = getScenarioHandle()!;
+      const scenarioHandle = _scenarioHandle;
       await saveRefPointObservation(
         scenarioHandle,
         '8b1f1a5c2e3d4f1',
@@ -369,12 +417,12 @@ describe('zip-export', () => {
       // Why: Per-session filtering ensures each ZIP contains only its own
       // observations; full state is reconstructed by merging all ZIPs.
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'filter-scenario',
         new Date('2026-04-13T11:00:00Z')
       );
 
-      const scenarioHandle = getScenarioHandle()!;
+      const scenarioHandle = _scenarioHandle;
       // Two observations on the same ref point: one from this session, one from another
       await saveRefPointObservation(
         scenarioHandle,
@@ -405,12 +453,12 @@ describe('zip-export', () => {
       // Why: If a ref point was only observed in other sessions, it should not
       // bloat this session's ZIP.
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'exclude-scenario',
         new Date('2026-04-13T12:00:00Z')
       );
 
-      const scenarioHandle = getScenarioHandle()!;
+      const scenarioHandle = _scenarioHandle;
       // Ref point only observed in a different session
       await saveRefPointObservation(
         scenarioHandle,
@@ -428,7 +476,7 @@ describe('zip-export', () => {
     it('works when no refPoints directory exists', async () => {
       // Why: New scenarios have no ref points yet; export must not crash.
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'no-refpts',
         new Date('2026-04-13T13:00:00Z')
       );
@@ -447,7 +495,7 @@ describe('zip-export', () => {
     it('includes ref point file count in the returned fileCount', async () => {
       // Why: fileCount is used for UI stats display; must be accurate.
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'count-scenario',
         new Date('2026-04-13T14:00:00Z')
       );
@@ -456,7 +504,7 @@ describe('zip-export', () => {
         version: 1,
         startedAt: '2026-04-13T14:00:00.000Z',
         endedAt: '',
-        scenarioName: 'count-scenario',
+        contextTag: 'count-scenario',
         actionCount: 1,
         frameCount: 0,
         userAgent: 'Test',
@@ -464,7 +512,7 @@ describe('zip-export', () => {
       await writeSessionMetadata(metadata);
       await writeAction({ type: 'test/action' }, 1);
 
-      const scenarioHandle = getScenarioHandle()!;
+      const scenarioHandle = _scenarioHandle;
       await saveRefPointObservation(
         scenarioHandle,
         '8b1f1a5c2e3d4f4',
@@ -480,12 +528,12 @@ describe('zip-export', () => {
     it('preserves id, name, and createdAt fields in exported ref points', async () => {
       // Why: These metadata fields are needed for reconstruction on import.
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'metadata-scenario',
         new Date('2026-04-13T15:00:00Z')
       );
 
-      const scenarioHandle = getScenarioHandle()!;
+      const scenarioHandle = _scenarioHandle;
       const obs = makeObservation(sessionName, 1713000000000);
       await saveRefPointObservation(
         scenarioHandle,
@@ -588,7 +636,7 @@ describe('zip-export', () => {
     it('writes a valid ZIP to the external file handle', async () => {
       // Why: This is the primary use case - sync OPFS data to user's chosen file
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'sync-test',
         new Date('2026-01-30T10:00:00Z')
       );
@@ -597,7 +645,7 @@ describe('zip-export', () => {
         version: 1,
         startedAt: '2026-01-30T10:00:00.000Z',
         endedAt: '',
-        scenarioName: 'sync-test',
+        contextTag: 'sync-test',
         actionCount: 2,
         frameCount: 0,
         userAgent: 'Test Browser',
@@ -625,7 +673,7 @@ describe('zip-export', () => {
     it('includes frames in the synced ZIP', async () => {
       // Why: Frames are critical recording data and must be synced
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'frame-sync-test',
         new Date('2026-01-30T11:00:00Z')
       );
@@ -645,7 +693,7 @@ describe('zip-export', () => {
     it('calls createWritable and close on the handle', async () => {
       // Why: Proper handle lifecycle is critical for data integrity
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'handle-test',
         new Date('2026-01-30T12:00:00Z')
       );
@@ -685,7 +733,7 @@ describe('zip-export', () => {
     it('throws for non-existent session', async () => {
       // Why: Clear error handling for invalid sync request
       await initOpfsStorage();
-      await createSession(
+      await createScenarioSession(
         'existing-scenario',
         new Date('2026-01-30T10:00:00Z')
       );
@@ -700,7 +748,7 @@ describe('zip-export', () => {
     it('returns ZipExportResult with blob and fileCount', async () => {
       // Why: Issue #2+#3 (2026-02-06) — caller needs blob for share + stats
       await initOpfsStorage();
-      const { scenarioName, sessionName } = await createSession(
+      const { scenarioName, sessionName, scenarioHandle: _scenarioHandle } = await createScenarioSession(
         'result-test',
         new Date('2026-02-06T14:00:00Z')
       );
@@ -709,7 +757,7 @@ describe('zip-export', () => {
         version: 1,
         startedAt: '2026-02-06T14:00:00.000Z',
         endedAt: '2026-02-06T14:30:00.000Z',
-        scenarioName: 'result-test',
+        contextTag: 'result-test',
         actionCount: 1,
         frameCount: 0,
         userAgent: 'Test Browser',
@@ -773,7 +821,7 @@ describe('zip-export', () => {
      * Why this test matters:
      * ZipExportResult is created once and returned; never mutated.
      */
-    it('ZipExportResult ≡ Readonly<ZipExportResult>', () => {
+    it('ZipExportResult = Readonly<ZipExportResult>', () => {
       expectTypeOf<ZipExportResult>().toEqualTypeOf<
         Readonly<ZipExportResult>
       >();

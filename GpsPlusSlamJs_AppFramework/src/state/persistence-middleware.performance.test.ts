@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Performance threshold guard for persistence middleware synchronous overhead.
  *
  * Why this test matters: The persistence middleware runs on EVERY Redux
@@ -92,6 +92,8 @@ describe('persistence middleware synchronous overhead', () => {
     { timeout: 15_000 },
     () => {
       const mockBackend: StorageBackend = {
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
@@ -136,6 +138,8 @@ describe('persistence middleware synchronous overhead', () => {
     { timeout: 15_000 },
     () => {
       const mockBackend: StorageBackend = {
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
