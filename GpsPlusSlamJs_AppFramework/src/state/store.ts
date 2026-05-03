@@ -17,22 +17,14 @@
  */
 
 import { configureStore } from '@reduxjs/toolkit';
-import {
-  gpsDataReducer,
-  gpsElementsReducer,
-  arElementsReducer,
-  sanitizeForDevTools,
-  validateLicenseKey,
-  type RootState as LibraryRootState,
-} from 'gps-plus-slam-js';
+import { type RootState as LibraryRootState } from 'gps-plus-slam-js';
 import type { StorageBackend } from '../storage/storage-backend';
-import { recorderReducer, type RecorderState } from './recorder-slice';
+import { type RecorderState } from './recorder-slice';
 import { refPointsReducer, type RefPointsState } from './ref-points-slice';
 import { routingReducer, type RoutingState } from './routing-slice';
 import type { SessionMetadata as OpfsSessionMetadata } from '../storage/opfs-storage';
 import { OpfsStorageBackend } from '../storage/opfs-storage-backend';
-import { createPersistenceMiddleware } from './persistence-middleware';
-import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
+import { createSlamAppStore } from './create-slam-app-store';
 
 // Re-export for convenience
 export type { RecordingOptions } from './recording-options';
@@ -184,48 +176,30 @@ export type { SessionMetadata as OpfsSessionMetadata } from '../storage/opfs-sto
 export function createRecorderStore(
   options: RecorderStoreOptions = {}
 ): RecorderStore {
-  const { onWriteFailure } = options;
   const storageBackend: StorageBackend =
     options.storageBackend ?? new OpfsStorageBackend();
-  const enableDevChecks = options.enableDevChecks ?? true;
 
-  // Default to the bundled community key so example apps work without wiring.
-  // Apps can override with a paid key. The library is never usable without a
-  // valid key — validation always runs and throws on invalid/expired/empty.
-  const licenseKey = options.licenseKey ?? COMMUNITY_LICENSE_KEY;
-  validateLicenseKey(licenseKey);
-
-  const store = configureStore({
-    reducer: {
-      gpsData: gpsDataReducer,
-      gpsElements: gpsElementsReducer,
-      arElements: arElementsReducer,
-      recorder: recorderReducer,
+  // Iter 1B (2026-05-03): delegate to the framework's composable factory
+  // and supply recorder-specific reducers (routing, refPoints) via the
+  // generic `extraReducers` seam. The recorder will own this wrapper after
+  // Iter 1D moves it out of the framework.
+  const store = createSlamAppStore({
+    storageBackend,
+    onWriteFailure: options.onWriteFailure,
+    enableDevChecks: options.enableDevChecks,
+    licenseKey: options.licenseKey,
+    extraReducers: {
       refPoints: refPointsReducer,
       routing: routingReducer,
-    },
-    middleware: (getDefaultMiddleware) =>
-      getDefaultMiddleware({
-        serializableCheck: enableDevChecks,
-        immutableCheck: enableDevChecks,
-      }).concat(
-        createPersistenceMiddleware({ storageBackend, onWriteFailure })
-      ),
-    devTools: {
-      actionSanitizer: sanitizeForDevTools,
-      stateSanitizer: sanitizeForDevTools,
     },
   });
 
   return {
-    getState: () => store.getState(),
-    // Redux store methods are already bound — direct assignment is safe
+    getState: () => store.getState() as CombinedRootState,
     dispatch: store.dispatch,
-    subscribe: (listener: () => void) => store.subscribe(listener),
-    writeFrame: (blob: Blob, index: number) =>
-      storageBackend.writeFrame(blob, index),
-    writeSessionMetadata: (metadata: OpfsSessionMetadata) =>
-      storageBackend.writeSessionMetadata(metadata),
+    subscribe: store.subscribe,
+    writeFrame: store.writeFrame,
+    writeSessionMetadata: store.writeSessionMetadata,
   };
 }
 
