@@ -365,7 +365,7 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     handleScenarioChange,
     loadAndDisplayRefPoints,
     getCurrentScenarioName: () =>
-      deps.getStore().getState().recorder.currentScenarioName,
+      deps.getStore().getState().scenario.currentScenarioName,
     setCurrentScenarioName: (name: string) => {
       deps.getStore().dispatch(setCurrentScenarioName(name));
     },

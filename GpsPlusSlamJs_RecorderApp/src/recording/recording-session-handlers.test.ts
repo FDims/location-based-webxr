@@ -337,6 +337,8 @@ function createMockStore(): RecorderStore {
           startTime: 1000000,
         },
         failedWriteCount: 0,
+      },
+      scenario: {
         currentScenarioName: 'TestScenario',
       },
     }),
@@ -708,8 +710,8 @@ describe('handleStartRecording', () => {
     const emptyScenarioStore = createMockStore();
     vi.mocked(emptyScenarioStore.getState).mockReturnValue({
       ...emptyScenarioStore.getState(),
-      recorder: {
-        ...emptyScenarioStore.getState().recorder,
+      scenario: {
+        ...emptyScenarioStore.getState().scenario,
         currentScenarioName: '',
       },
     });
@@ -728,8 +730,8 @@ describe('handleStartRecording', () => {
     const oldStore = createMockStore();
     vi.mocked(oldStore.getState).mockReturnValue({
       ...oldStore.getState(),
-      recorder: {
-        ...oldStore.getState().recorder,
+      scenario: {
+        ...oldStore.getState().scenario,
         currentScenarioName: 'Paris',
       },
     });
@@ -738,8 +740,8 @@ describe('handleStartRecording', () => {
     const newStore = createMockStore();
     vi.mocked(newStore.getState).mockReturnValue({
       ...newStore.getState(),
-      recorder: {
-        ...newStore.getState().recorder,
+      scenario: {
+        ...newStore.getState().scenario,
         currentScenarioName: '',
       },
     });
@@ -811,7 +813,7 @@ describe('handleStopRecording', () => {
       expect.objectContaining({
         version: 1,
         odomCoordVersion: 5,
-        scenarioName: 'TestScenario',
+        contextTag: 'TestScenario',
       })
     );
   });
@@ -1004,7 +1006,7 @@ describe('handleStopRecording', () => {
     expect(mockStore.writeSessionMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         version: 1,
-        scenarioName: 'TestScenario',
+        contextTag: 'TestScenario',
       })
     );
 
@@ -1051,6 +1053,8 @@ describe('handleStopRecording', () => {
           startTime: Date.now() - 60000,
         },
         failedWriteCount: 0,
+      },
+      scenario: {
         currentScenarioName: 'Test',
       },
     });

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Main Module Tests
  *
  * Tests for the main application coordinator logic.
@@ -43,6 +43,8 @@ const {
         sessionName?: string;
         startTime?: number;
       };
+    };
+    scenario?: {
       currentScenarioName?: string;
     };
     refPoints?: {
@@ -62,6 +64,8 @@ const {
         sessionName: 'recording-test',
         startTime: Date.now(),
       },
+    },
+    scenario: {
       currentScenarioName: '',
     },
     refPoints: {
@@ -108,9 +112,9 @@ const {
             sessionRefPointUsage: {},
           };
         }
-      } else if (action?.type === 'recorder/setCurrentScenarioName') {
-        mockState.recorder = {
-          ...mockState.recorder,
+      } else if (action?.type === 'scenario/setCurrentScenarioName') {
+        mockState.scenario = {
+          ...mockState.scenario,
           currentScenarioName: action.payload as string,
         };
       }
@@ -1092,7 +1096,7 @@ describe('AR Tracking Restart Callbacks (Phase 1+2)', () => {
 
   /**
    * Why this test matters:
-   * Regression: Case 2 (origin reset) must clear the "âš ï¸ LOST" UI indicator,
+   * Regression: Case 2 (origin reset) must clear the "LOST" UI indicator,
    * just like Case 1 (seamless recovery). Without this, the LOST warning
    * persists after a successful Case 2 relocalization.
    */
@@ -1420,7 +1424,7 @@ describe('Session Metadata Persistence (F1)', () => {
     // Must have version field for forward compatibility
     expect(metadata.version).toBe(1);
     // Must have scenario name from store state
-    expect(metadata.scenarioName).toBe('TestScenario');
+    expect(metadata.contextTag).toBe('TestScenario');
     // Must have timestamps
     expect(typeof metadata.startedAt).toBe('string');
     expect(typeof metadata.endedAt).toBe('string');
@@ -1873,8 +1877,7 @@ describe('resetForNewRecording (soft reset)', () => {
   // redundant call was removed.
   it('does not dispatch clearSessionRefPointUsage to old store', async () => {
     // Get the mock store and spy on dispatch
-    const { createRecorderStore } =
-      await import('./state/recorder-store');
+    const { createRecorderStore } = await import('./state/recorder-store');
     const store = createRecorderStore();
     const dispatchSpy = vi.spyOn(store, 'dispatch');
 

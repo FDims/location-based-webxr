@@ -48,7 +48,6 @@ function makeState(
       priorMarks: [],
       currentMarks: [],
     },
-    routing: {} as CombinedRootState['routing'],
   };
 }
 

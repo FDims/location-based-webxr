@@ -27,12 +27,14 @@ import {
   resetCoordinatorState,
   eulerToQuaternion,
 } from './recording-coordinator';
+import type { ReducersMapObject } from '@reduxjs/toolkit';
 import { createSlamAppStore, type SlamAppStore } from './create-slam-app-store';
 import { startSession } from './recorder-slice';
 import { refPointsReducer } from './ref-points-slice';
 import { NullStorageBackend } from '../storage/null-storage-backend';
-type RecorderStore = SlamAppStore<any>;
-const createRecorderStore = (opts?: { storageBackend?: any }) =>
+import type { StorageBackend } from '../storage/storage-backend';
+type RecorderStore = SlamAppStore<ReducersMapObject>;
+const createRecorderStore = (opts?: { storageBackend?: StorageBackend }) =>
   createSlamAppStore({
     storageBackend: opts?.storageBackend ?? new NullStorageBackend(),
     extraReducers: { refPoints: refPointsReducer },

@@ -6,23 +6,22 @@ Redux Toolkit slice for recorder session management. Extracted from inline code 
 
 ## Public API
 
-| Export                   | Kind           | Description                                                                           |
-| ------------------------ | -------------- | ------------------------------------------------------------------------------------- |
-| `RecorderState`          | Type           | Shape of the `recorder` state slice                                                   |
-| `SessionMetadata`        | Type           | Session metadata: scenario name, session name, start time, etc.                       |
-| `recorderReducer`        | Reducer        | RTK slice reducer for `recorder/*` actions                                            |
-| `startSession`           | Action creator | `recorder/startSession` — sets `isRecording = true`, stores metadata, resets counters |
-| `endSession`             | Action creator | `recorder/endSession` — sets `isRecording = false`                                    |
-| `recordDepthSample`      | Action creator | `recorder/recordDepthSample` — no state mutation; persisted for replay                |
-| `recordWriteFailure`     | Action creator | `recorder/recordWriteFailure` — increments `failedWriteCount`                         |
-| `setCurrentScenarioName` | Action creator | `recorder/setCurrentScenarioName` — replaces closure variable from folder-manager     |
+| Export               | Kind           | Description                                                                           |
+| -------------------- | -------------- | ------------------------------------------------------------------------------------- |
+| `RecorderState`      | Type           | Shape of the `recorder` state slice                                                   |
+| `SessionMetadata`    | Type           | Session metadata: scenario name, session name, start time, etc.                       |
+| `recorderReducer`    | Reducer        | RTK slice reducer for `recorder/*` actions                                            |
+| `startSession`       | Action creator | `recorder/startSession` — sets `isRecording = true`, stores metadata, resets counters |
+| `endSession`         | Action creator | `recorder/endSession` — sets `isRecording = false`                                    |
+| `recordDepthSample`  | Action creator | `recorder/recordDepthSample` — no state mutation; persisted for replay                |
+| `recordWriteFailure` | Action creator | `recorder/recordWriteFailure` — increments `failedWriteCount`                         |
 
 ## Invariants & Assumptions
 
 - `startSession` resets `actionCount` and `failedWriteCount` to 0 — each session starts clean.
 - `recordDepthSample` intentionally has no state mutation; the action payload is persisted by `persistence-middleware.ts` for replay.
 - `recordWriteFailure` is the only action tracking persistence errors. It is **excluded** from persistence by the middleware to prevent recursion.
-- `currentScenarioName` is a single source of truth replacing folder-manager closure variables (see state-management-audit §9.4 Priority 2).
+- This slice is scenario-agnostic. The currently-selected scenario name lives in the recorder app's [`scenario-slice`](../../../GpsPlusSlamJs_RecorderApp/src/state/scenario-slice.ts.md) and is read by the recorder when stamping `SessionMetadata` (Iter 1D of the [boundary migration](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md))..
 
 ## Examples
 
@@ -55,7 +54,7 @@ console.log(store.getState().recorder.failedWriteCount); // 1
 
 ## Tests
 
-- `store.test.ts` — 37 tests cover all recorder actions as part of the integrated store (state transitions, startSession/endSession, failedWriteCount tracking, currentScenarioName management).
+- `store.test.ts` — covers all recorder actions as part of the integrated store (state transitions, startSession/endSession, failedWriteCount tracking).
 - `persistence-middleware.test.ts` — 13 tests verify that `recordWriteFailure` is excluded from persistence and dispatched on errors.
 
 ## Related

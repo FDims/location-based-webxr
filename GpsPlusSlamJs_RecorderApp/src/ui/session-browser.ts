@@ -253,8 +253,7 @@ export async function discoverScenariosFromZipMetadata(
     // Merge missing metadata and "Default Scenario" into the same canonical
     // group (UX feedback 2026-03-23 Issue 2).
     let scenarioName: string;
-    const legacyScenarioName = (metadata as { scenarioName?: unknown } | null)
-      ?.scenarioName;
+    const legacyScenarioName = metadata?.scenarioName;
     const tag =
       typeof metadata?.contextTag === 'string' && metadata.contextTag.length > 0
         ? metadata.contextTag

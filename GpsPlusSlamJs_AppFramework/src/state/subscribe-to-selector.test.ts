@@ -31,7 +31,6 @@ function makeState(
     arElements: {} as CombinedRootState['arElements'],
     recorder: {} as CombinedRootState['recorder'],
     refPoints: {} as CombinedRootState['refPoints'],
-    routing: {} as CombinedRootState['routing'],
     ...overrides,
   };
 }

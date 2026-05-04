@@ -90,7 +90,7 @@ const mockFolderHandle = {
 } as unknown as FileSystemDirectoryHandle;
 
 /**
- * Creates a minimal mock RecorderStore that handles recorder/setCurrentScenarioName
+ * Creates a minimal mock RecorderStore that handles scenario/setCurrentScenarioName
  * actions, backing them with a simple in-memory state.
  */
 function createMockStore(): RecorderStore {
@@ -100,6 +100,8 @@ function createMockStore(): RecorderStore {
       sessionMetadata: null,
       actionCount: 0,
       failedWriteCount: 0,
+    },
+    scenario: {
       currentScenarioName: '',
     },
     refPoints: {
@@ -111,8 +113,8 @@ function createMockStore(): RecorderStore {
   return {
     getState: () => state,
     dispatch: vi.fn((action: { type: string; payload?: unknown }) => {
-      if (action.type === 'recorder/setCurrentScenarioName') {
-        state.recorder.currentScenarioName = action.payload as string;
+      if (action.type === 'scenario/setCurrentScenarioName') {
+        state.scenario.currentScenarioName = action.payload as string;
       }
     }),
     subscribe: () => () => {},

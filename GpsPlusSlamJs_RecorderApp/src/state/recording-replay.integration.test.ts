@@ -25,11 +25,9 @@ import {
   type RecordedAction,
 } from 'gps-plus-slam-app-framework/storage/zip-reader';
 import { replayRecording } from 'gps-plus-slam-app-framework/state/recording-replayer';
+import type { CombinedRootState as FrameworkReplayState } from 'gps-plus-slam-app-framework/state/combined-root-state';
 import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage/null-storage-backend';
-import {
-  createRecorderStore,
-  type CombinedRootState,
-} from './recorder-store';
+import { createRecorderStore, type CombinedRootState } from './recorder-store';
 import {
   createGpsSlamStore,
   isIdentityMatrix4,
@@ -52,8 +50,8 @@ let actions: RecordedAction[];
 let libraryState: LibraryRootState;
 /** Full recorder store state after replaying all actions */
 let recorderState: CombinedRootState;
-/** State produced by the replayRecording() convenience function */
-let replayedState: CombinedRootState;
+/** State produced by the replayRecording() convenience function (framework shape, no recorder-only slices) */
+let replayedState: FrameworkReplayState;
 
 describe('Recording Replay Integration', () => {
   beforeAll(async () => {

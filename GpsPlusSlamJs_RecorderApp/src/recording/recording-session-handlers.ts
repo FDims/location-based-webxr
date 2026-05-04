@@ -16,10 +16,7 @@ import {
   createGpsPositionHandler,
   updateDeviceOrientation,
 } from 'gps-plus-slam-app-framework/state/recording-coordinator';
-import {
-  startSession,
-  endSession,
-} from '../state/recorder-store';
+import { startSession, endSession } from '../state/recorder-store';
 import type { RecorderStore } from '../state/recorder-store';
 import { wireStoreSubscribers } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { RecordingOptions } from 'gps-plus-slam-app-framework/state/recording-options';
@@ -268,7 +265,7 @@ export function createRecordingSessionHandlers(
     // The dropdown dispatches setCurrentScenarioName on the current store;
     // a fresh store would lose this selection (Issue #12).
     const scenarioName =
-      deps.getStore().getState().recorder.currentScenarioName ||
+      deps.getStore().getState().scenario.currentScenarioName ||
       FALLBACK_SCENARIO;
 
     // Create new store for this session
@@ -467,7 +464,7 @@ export function createRecordingSessionHandlers(
           ? new Date(sessionMetadata.startTime).toISOString()
           : new Date(endTime).toISOString(),
         endedAt: new Date(endTime).toISOString(),
-        scenarioName: sessionMetadata?.scenarioName ?? FALLBACK_SCENARIO,
+        contextTag: sessionMetadata?.scenarioName ?? FALLBACK_SCENARIO,
         actionCount: gpsPositions.length,
         frameCount: imageCount,
         userAgent: navigator.userAgent,
@@ -525,7 +522,7 @@ export function createRecordingSessionHandlers(
         log.info('No external save location â€” generating ZIP from OPFS...');
         updateStatus('Packaging session...');
         const scenarioName =
-          deps.getStore().getState().recorder.currentScenarioName ||
+          deps.getStore().getState().scenario.currentScenarioName ||
           FALLBACK_SCENARIO;
         const result = await exportSessionAsZip(
           scenarioName,

@@ -11,7 +11,14 @@
  * need a path swap, not a per-symbol audit.
  *
  * Iter 1 of the [AppFramework / RecorderApp boundary migration](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md).
+ *
+ * NOTE: This module intentionally re-exports symbols from `gps-plus-slam-js`
+ * directly so consumers have a single recorder-app import surface for both
+ * library and framework symbols. The repo-wide `no-restricted-imports` rule
+ * funnels app code through `gps-plus-slam-app-framework/core`; this file is
+ * the recorder-app analogue of that curated barrel and is exempted below.
  */
+/* eslint-disable no-restricted-imports -- recorder-app curated re-export surface; see file header */
 
 import { type RootState as LibraryRootState } from 'gps-plus-slam-js';
 import {
@@ -27,6 +34,7 @@ import type { StorageBackend } from 'gps-plus-slam-app-framework/storage/storage
 import { OpfsStorageBackend } from 'gps-plus-slam-app-framework/storage/opfs-storage-backend';
 import type { SessionMetadata as OpfsSessionMetadata } from 'gps-plus-slam-app-framework/storage/opfs-storage';
 import { routingReducer, type RoutingState } from './routing-slice';
+import { scenarioReducer, type ScenarioState } from './scenario-slice';
 
 // --- Re-exports for backwards compatibility with consumers that previously
 // imported these from `gps-plus-slam-app-framework/state/store`. The framework
@@ -40,8 +48,13 @@ export {
   endSession,
   recordDepthSample,
   recordWriteFailure,
-  setCurrentScenarioName,
 } from 'gps-plus-slam-app-framework/state/recorder-slice';
+
+export {
+  setCurrentScenarioName,
+  resetCurrentScenarioName,
+  type ScenarioState,
+} from './scenario-slice';
 
 export {
   setZeroPos,
@@ -92,6 +105,7 @@ export interface CombinedRootState extends LibraryRootState {
   recorder: RecorderState;
   refPoints: RefPointsState;
   routing: RoutingState;
+  scenario: ScenarioState;
 }
 
 /**
@@ -136,11 +150,12 @@ export function createRecorderStore(
     extraReducers: {
       refPoints: refPointsReducer,
       routing: routingReducer,
+      scenario: scenarioReducer,
     },
   });
 
   return {
-    getState: () => store.getState() as CombinedRootState,
+    getState: () => store.getState(),
     dispatch: store.dispatch,
     subscribe: store.subscribe,
     writeFrame: store.writeFrame,

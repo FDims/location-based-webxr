@@ -123,7 +123,6 @@ describe('persistence middleware synchronous overhead', () => {
       });
 
       if (process.env.DEBUG_PERF === '1') {
-        // eslint-disable-next-line no-console -- intentional debug output
         console.info(
           `[perf] persistence middleware per-dispatch avg ms: ${avgMs.toFixed(6)}`
         );
@@ -167,7 +166,6 @@ describe('persistence middleware synchronous overhead', () => {
       });
 
       if (process.env.DEBUG_PERF === '1') {
-        // eslint-disable-next-line no-console -- intentional debug output
         console.info(
           `[perf] persistence middleware (not recording) per-dispatch avg ms: ${avgMs.toFixed(6)}`
         );

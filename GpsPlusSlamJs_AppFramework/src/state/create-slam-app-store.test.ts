@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice } from '@reduxjs/toolkit';
 import { createSlamAppStore } from './create-slam-app-store';
 import { startSession, endSession } from './recorder-slice';
 import type { StorageBackend } from '../storage/storage-backend';

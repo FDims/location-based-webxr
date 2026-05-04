@@ -68,10 +68,14 @@ function createTestStore(options: PersistenceMiddlewareOptions) {
 describe('Persistence Middleware', () => {
   function createMockBackend() {
     return {
+      createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+      listSessions: vi.fn().mockResolvedValue([]),
       writeAction: vi.fn().mockResolvedValue(undefined),
       writeFrame: vi.fn().mockResolvedValue(undefined),
       writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
     } as StorageBackend & {
+      createSession: ReturnType<typeof vi.fn>;
+      listSessions: ReturnType<typeof vi.fn>;
       writeAction: ReturnType<typeof vi.fn>;
       writeFrame: ReturnType<typeof vi.fn>;
       writeSessionMetadata: ReturnType<typeof vi.fn>;
@@ -279,6 +283,8 @@ describe('Persistence Middleware', () => {
     const writePromises: Array<() => void> = [];
 
     const slowBackend: StorageBackend = {
+      createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+      listSessions: vi.fn().mockResolvedValue([]),
       writeAction: vi.fn(async () => {
         pendingWrites++;
         maxPendingWrites = Math.max(maxPendingWrites, pendingWrites);

@@ -14,10 +14,11 @@
  * @see docs/2026-02-19-replay-mode.md Issue 2 (Option D), Issue 3
  */
 
+import type { ReducersMapObject } from '@reduxjs/toolkit';
 import type { SlamAppStore } from './create-slam-app-store';
 
 /** Minimal store contract used by the replay engine: dispatches plain actions. */
-type RecorderStore = SlamAppStore<any>;
+type RecorderStore = SlamAppStore<ReducersMapObject>;
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -36,13 +36,6 @@ export interface RecorderState {
    * User Feedback Issue #1 Part B: Track write failures for visibility.
    */
   failedWriteCount: number;
-  /**
-   * Currently selected scenario name.
-   * Replaces the closure variable in folder-manager.ts so any module
-   * can read it via store.getState().recorder.currentScenarioName.
-   * @see docs/2026-03-26-state-management-audit.md §9.4 Priority 2
-   */
-  currentScenarioName: string;
 }
 
 // --- Initial State ---
@@ -52,7 +45,6 @@ const initialRecorderState: RecorderState = {
   sessionMetadata: null,
   actionCount: 0,
   failedWriteCount: 0,
-  currentScenarioName: '',
 };
 
 // --- Recorder Slice ---
@@ -89,14 +81,6 @@ const recorderSlice = createSlice({
     recordWriteFailure(state, _action: PayloadAction<string>) {
       state.failedWriteCount += 1;
     },
-
-    /**
-     * Set the currently selected scenario name.
-     * Replaces the closure variable threading through folder-manager deps.
-     */
-    setCurrentScenarioName(state, action: PayloadAction<string>) {
-      state.currentScenarioName = action.payload;
-    },
   },
 });
 
@@ -105,7 +89,6 @@ export const {
   endSession,
   recordDepthSample,
   recordWriteFailure,
-  setCurrentScenarioName,
 } = recorderSlice.actions;
 
 export const recorderReducer = recorderSlice.reducer;

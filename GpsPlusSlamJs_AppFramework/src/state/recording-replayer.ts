@@ -67,5 +67,5 @@ export async function replayRecording(
     store.dispatch(action);
   }
 
-  return store.getState() as CombinedRootState;
+  return store.getState();
 }

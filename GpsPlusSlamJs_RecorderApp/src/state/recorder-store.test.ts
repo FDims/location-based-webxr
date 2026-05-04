@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Recorder Store Tests
  *
  * Combined library + recorder Redux store integration tests. Migrated from
@@ -79,7 +79,7 @@ describe('Recorder Store', () => {
     // (recording-session-handlers, folder-manager, main, hud, file-system).
     // Storing it in Redux eliminates callback threading through factory deps.
     it('should initialize currentScenarioName as empty string', () => {
-      const state = store.getState().recorder;
+      const state = store.getState().scenario;
       expect(state.currentScenarioName).toBe('');
     });
 
@@ -87,7 +87,7 @@ describe('Recorder Store', () => {
     // so callers can dispatch setCurrentScenarioName and read via getState().
     it('should update currentScenarioName via setCurrentScenarioName action', () => {
       store.dispatch(setCurrentScenarioName('Park Walk'));
-      expect(store.getState().recorder.currentScenarioName).toBe('Park Walk');
+      expect(store.getState().scenario.currentScenarioName).toBe('Park Walk');
     });
 
     // Why this test matters: Starting a new session should NOT reset the
@@ -101,7 +101,7 @@ describe('Recorder Store', () => {
           startTime: Date.now(),
         })
       );
-      expect(store.getState().recorder.currentScenarioName).toBe('Downtown');
+      expect(store.getState().scenario.currentScenarioName).toBe('Downtown');
     });
   });
 
@@ -285,7 +285,8 @@ describe('Recorder Store', () => {
      * If writeAction isn't initialized properly, it throws "No active session".
      */
     it('should persist gpsData and recorder actions when recording', async () => {
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
 
       // Start session to enable persistence
       store.dispatch(
@@ -312,7 +313,8 @@ describe('Recorder Store', () => {
     });
 
     it('should NOT persist actions when not recording', async () => {
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
       vi.mocked(writeAction).mockClear();
 
       // Dispatch without starting a session
@@ -329,7 +331,8 @@ describe('Recorder Store', () => {
        * storage layer's directory structure. This test ensures the store
        * passes 1-based indices to writeAction, not 0-based.
        */
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
       vi.mocked(writeAction).mockClear();
 
       // Start session - this is the first persisted action
@@ -488,7 +491,8 @@ describe('Recorder Store', () => {
 
     it('should call onWriteFailure callback when write fails during persistence', async () => {
       // Why: UI layer needs to know about failures to show toast
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
       const mockError = new Error('NoModificationAllowedError: read-only');
       vi.mocked(writeAction).mockRejectedValueOnce(mockError);
 
@@ -513,7 +517,8 @@ describe('Recorder Store', () => {
 
     it('should dispatch recordWriteFailure when write fails', async () => {
       // Why: Failed write count needs to be tracked in state for summary
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
       const mockError = new Error('Write failed');
       vi.mocked(writeAction).mockRejectedValueOnce(mockError);
 
@@ -545,7 +550,8 @@ describe('Recorder Store', () => {
        * This also enables us to use dispatch() consistently in the catch block
        * instead of manually updating state, addressing the code duplication concern.
        */
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
       vi.mocked(writeAction).mockClear();
 
       store = createRecorderStore();
@@ -575,7 +581,8 @@ describe('Recorder Store', () => {
       // Why: JavaScript allows rejecting with any value (string, object, etc.)
       // UI feedback must work regardless of rejection type - without this fix,
       // non-Error rejections would skip the onWriteFailure callback entirely
-      const { writeAction } = await import('gps-plus-slam-app-framework/storage/file-system');
+      const { writeAction } =
+        await import('gps-plus-slam-app-framework/storage/file-system');
       const nonErrorRejection = 'string rejection value';
       vi.mocked(writeAction).mockRejectedValueOnce(nonErrorRejection);
 
@@ -616,6 +623,8 @@ describe('Recorder Store', () => {
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
       };
 
       const injectedStore = createRecorderStore({
@@ -642,6 +651,8 @@ describe('Recorder Store', () => {
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
       };
 
       const injectedStore = createRecorderStore({
@@ -670,6 +681,8 @@ describe('Recorder Store', () => {
         writeAction: vi.fn().mockRejectedValueOnce(new Error('Backend error')),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
       };
       const onWriteFailure = vi.fn();
 
@@ -736,6 +749,8 @@ describe('Recorder Store', () => {
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
       };
 
       const injectedStore = createRecorderStore({
@@ -756,6 +771,8 @@ describe('Recorder Store', () => {
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
         writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+        createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+        listSessions: vi.fn().mockResolvedValue([]),
       };
 
       const injectedStore = createRecorderStore({
@@ -766,7 +783,7 @@ describe('Recorder Store', () => {
         version: 1 as const,
         startedAt: '2026-01-01T00:00:00.000Z',
         endedAt: '2026-01-01T01:00:00.000Z',
-        scenarioName: 'Test',
+        contextTag: 'Test',
         actionCount: 10,
         frameCount: 5,
         userAgent: 'test-agent',
@@ -793,7 +810,7 @@ describe('Recorder Store', () => {
         version: 1 as const,
         startedAt: '2026-01-01T00:00:00.000Z',
         endedAt: '2026-01-01T01:00:00.000Z',
-        scenarioName: 'Replay',
+        contextTag: 'Replay',
         actionCount: 0,
         frameCount: 0,
         userAgent: 'test',

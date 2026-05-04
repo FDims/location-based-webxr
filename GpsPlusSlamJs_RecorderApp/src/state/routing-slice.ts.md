@@ -25,7 +25,9 @@ boundary migration plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-
 ## State shape
 
 ```ts
-{ currentScreen: 'setup' } // initial
+{
+  currentScreen: 'setup';
+} // initial
 ```
 
 ## Invariants

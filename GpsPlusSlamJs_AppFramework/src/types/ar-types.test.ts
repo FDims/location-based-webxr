@@ -25,7 +25,7 @@ import type { RefPointRecord } from '../storage/file-system';
 import type {
   DepthSample as StoreDepthSample,
   DepthPoint as StoreDepthPoint,
-} from 'gps-plus-slam-js';
+} from './ar-types';
 
 describe('AR Types', () => {
   describe('ARPose', () => {

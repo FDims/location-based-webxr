@@ -32,7 +32,6 @@ import { saveRefPointObservation } from './ref-point-loader';
 import type { GpsPoint, Vector3, Quaternion } from 'gps-plus-slam-js';
 import {
   initOpfsStorage,
-  createSession,
   writeAction,
   writeFrame,
   writeSessionMetadata,

@@ -11,7 +11,6 @@ export {
   endSession,
   recordDepthSample,
   recordWriteFailure,
-  setCurrentScenarioName,
   recorderReducer,
 } from './recorder-slice.js';
 
@@ -26,9 +25,9 @@ export {
   clearCurrentRefPointMarks,
   resetRefPointsState,
   selectCachedKnownRefPoints,
-  type RefPointMark,
   type RefPointsState,
 } from './ref-points-slice.js';
+export type { RefPointMark } from '../storage/ref-point-loader.js';
 
 // --- library re-exports (kept here for backwards-compat with existing
 //     `gps-plus-slam-app-framework/state` imports). ---
@@ -46,10 +45,10 @@ export type {
   RawDeviceOrientation,
   RecordGpsEventPayload,
   MarkReferencePointPayload,
-  DepthPoint,
-  DepthSample,
 } from 'gps-plus-slam-js';
-export type { StorageBackend, OpfsSessionMetadata } from '../storage/types.js';
+export type { DepthPoint, DepthSample } from '../types/ar-types.js';
+export type { StorageBackend } from '../storage/storage-backend.js';
+export type { SessionMetadata as OpfsSessionMetadata } from '../storage/opfs-storage.js';
 
 // --- recording-coordinator ---
 export {
