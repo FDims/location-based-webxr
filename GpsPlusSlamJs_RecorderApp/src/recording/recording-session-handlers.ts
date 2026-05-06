@@ -2,12 +2,12 @@
  * Recording Session Handlers
  *
  * Encapsulates all recording-session lifecycle state and event handlers,
- * extracted from main.ts (Finding #7 â€” main.ts decomposition, Step 3).
+ * extracted from main.ts (Finding #7 — main.ts decomposition, Step 3).
  *
  * The factory pattern allows main.ts to inject dependencies that change
  * over the app lifecycle (store, scenario name, recording options, etc.).
  *
- * All other dependencies (sensors, storage, UI) are imported directly â€”
+ * All other dependencies (sensors, storage, UI) are imported directly —
  * the same modules they were imported from in main.ts.
  */
 
@@ -290,7 +290,7 @@ export function createRecordingSessionHandlers(
 
     // Subscribe to state updates AFTER storage is successfully initialized.
     // Use a late-binding proxy so the map overlay created lazily (on button
-    // click) is picked up by the subscriber â€” same pattern as replay mode.
+    // click) is picked up by the subscriber — same pattern as replay mode.
     const mapOverlayProxy = {
       setGpsPosition(lat: number, lon: number): void {
         deps.getMapOverlay()?.setGpsPosition(lat, lon);
@@ -453,8 +453,8 @@ export function createRecordingSessionHandlers(
 
     if (!sessionMetadata?.startTime) {
       log.error(
-        'sessionMetadata.startTime is missing at stop â€” this indicates an inconsistent state. ' +
-          'The recorded startedAt will be incorrect (â‰ˆ endedAt).'
+        'sessionMetadata.startTime is missing at stop — this indicates an inconsistent state. ' +
+          'The recorded startedAt will be incorrect (≈ endedAt).'
       );
     }
 
@@ -534,7 +534,7 @@ export function createRecordingSessionHandlers(
     // Generate ZIP from OPFS when no external save location
     if (!lastSyncResult) {
       try {
-        log.info('No external save location â€” generating ZIP from OPFS...');
+        log.info('No external save location — generating ZIP from OPFS...');
         updateStatus('Packaging session...');
         const scenarioName =
           deps.getStore().getState().scenario.currentScenarioName ||
@@ -658,7 +658,7 @@ export function createRecordingSessionHandlers(
         log.info('User confirmed stop recording via back button');
         await handleStopRecording();
       } else {
-        log.info('User cancelled back during recording â€” re-pushing state');
+        log.info('User cancelled back during recording — re-pushing state');
         pushScreenState('recording');
       }
     } catch (err) {

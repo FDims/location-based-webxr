@@ -3,7 +3,7 @@
  *
  * Why these tests matter:
  * The recording-session-handlers module encapsulates all recording lifecycle
- * state and event handlers extracted from main.ts (Finding #7 â€” main.ts
+ * state and event handlers extracted from main.ts (Finding #7 — main.ts
  * decomposition, Step 3). These tests verify each handler's behavior in
  * isolation, ensuring the extraction preserves the exact same behavior.
  *
@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// â”€â”€ Hoisted mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Hoisted mocks ──────────────────────────────────────────────────────
 
 const {
   mockResetCoordinatorState,
@@ -186,7 +186,7 @@ const {
   };
 });
 
-// â”€â”€ Module mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Module mocks ───────────────────────────────────────────────────────
 
 vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   resetCoordinatorState: mockResetCoordinatorState,
@@ -310,7 +310,7 @@ vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
   }),
 }));
 
-// â”€â”€ Imports (after mocks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Imports (after mocks) ──────────────────────────────────────────────
 
 import {
   createRecordingSessionHandlers,
@@ -318,7 +318,7 @@ import {
   type RecordingSessionDeps,
 } from './recording-session-handlers';
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ────────────────────────────────────────────────────────────
 
 function createMockStore(): RecorderStore {
   return {
@@ -383,7 +383,7 @@ function createMockDeps(
   };
 }
 
-// â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Tests ──────────────────────────────────────────────────────────────
 
 describe('createRecordingSessionHandlers', () => {
   let handlers: RecordingSessionHandlers;
@@ -706,7 +706,7 @@ describe('handleStartRecording', () => {
   });
 
   it('should use Default Scenario when scenario name is empty', async () => {
-    // Why: Fallback for unset scenario name â€” store has empty currentScenarioName
+    // Why: Fallback for unset scenario name — store has empty currentScenarioName
     const emptyScenarioStore = createMockStore();
     vi.mocked(emptyScenarioStore.getState).mockReturnValue({
       ...emptyScenarioStore.getState(),
@@ -832,7 +832,7 @@ describe('handleStopRecording', () => {
   });
 
   it('should replace screen state with summary', async () => {
-    // Why: Recording â†’ Summary is a terminal state transition
+    // Why: Recording → Summary is a terminal state transition
     await handlers.handleStopRecording();
     expect(mockReplaceScreenState).toHaveBeenCalledWith('summary');
   });
@@ -861,13 +861,13 @@ describe('handleStopRecording', () => {
   });
 
   it('should generate ZIP from OPFS when no external save location', async () => {
-    // Why: Issue 3 â€” summary always needs ZIP data for share button
+    // Why: Issue 3 — summary always needs ZIP data for share button
     mockGetSaveFileHandle.mockReturnValue(null);
     await handlers.handleStopRecording();
     expect(mockExportSessionAsZip).toHaveBeenCalled();
   });
 
-  it('should call exportSessionAsZip on main thread (Bug 12 â€” known limitation)', async () => {
+  it('should call exportSessionAsZip on main thread (Bug 12 — known limitation)', async () => {
     // Why: Bug 12 documents that ZIP export runs on the main thread, blocking
     // the UI during stop-recording. This test verifies the current behavior so
     // any future Worker-offload refactor has a baseline to replace.
@@ -906,7 +906,7 @@ describe('handleStopRecording', () => {
 
   it('should capture endTime at stop and use consistently in metadata and summary (Issue #4)', async () => {
     // Why: Both session metadata (endedAt) and the summary panel (endTime)
-    // must use the same timestamp â€” the moment recording stopped, not a
+    // must use the same timestamp — the moment recording stopped, not a
     // later time after async operations (sync, ZIP export) have completed.
     // If Date.now() is called independently for each, the endTime drifts.
     const stopTime = 1700000000000;

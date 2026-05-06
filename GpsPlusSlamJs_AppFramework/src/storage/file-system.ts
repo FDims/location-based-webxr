@@ -4,7 +4,7 @@
  * Facade over the OPFS storage module. Provides session lifecycle, write
  * operations, and backwards-compatible scenario management for the recorder.
  *
- * The core OPFS module (opfs-storage.ts) is scenario-free â€” it manages
+ * The core OPFS module (opfs-storage.ts) is scenario-free — it manages
  * flat sessions/{timestamp}/ directories. This module bridges the gap by
  * managing scenario directory handles for consumers that still need them
  * (recorder, ref-point loader, etc.) until those are migrated to
@@ -121,7 +121,7 @@ export async function verifyWriteAccess(
 }
 
 // ============================================================================
-// Scenario directory management (legacy â€” moves to recorder in Iter 3)
+// Scenario directory management (legacy — moves to recorder in Iter 3)
 // ============================================================================
 
 async function ensureScenariosDir(): Promise<FileSystemDirectoryHandle | null> {

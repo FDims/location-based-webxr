@@ -1,5 +1,5 @@
 ﻿/**
- * Recorder-app scenario slice â€” owns the currently selected scenario name.
+ * Recorder-app scenario slice — owns the currently selected scenario name.
  *
  * Carved out of the framework's `recording-slice` in Iter 1D of the boundary
  * migration ([plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md)).

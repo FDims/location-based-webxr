@@ -3,7 +3,7 @@
  *
  * Combined library + recorder Redux store integration tests. Migrated from
  * the framework's old `state/store.test.ts` as part of Iter 1 of the
- * AppFramework / RecorderApp boundary migration Ã¢â‚¬â€ the recorder now owns
+ * AppFramework / RecorderApp boundary migration — the recorder now owns
  * `createRecorderStore`, so its tests live alongside it.
  *
  * Tests verify that:
@@ -91,7 +91,7 @@ describe('Recorder Store', () => {
     });
 
     // Why this test matters: Starting a new session should NOT reset the
-    // scenario name Ã¢â‚¬â€ user selects it before recording and it persists.
+    // scenario name — user selects it before recording and it persists.
     it('should preserve currentScenarioName across startSession', () => {
       store.dispatch(setCurrentScenarioName('Downtown'));
       store.dispatch(
@@ -395,14 +395,14 @@ describe('Recorder Store', () => {
         2
       );
 
-      // Create a SECOND store Ã¢â‚¬â€ this must NOT affect store1's counter
+      // Create a SECOND store — this must NOT affect store1's counter
       const spyBackend2 = new NullStorageBackend();
       createRecorderStore({
         storageBackend: spyBackend2,
         enableDevChecks: false,
       });
 
-      // Dispatch on store1 again Ã¢â‚¬â€ index must continue at 3, not restart at 1
+      // Dispatch on store1 again — index must continue at 3, not restart at 1
       store1.dispatch(setZeroPos({ lat: 1, lon: 1 }));
       expect(writeSpy1).toHaveBeenLastCalledWith(
         expect.objectContaining({ type: 'gpsData/setZeroPos' }),
@@ -618,7 +618,7 @@ describe('Recorder Store', () => {
      */
 
     it('should accept a storageBackend option and use it for persistence', () => {
-      // Why: Core F2 behavior Ã¢â‚¬â€ injected backend replaces the hard-coded import
+      // Why: Core F2 behavior — injected backend replaces the hard-coded import
       const mockBackend = {
         writeAction: vi.fn().mockResolvedValue(undefined),
         writeFrame: vi.fn().mockResolvedValue(undefined),
@@ -707,7 +707,7 @@ describe('Recorder Store', () => {
     });
 
     it('should not persist when using NullStorageBackend in replay mode', () => {
-      // Why: Validates the replay use case Ã¢â‚¬â€ no persistence side effects
+      // Why: Validates the replay use case — no persistence side effects
       const backend = new NullStorageBackend();
       const spy = vi.spyOn(backend, 'writeAction');
 
@@ -732,7 +732,7 @@ describe('Recorder Store', () => {
 
   describe('writeFrame and writeSessionMetadata delegation (A1)', () => {
     /**
-     * Why these tests matter (Finding A1 Ã¢â‚¬â€ Architecture Audit):
+     * Why these tests matter (Finding A1 — Architecture Audit):
      * main.ts imports writeFrame/writeSessionMetadata directly from file-system.ts,
      * bypassing the StorageBackend abstraction. This means NullStorageBackend is
      * ineffective for frame/metadata writes during replay/testing.
@@ -795,7 +795,7 @@ describe('Recorder Store', () => {
       expect(mockBackend.writeSessionMetadata).toHaveBeenCalledWith(metadata);
     });
 
-    it('should use NullStorageBackend for writeFrame in replay mode Ã¢â‚¬â€ no side effects', async () => {
+    it('should use NullStorageBackend for writeFrame in replay mode — no side effects', async () => {
       // Why: In replay mode, frame writes must be silently suppressed.
       // Before A1 fix, main.ts called file-system.ts directly, ignoring NullStorageBackend.
       const backend = new NullStorageBackend();
@@ -822,7 +822,7 @@ describe('Recorder Store', () => {
     });
   });
 
-  describe('Routing State (Bug 2 Ã¢â‚¬â€ SPA audit)', () => {
+  describe('Routing State (Bug 2 — SPA audit)', () => {
     // Why: Bug 2 requires currentScreen to live in Redux, not a module
     // variable. The store must include routing state and handle routing/
     // prefixed actions.

@@ -6,10 +6,10 @@
  * engine, then returns a controller for UI integration.
  *
  * Key risks addressed:
- * - R6: Store identity â€” the same store is passed to wireStoreSubscribers
+ * - R6: Store identity — the same store is passed to wireStoreSubscribers
  *   and the ReplayEngine so dispatched actions trigger visualization updates.
- * - R7: Error handling â€” onError callback is wired from config to the engine.
- * - R8: Data flow â€” zip bytes â†’ loadActionsFromZip â†’ actions â†’ engine.
+ * - R7: Error handling — onError callback is wired from config to the engine.
+ * - R8: Data flow — zip bytes → loadActionsFromZip → actions → engine.
  *
  * @see docs/2026-02-19-replay-mode.md Iteration 6
  */
@@ -140,11 +140,11 @@ export async function startReplayMode(
   initReplayScene(config.container);
   log.info('Replay scene initialized');
 
-  // Get the alignment lerper (Issue 4) â€” store subscribers route alignment
+  // Get the alignment lerper (Issue 4) — store subscribers route alignment
   // updates through the lerper for smooth interpolation instead of snapping.
   const alignmentLerper = getAlignmentLerper();
 
-  // Map overlay proxy â€” delegates to a late-bound real overlay so the
+  // Map overlay proxy — delegates to a late-bound real overlay so the
   // store subscriber can update the map even though it is created later.
   let mapOverlayTarget: ReplayMapOverlay | null = null;
   const mapOverlayProxy = {
@@ -190,17 +190,17 @@ export async function startReplayMode(
         if (!arpose) {
           return;
         }
-        // Convert NUEâ†’WebXR so (alignment Ã— W2N) Ã— WebXR_pos = alignment Ã— NUE_pos
+        // Convert NUE→WebXR so (alignment × W2N) × WebXR_pos = alignment × NUE_pos
         const webxrPos = nuePositionToWebXR(odomPosition);
         arpose.position.fromArray(webxrPos);
-        // Rotation is now NUE in state â€” convert back to WebXR for arpose
+        // Rotation is now NUE in state — convert back to WebXR for arpose
         // (arpose sits below basisChangeNode in WebXR-local space)
         const webxrRot = nueQuaternionToWebXR(odomRotation);
         arpose.quaternion.fromArray(webxrRot);
       };
     })(),
     // Issue #3: Update orbit target when alignment snapshots are created.
-    // The snapshot NUE position is in scene-root space (A_k Ã— p_k), so it
+    // The snapshot NUE position is in scene-root space (A_k × p_k), so it
     // can be passed directly to updateOrbitTarget.
     onAlignmentSnapshot: (() => {
       const snapshotPos = new THREE.Vector3();

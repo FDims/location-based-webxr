@@ -1,8 +1,8 @@
 ﻿/**
- * Recorder Store â€” composable store for the recorder app.
+ * Recorder Store — composable store for the recorder app.
  *
  * Wraps the framework's `createSlamAppStore` factory and supplies the
- * recorder-specific extras (routing, refPoints â€” until refPoints moves
+ * recorder-specific extras (routing, refPoints — until refPoints moves
  * out in Iter 3, scenario in Iter 1D). The framework no longer ships a
  * `createRecorderStore`; that wrapper now lives in the consuming app.
  *
@@ -109,7 +109,7 @@ export interface CombinedRootState extends LibraryRootState {
 }
 
 /**
- * Recorder store handle. Same shape as before the Iter 1 split â€” the
+ * Recorder store handle. Same shape as before the Iter 1 split — the
  * framework's `SlamAppStore` already provides this surface; we just narrow
  * the state type to `CombinedRootState` for recorder consumers.
  */
@@ -124,7 +124,7 @@ export interface RecorderStore {
 export interface RecorderStoreOptions {
   /** Show toast / surface errors on persistence failures. */
   onWriteFailure?: (error: Error) => void;
-  /** Override default OPFS backend (tests / replay â†’ NullStorageBackend). */
+  /** Override default OPFS backend (tests / replay → NullStorageBackend). */
   storageBackend?: StorageBackend;
   /** Disable RTK dev-only middleware in high-throughput replay scenarios. */
   enableDevChecks?: boolean;

@@ -3,7 +3,7 @@
  *
  * Wires `createSlamAppStore()` (with the no-op `NullStorageBackend`) to
  * a tiny Three.js scene + status panel. No WebXR, no AR session, no map
- * UI â€” the goal is to show the smallest end-to-end integration that
+ * UI — the goal is to show the smallest end-to-end integration that
  * proves the framework + closed-source core resolve and run in a real
  * browser without depending on any recorder-only slices (routing,
  * scenarios, ref-points).

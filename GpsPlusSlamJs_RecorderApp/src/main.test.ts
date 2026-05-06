@@ -302,7 +302,7 @@ vi.mock('./ui/hud', () => ({
   setNewRefPointButtonVisible: vi.fn(),
 }));
 
-// Mock session-browser for handleOpenFolder tests (Issue 1 â€” 2026-02-27 + 2026-03-01)
+// Mock session-browser for handleOpenFolder tests (Issue 1 — 2026-02-27 + 2026-03-01)
 vi.mock('./ui/session-browser', () => ({
   DEFAULT_SCENARIO: 'Default Scenario',
   listScenariosFromFolder: vi.fn().mockResolvedValue([]),
@@ -314,7 +314,7 @@ vi.mock('./ui/session-browser', () => ({
   }),
 }));
 
-// Mock ref-point-importer for handleOpenFolder tests (Issue 1 â€” 2026-02-27)
+// Mock ref-point-importer for handleOpenFolder tests (Issue 1 — 2026-02-27)
 vi.mock('./storage/ref-point-importer', () => ({
   importRefPointsFromFolder: vi.fn().mockResolvedValue({
     success: true,
@@ -324,14 +324,14 @@ vi.mock('./storage/ref-point-importer', () => ({
   }),
 }));
 
-// Mock confirm-dialog for back-during-recording tests (Issue 5 â€” 2026-02-27)
+// Mock confirm-dialog for back-during-recording tests (Issue 5 — 2026-02-27)
 vi.mock('./ui/confirm-dialog', () => ({
   showConfirmDialog: vi.fn().mockResolvedValue(false),
   isConfirmDialogVisible: vi.fn().mockReturnValue(false),
   destroyConfirmDialog: vi.fn(),
 }));
 
-// Mock navigation for back-during-recording tests (Issue 5 â€” 2026-02-27)
+// Mock navigation for back-during-recording tests (Issue 5 — 2026-02-27)
 vi.mock('./ui/navigation', () => ({
   initNavigation: vi.fn(),
   enableBeforeUnloadWarning: vi.fn(),
@@ -450,7 +450,7 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   getDepthSampleCount: vi.fn().mockReturnValue(0),
 }));
 
-// Mock the framework's core re-export â€” provides odometryTrackingRestarted action creator.
+// Mock the framework's core re-export — provides odometryTrackingRestarted action creator.
 // (After the Option-C migration, app code imports core symbols via
 // `gps-plus-slam-app-framework/core` rather than directly from `gps-plus-slam-js`.)
 vi.mock('gps-plus-slam-app-framework/core', () => ({
@@ -796,7 +796,7 @@ describe('Storage Session Initialization', () => {
     await handleStartRecordingForTesting();
 
     // EXPECTED: showRecordingControls should be called to show Stop button
-    // and hide Start button, transitioning from AR_READY â†’ RECORDING
+    // and hide Start button, transitioning from AR_READY → RECORDING
     expect(showRecordingControls).toHaveBeenCalled();
   });
 });
@@ -1043,7 +1043,7 @@ describe('AR Tracking Restart Callbacks (Phase 1+2)', () => {
 
   /**
    * Why this test matters:
-   * Phase 1 â€” setTrackingCallbacks must be wired before initAR() so that
+   * Phase 1 — setTrackingCallbacks must be wired before initAR() so that
    * when TrackingStateManager detects an origin-reset recovery (Case 2),
    * the store receives the odometryTrackingRestarted action to correct
    * accumulated offsets and clear stale trajectory data.
@@ -1127,7 +1127,7 @@ describe('AR Tracking Restart Callbacks (Phase 1+2)', () => {
 
   /**
    * Why this test matters:
-   * Phase 2 Case 1 â€” setTrackingRecoveredCallback handles seamless
+   * Phase 2 Case 1 — setTrackingRecoveredCallback handles seamless
    * recovery where the coordinate frame hasn't changed. It should
    * clear the "LOST" UI indicator without dispatching alignment correction.
    */
@@ -1374,7 +1374,7 @@ describe('Session Metadata Persistence (F1)', () => {
     // Start recording
     await handleStartRecordingForTesting();
 
-    // Stop recording â€” should write session metadata
+    // Stop recording — should write session metadata
     await handleStopRecordingForTesting();
 
     // EXPECTED: writeSessionMetadata must be called exactly once
@@ -1442,7 +1442,7 @@ describe('Session Metadata Persistence (F1)', () => {
    * writeSessionMetadata() must be called BEFORE the final syncManager.syncNow()
    * so that session.json is included in the external ZIP file. If the order is
    * reversed (sync first, then write metadata), the ZIP produced during recording
-   * will lack session.json â€” breaking replay-mode scenario discovery (Issue 1)
+   * will lack session.json — breaking replay-mode scenario discovery (Issue 1)
    * which reads scenarioName from session.json inside each zip.
    */
   it('should call writeSessionMetadata BEFORE final syncNow (F2 ordering fix)', async () => {
@@ -1479,7 +1479,7 @@ describe('Session Metadata Persistence (F1)', () => {
     // Start recording (creates SyncManager)
     await handleStartRecordingForTesting();
 
-    // Stop recording â€” must write metadata THEN do final sync
+    // Stop recording — must write metadata THEN do final sync
     await handleStopRecordingForTesting();
 
     // EXPECTED: writeSessionMetadata runs before syncNow
@@ -1498,7 +1498,7 @@ describe('ZIP generation without external save location (Issue 3)', () => {
   /**
    * Why this test matters:
    * When no external save location is chosen, the summary screen showed
-   * "â€”" for ZIP stats and hid the share button, because lastSyncResult
+   * "—" for ZIP stats and hid the share button, because lastSyncResult
    * was only populated via SyncManager (which requires a save file handle).
    * The fix generates a ZIP from OPFS at recording stop so the summary
    * always has ZIP data.
@@ -1540,7 +1540,7 @@ describe('ZIP generation without external save location (Issue 3)', () => {
    * Why this test matters:
    * The summary data must include ZIP blob, size, and file count so
    * the share button is visible and ZIP stats display real values
-   * instead of "â€”".
+   * instead of "—".
    */
   it('should pass ZIP data to showSessionSummary when no save file handle', async () => {
     const { showSessionSummary } = await import('./ui/session-summary');
@@ -1587,7 +1587,7 @@ describe('ZIP generation without external save location (Issue 3)', () => {
   /**
    * Why this test matters:
    * When exportSessionAsZip fails (e.g., OPFS error), the recording
-   * stop should still complete gracefully â€” summary shows without ZIP
+   * stop should still complete gracefully — summary shows without ZIP
    * data rather than crashing.
    */
   it('should handle exportSessionAsZip failure gracefully', async () => {
@@ -1676,7 +1676,7 @@ describe('Imported Reference Points in Picker (Task 1e)', () => {
       },
     };
 
-    // Set imported ref point at same GPS position â†’ should trigger re-observation bypass
+    // Set imported ref point at same GPS position → should trigger re-observation bypass
     setImportedRefPointsForTesting([
       {
         id: 'Bank',
@@ -1852,7 +1852,7 @@ describe('handleMarkRefPoint concurrent call prevention', () => {
 });
 
 // ============================================================================
-// Soft Reset Tests (Issue 4 â€” retain read permission on new recording)
+// Soft Reset Tests (Issue 4 — retain read permission on new recording)
 // ============================================================================
 
 describe('resetForNewRecording (soft reset)', () => {
@@ -1870,7 +1870,7 @@ describe('resetForNewRecording (soft reset)', () => {
     expect(resetExternalForNewRecording).toHaveBeenCalled();
   });
 
-  // Why this test matters: Bug 7 (SPA audit) â€” clearSessionRefPointUsage
+  // Why this test matters: Bug 7 (SPA audit) — clearSessionRefPointUsage
   // was dispatched to the old store before createNewStore() replaced it,
   // making the dispatch a no-op. The new store starts with clean state by
   // default, so the dispatch was redundant. This test documents that the
@@ -2003,7 +2003,7 @@ describe('resetForNewRecording (soft reset)', () => {
 });
 
 // ============================================================================
-// Extracted Helper Tests â€” loadAndDisplayRefPoints
+// Extracted Helper Tests — loadAndDisplayRefPoints
 // ============================================================================
 
 describe('loadAndDisplayRefPoints', () => {
@@ -2013,7 +2013,7 @@ describe('loadAndDisplayRefPoints', () => {
 
   /**
    * Why this test matters:
-   * loadAndDisplayRefPoints extracts the duplicated loadâ†’flattenâ†’display
+   * loadAndDisplayRefPoints extracts the duplicated load→flatten→display
    * pattern used in both loadPriorReferencePoints and handleScenarioChange.
    * Verifying it calls the right pipeline prevents regressions if either
    * call site is changed independently.
@@ -2151,7 +2151,7 @@ describe('GPS warm-up after permission grant (Issue 4)', () => {
 });
 
 // ============================================================================
-// Extracted Helper Tests â€” collectTrackerErrors
+// Extracted Helper Tests — collectTrackerErrors
 // ============================================================================
 
 describe('collectTrackerErrors', () => {
@@ -2214,10 +2214,10 @@ describe('collectTrackerErrors', () => {
 });
 
 // ============================================================================
-// handleOpenFolder â€” recording mode scenario dropdown (Issue 1, 2026-02-27)
+// handleOpenFolder — recording mode scenario dropdown (Issue 1, 2026-02-27)
 // ============================================================================
 
-describe('handleOpenFolder â€” recording mode scenario dropdown', () => {
+describe('handleOpenFolder — recording mode scenario dropdown', () => {
   // Why this test suite matters:
   // Issue 1 from 2026-02-27 user feedback: when the user selects a folder with
   // existing zip files in recording mode, the scenario dropdown (#scenario-select)
@@ -2378,7 +2378,7 @@ describe('handleBackDuringRecording (Issue 5)', () => {
   });
 
   it('should stop recording when user confirms', async () => {
-    // Why: User wants to stop â€” handleStopRecording runs the normal
+    // Why: User wants to stop — handleStopRecording runs the normal
     // stop flow (summary screen etc.).
     vi.mocked(showConfirmDialog).mockResolvedValue(true);
 
@@ -2441,10 +2441,10 @@ describe('handleBackDuringRecording (Issue 5)', () => {
 });
 
 // ============================================================================
-// handleOpenFolder â€” replay mode zip discovery (Issue 1, 2026-03-01)
+// handleOpenFolder — replay mode zip discovery (Issue 1, 2026-03-01)
 // ============================================================================
 
-describe('handleOpenFolder â€” replay mode zip discovery', () => {
+describe('handleOpenFolder — replay mode zip discovery', () => {
   // Why this test suite matters:
   // Issue 1 from 2026-03-01 user feedback: when the user opens a folder in
   // replay mode, root-level zip files must be discovered via session.json
@@ -2493,7 +2493,7 @@ describe('handleOpenFolder â€” replay mode zip discovery', () => {
   });
 
   it('should merge directory scenarios with zip metadata scenarios', async () => {
-    // Why: Both discovery mechanisms must contribute â€” a folder may have
+    // Why: Both discovery mechanisms must contribute — a folder may have
     // subdirectory-based scenarios AND root-level zips with metadata.
     vi.mocked(listScenariosFromFolder).mockResolvedValue(['DirScenario']);
     vi.mocked(discoverScenariosFromZipMetadata).mockResolvedValue({
@@ -2555,10 +2555,10 @@ describe('handleOpenFolder â€” replay mode zip discovery', () => {
 });
 
 // ============================================================================
-// handleReplayScenarioChange â€” merged scenario sources (Issue 1, 2026-03-01)
+// handleReplayScenarioChange — merged scenario sources (Issue 1, 2026-03-01)
 // ============================================================================
 
-describe('handleReplayScenarioChange â€” zip metadata cache', () => {
+describe('handleReplayScenarioChange — zip metadata cache', () => {
   // Why this test suite matters:
   // After zip metadata discovery populates the cache, selecting a scenario
   // that came from zip metadata (not a subdirectory) must serve sessions

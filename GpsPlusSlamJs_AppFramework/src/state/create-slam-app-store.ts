@@ -1,5 +1,5 @@
 ﻿/**
- * `createSlamAppStore` â€” composable Redux store factory for AR+GPS apps.
+ * `createSlamAppStore` — composable Redux store factory for AR+GPS apps.
  *
  * Introduced in Iter 1 of the AppFramework/RecorderApp boundary migration.
  * Wires the three library reducers (`gpsData`, `gpsElements`, `arElements`),
@@ -8,12 +8,12 @@
  * Recorder-only state (routing screen, ref-points, scenario) is plugged in
  * by the consumer via `extraReducers` / `extraMiddleware`. The factory itself
  * never references those concepts so apps that don't need them (POI viewers,
- * navigation arrows, â€¦) compose freely.
+ * navigation arrows, …) compose freely.
  *
  * The legacy `createRecorderStore` from `store.ts` is built on top of this
  * factory and will move out of the framework in Iter 1D.
  *
- * @see docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md â€” Iter 1
+ * @see docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md — Iter 1
  */
 
 import {
@@ -91,7 +91,7 @@ export interface SlamAppStoreOptions<
    * Apps with a paid license override here. Validation always runs and throws
    * on invalid / expired / empty keys.
    *
-   * @see EULA.md Â§3 â€” License Key
+   * @see EULA.md §3 — License Key
    */
   licenseKey?: string;
 }

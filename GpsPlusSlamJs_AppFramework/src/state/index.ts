@@ -1,5 +1,5 @@
 /**
- * State module â€” Combined store factory, recording coordinator, replay engine, store subscribers.
+ * State module — Combined store factory, recording coordinator, replay engine, store subscribers.
  */
 
 // --- recording-slice (recorder session state, lives in framework so persistence
@@ -14,7 +14,7 @@ export {
   recordingReducer,
 } from './recording-slice.js';
 
-// --- ref-points-slice â€” moved to recorder app in Iter 3 of the
+// --- ref-points-slice — moved to recorder app in Iter 3 of the
 //     AppFramework / RecorderApp boundary migration. Recorder consumers
 //     import these from their own local slice now. ---
 

@@ -2,7 +2,7 @@
  * Replay Handlers
  *
  * Encapsulates all replay-mode state and event handlers, extracted from
- * main.ts (Finding #7 â€” main.ts decomposition, replay controller extraction).
+ * main.ts (Finding #7 — main.ts decomposition, replay controller extraction).
  *
  * The factory pattern allows main.ts to inject the `setStore` callback,
  * which is the single cross-cutting dependency: when replay starts,
@@ -10,7 +10,7 @@
  * (R6 from replay-mode design doc).
  *
  * All other dependencies (UI, file system, replay-mode orchestrator) are
- * imported directly â€” the same modules they were imported from in main.ts.
+ * imported directly — the same modules they were imported from in main.ts.
  */
 
 import { startReplayMode, type ReplayModeController } from './replay-mode.js';
@@ -145,7 +145,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
       log.error('Failed to list sessions:', err);
       replaySessionEntries = [];
       populateReplaySessions([]);
-      showToast('Failed to list sessions â€” see logs', { severity: 'error' });
+      showToast('Failed to list sessions — see logs', { severity: 'error' });
     }
   }
 
@@ -212,7 +212,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
         onComplete: () => {
           updatePlayPauseButton('completed');
           updateStatus('Replay complete');
-          showToast('âœ… Replay complete', { severity: 'info' });
+          showToast('✅ Replay complete', { severity: 'info' });
           log.info('Replay complete');
         },
         onError: (actionIndex: number, error: Error) => {
@@ -232,11 +232,11 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
       updateReplayProgress(0, replayController.getActionCount());
       updateStatus(`Replaying: ${session.filename}`);
 
-      // Start playback (don't await â€” UI controls need to be responsive)
+      // Start playback (don't await — UI controls need to be responsive)
       void replayController.play(speedFactor);
     } catch (err) {
       log.error('Failed to start replay:', err);
-      showError('Failed to start replay â€” see logs');
+      showError('Failed to start replay — see logs');
     }
   }
 
@@ -276,7 +276,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     if (!mapOverlay) {
       const sceneState = getReplayState();
       if (!sceneState) {
-        log.warn('Cannot create map overlay â€” replay scene not initialized');
+        log.warn('Cannot create map overlay — replay scene not initialized');
         return;
       }
 

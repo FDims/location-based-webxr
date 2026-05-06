@@ -9,12 +9,12 @@
  * - Native tile loading (multi-tile, caching, zoom)
  *
  * Tests are structured by concern:
- * 1. Constructor / defaults â€” verifies configuration
- * 2. Show / hide / toggle â€” visibility lifecycle
- * 3. GPS position â€” setGpsPosition and map centering
- * 4. Live overlays â€” addRawGpsPoint, addFusedPoint, etc.
- * 5. Dispose â€” resource cleanup
- * 6. Store subscriber compatibility â€” matches { setGpsPosition } interface
+ * 1. Constructor / defaults — verifies configuration
+ * 2. Show / hide / toggle — visibility lifecycle
+ * 3. GPS position — setGpsPosition and map centering
+ * 4. Live overlays — addRawGpsPoint, addFusedPoint, etc.
+ * 5. Dispose — resource cleanup
+ * 6. Store subscriber compatibility — matches { setGpsPosition } interface
  *
  * @vitest-environment jsdom
  */
@@ -23,7 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
 
 // ---------------------------------------------------------------------------
-// Mock Leaflet â€” same pattern as summary-map.test.ts
+// Mock Leaflet — same pattern as summary-map.test.ts
 // ---------------------------------------------------------------------------
 
 let lastMapInstance: ReturnType<typeof createMockMap>;
@@ -156,7 +156,7 @@ vi.mock('leaflet', () => {
   };
 });
 
-// Mock CSS3DObject â€” the addon expects a DOM element and creates a THREE.Object3D
+// Mock CSS3DObject — the addon expects a DOM element and creates a THREE.Object3D
 vi.mock('three/addons/renderers/CSS3DRenderer.js', () => {
   class MockCSS3DObject extends THREE.Object3D {
     element: HTMLElement;
@@ -276,7 +276,7 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: Backward compat â€” attaches to camera by default
+    // Why: Backward compat — attaches to camera by default
     it('should attach to camera when mapParent is not provided', () => {
       const { overlay, camera } = createOverlay();
       overlay.setGpsPosition(50.0, 8.0);
@@ -300,7 +300,7 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: Basic show lifecycle â€” sets visibility and adds to parent
+    // Why: Basic show lifecycle — sets visibility and adds to parent
     it('should show when GPS position is set', () => {
       const { overlay } = createOverlay();
       overlay.setGpsPosition(50.0, 8.0);
@@ -335,8 +335,8 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: Regression test â€” mesh persists across hideâ†’show cycles
-    it('should re-add to parent after hideâ†’show cycle', () => {
+    // Why: Regression test — mesh persists across hide→show cycles
+    it('should re-add to parent after hide→show cycle', () => {
       const { overlay, camera } = createOverlay();
       overlay.setGpsPosition(50.0, 8.0);
       overlay.show();
@@ -347,7 +347,7 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: show() is idempotent â€” no duplicates
+    // Why: show() is idempotent — no duplicates
     it('should not create duplicate children on repeated show()', () => {
       const { overlay, camera } = createOverlay();
       overlay.setGpsPosition(50.0, 8.0);
@@ -473,7 +473,7 @@ describe('LeafletMapOverlay', () => {
           polylineCount++;
         }
       });
-      // At least 1 polyline (fused â€” raw might not have points yet)
+      // At least 1 polyline (fused — raw might not have points yet)
       expect(polylineCount).toBeGreaterThanOrEqual(1);
       overlay.dispose();
     });
@@ -521,8 +521,8 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: Overlay data should survive hideâ†’show cycles
-    it('should preserve overlay data across hideâ†’show cycles', () => {
+    // Why: Overlay data should survive hide→show cycles
+    it('should preserve overlay data across hide→show cycles', () => {
       const { overlay } = createOverlay();
       overlay.setGpsPosition(50.0, 8.0);
       overlay.show();
@@ -563,7 +563,7 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: Map must face up (XZ plane) â€” rotation -90Â° on X
+    // Why: Map must face up (XZ plane) — rotation -90Â° on X
     it('should rotate the CSS3DObject to face up', () => {
       const { overlay, camera } = createOverlay();
       overlay.setGpsPosition(50.0, 8.0);
@@ -645,7 +645,7 @@ describe('LeafletMapOverlay', () => {
     });
 
     // Why: Zoom should be clamped to valid range
-    it('should clamp zoom level to valid range (0â€“19)', () => {
+    it('should clamp zoom level to valid range (0–19)', () => {
       const { overlay } = createOverlay();
       overlay.setZoomLevel(25);
       expect(overlay.getZoomLevel()).toBeLessThanOrEqual(19);
@@ -698,7 +698,7 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
-    // Why: zoomIn()/zoomOut() should work before show() â€” changes buffered zoom level
+    // Why: zoomIn()/zoomOut() should work before show() — changes buffered zoom level
     it('should update zoom level before show() is called', () => {
       const { overlay } = createOverlay({ zoomLevel: 15 });
       overlay.zoomIn();
@@ -716,14 +716,14 @@ describe('LeafletMapOverlay', () => {
   // ---------------------------------------------------------------------------
 
   describe('backward compat', () => {
-    // Why: updatePosition() is called in the frame loop â€” must be a safe no-op
+    // Why: updatePosition() is called in the frame loop — must be a safe no-op
     it('should have updatePosition() as a no-op', () => {
       const { overlay } = createOverlay();
       expect(() => overlay.updatePosition()).not.toThrow();
       overlay.dispose();
     });
 
-    // Why: getMapSize/getHeightOffset are used in tests â€” equivalent accessors needed
+    // Why: getMapSize/getHeightOffset are used in tests — equivalent accessors needed
     it('should expose getWorldSize() and getHeightOffset()', () => {
       const { overlay } = createOverlay();
       expect(typeof overlay.getWorldSize()).toBe('number');
@@ -815,7 +815,7 @@ describe('LeafletMapOverlay', () => {
       const leafletMap = overlay.getLeafletMap();
       expect(leafletMap).not.toBeNull();
 
-      // Find the mapContainer â€” it's the div with our specific size
+      // Find the mapContainer — it's the div with our specific size
       const allDivs = document.querySelectorAll('div');
       let mapContainer: HTMLElement | null = null;
       for (const div of allDivs) {
@@ -836,14 +836,14 @@ describe('LeafletMapOverlay', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // DOM hardcoding audit â€” regression tests
+  // DOM hardcoding audit — regression tests
   // ---------------------------------------------------------------------------
 
   describe('DOM hardcoding audit regressions', () => {
     /**
      * Why this test matters:
      * Leaflet divIcon className values that nothing consumes are leaky
-     * abstractions â€” they could collide with host-app CSS rules.
+     * abstractions — they could collide with host-app CSS rules.
      * See: 2026-04-01-code-review-dom-hardcoding-audit.md, Finding 2 (P5).
      */
     it('divIcon markers do not set hardcoded CSS class names', async () => {

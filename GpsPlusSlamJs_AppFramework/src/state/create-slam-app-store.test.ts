@@ -1,5 +1,5 @@
 ﻿/**
- * Tests for `createSlamAppStore` â€” the framework's composable Redux store
+ * Tests for `createSlamAppStore` — the framework's composable Redux store
  * factory introduced in Iter 1 of the AppFramework/RecorderApp boundary
  * migration ([plan](../../../../GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md)).
  *
@@ -7,7 +7,7 @@
  * It wires:
  * - The three library reducers (`gpsData`, `gpsElements`, `arElements`).
  * - The framework-owned recording lifecycle slice (`recorder`).
- * - The persistence middleware bridging Redux â†’ `StorageBackend`.
+ * - The persistence middleware bridging Redux → `StorageBackend`.
  *
  * Recorder-only state (routing, ref-points, scenario name) is supplied
  * by the consumer via `extraReducers` / `extraMiddleware`. The factory
@@ -82,7 +82,7 @@ describe('createSlamAppStore', () => {
 
   describe('extraReducers', () => {
     it('mounts caller-supplied reducers under their slice keys', () => {
-      // Why: composable factory contract â€” recorder will plug routing /
+      // Why: composable factory contract — recorder will plug routing /
       // refPoints / scenario through this seam without the framework knowing.
       const counter = createSlice({
         name: 'counter',
@@ -134,7 +134,7 @@ describe('createSlamAppStore', () => {
 
   describe('storage backend wiring', () => {
     it('routes writeFrame / writeSessionMetadata through the supplied backend', async () => {
-      // Why: A1 fix â€” abstraction boundary; tests must be able to substitute
+      // Why: A1 fix — abstraction boundary; tests must be able to substitute
       // a NullStorageBackend / spy backend in place of OPFS.
       const writeFrame = vi.fn().mockResolvedValue(undefined);
       const writeSessionMetadata = vi.fn().mockResolvedValue(undefined);
@@ -163,7 +163,7 @@ describe('createSlamAppStore', () => {
 
   describe('license validation', () => {
     it('throws when an invalid license key is supplied', () => {
-      // Why: the framework must never run without a valid license â€” including
+      // Why: the framework must never run without a valid license — including
       // the bundled community key path. Empty / bad keys are a hard fail.
       expect(() =>
         createSlamAppStore({ storageBackend: backend, licenseKey: '' })

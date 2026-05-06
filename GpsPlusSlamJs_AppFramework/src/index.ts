@@ -20,7 +20,7 @@ export * from './geo/index.js';
 export * from './utils/index.js';
 export * from './types/index.js';
 
-// Modules with potential name conflicts â€” selective re-exports
+// Modules with potential name conflicts — selective re-exports
 // State: omit types also exported by storage/types (StorageBackend, DepthPoint, etc.)
 export {
   type RecordingState,

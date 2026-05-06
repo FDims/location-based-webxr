@@ -78,7 +78,7 @@ export function resetCoordinatorState(): void {
  * Extract raw odometry position tuple from ARPose.
  *
  * Returns the raw WebXR position without coordinate conversion.
- * The reducer applies the WebXRâ†’NUE transform when storing into state
+ * The reducer applies the WebXR→NUE transform when storing into state
  * (raw-storage pattern, see docs/2026-04-09-raw-storage-convert-on-read.md).
  *
  * WebXR local-floor frame: X=East, Y=Up, Z=South (toward viewer / backward).
@@ -101,7 +101,7 @@ export function extractOdomRotation(arPose: ARPose): Quaternion {
 
 /**
  * Build a RawGpsPoint from GPS position data.
- * Returns only raw sensor fields â€” no derived fields (coordinates, weight,
+ * Returns only raw sensor fields — no derived fields (coordinates, weight,
  * zeroRef, deviceRotation). Derived fields are computed by the library
  * reducer when the action is dispatched (raw-storage pattern).
  *
@@ -113,7 +113,7 @@ export function buildRawGpsPoint(
   gpsPosition: GpsPosition,
   deviceOrientation: RawDeviceOrientation | null
 ): RawGpsPoint {
-  // Preserve DeviceOrientationEvent.absolute flag â€” indicates whether compass
+  // Preserve DeviceOrientationEvent.absolute flag — indicates whether compass
   // alpha is relative to magnetic north (true) or arbitrary (false)
   const compassAbsolute: boolean | undefined = deviceOrientation
     ? deviceOrientation.absolute

@@ -1,11 +1,11 @@
 /**
- * Recorder Store â€” type-identity regression tests.
+ * Recorder Store — type-identity regression tests.
  *
  * Why these tests matter: `recorder-store.ts` re-exports library types
  * (`RawDeviceOrientation`, `RawGpsPoint`, `RecordGpsEventPayload`,
  * `MarkReferencePointPayload`) for downstream recorder modules. As part
  * of dropping the recorder app's direct `gps-plus-slam-js` dependency
- * (see `2026-05-05-recorder-app-drop-direct-core-dep-plan.md` Â§2.2.1),
+ * (see `2026-05-05-recorder-app-drop-direct-core-dep-plan.md` §2.2.1),
  * those re-exports now route through `gps-plus-slam-app-framework/state`.
  *
  * The framework also exports a *different* `RawDeviceOrientation` from

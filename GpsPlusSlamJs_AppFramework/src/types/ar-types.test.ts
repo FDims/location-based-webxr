@@ -404,7 +404,7 @@ describe('AR Types', () => {
 
     /**
      * Why this test matters:
-     * Proves bidirectional assignability â€” a value returned by getCurrentPose
+     * Proves bidirectional assignability — a value returned by getCurrentPose
      * can be used wherever ARPose is expected.
      */
     it('getCurrentPose return type is assignable back to ARPose', () => {
@@ -420,7 +420,7 @@ describe('AR Types', () => {
       const maybeResult = callbacks.getCurrentPose();
       expect(maybeResult).not.toBeNull();
 
-      // Assign to a typed ARPose variable â€” proves the types are identical
+      // Assign to a typed ARPose variable — proves the types are identical
       const pose: ARPose = maybeResult!;
       expectTypeOf(pose).toMatchTypeOf<ARPose>();
       expect(pose.position.x).toBe(5);
@@ -513,8 +513,8 @@ describe('AR Types', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Inline tuple â†’ Vector3/Quaternion migration guards (Finding #1)
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Inline tuple → Vector3/Quaternion migration guards (Finding #1)
+  // ──────────────────────────────────────────────────────────────────────────
 
   describe('DepthSample uses library Vector3/Quaternion types', () => {
     /**
@@ -565,7 +565,7 @@ describe('AR Types', () => {
       };
       const result = extractOdomPosition(pose);
       expectTypeOf(result).toEqualTypeOf<Vector3>();
-      // WebXR {x:1,y:2,z:3} â†’ raw WebXR [x,y,z] = [1, 2, 3]
+      // WebXR {x:1,y:2,z:3} → raw WebXR [x,y,z] = [1, 2, 3]
       expect(result).toEqual([1, 2, 3]);
     });
 
@@ -601,9 +601,9 @@ describe('AR Types', () => {
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────────
   // WebXRVec3 / WebXRQuaternion type-contract
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────────
 
   describe('WebXRVec3 and WebXRQuaternion', () => {
     // Why these tests matter: WebXRVec3 and WebXRQuaternion are the canonical
@@ -648,35 +648,35 @@ describe('AR Types', () => {
     });
   });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Readonly guards â€” Finding #6 (2026-03-05 code review)
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────────────
+  // Readonly guards — Finding #6 (2026-03-05 code review)
+  // ──────────────────────────────────────────────────────────────────────────
 
   describe('Readonly guards for pure-data interfaces', () => {
     /**
      * Why these tests matter:
-     * All AR type interfaces are pure data â€” created once, never mutated.
+     * All AR type interfaces are pure data — created once, never mutated.
      * Adding `readonly` prevents accidental mutation and signals intent.
-     * These type-level guards ensure that T â‰¡ Readonly<T>, which holds
+     * These type-level guards ensure that T ≡ Readonly<T>, which holds
      * only when every field is already marked `readonly`.
      * Pattern: same as the GpsCoord readonly guard in geo-types.test.ts.
      */
 
-    it('DepthPoint â‰¡ Readonly<DepthPoint>', () => {
+    it('DepthPoint ≡ Readonly<DepthPoint>', () => {
       expectTypeOf<DepthPoint>().toEqualTypeOf<Readonly<DepthPoint>>();
     });
 
-    it('WebXRVec3 â‰¡ Readonly<WebXRVec3>', () => {
+    it('WebXRVec3 ≡ Readonly<WebXRVec3>', () => {
       expectTypeOf<WebXRVec3>().toEqualTypeOf<Readonly<WebXRVec3>>();
     });
 
-    it('WebXRQuaternion â‰¡ Readonly<WebXRQuaternion>', () => {
+    it('WebXRQuaternion ≡ Readonly<WebXRQuaternion>', () => {
       expectTypeOf<WebXRQuaternion>().toEqualTypeOf<
         Readonly<WebXRQuaternion>
       >();
     });
 
-    it('ARPose â‰¡ Readonly<ARPose>', () => {
+    it('ARPose ≡ Readonly<ARPose>', () => {
       expectTypeOf<ARPose>().toEqualTypeOf<Readonly<ARPose>>();
     });
 
@@ -684,14 +684,14 @@ describe('AR Types', () => {
     it('ArPoseTuples fields are readonly', () => {
       // toEqualTypeOf<Readonly<T>> doesn't work with tuple-typed fields due
       // to a vitest/TS quirk with [unscopables]. Test readonly directly via
-      // ts-expect-error â€” fails if fields are mutable (no error to expect).
+      // ts-expect-error — fails if fields are mutable (no error to expect).
       const pose: ArPoseTuples = {
         position: [1, 2, 3],
         rotation: [0, 0, 0, 1],
       };
-      // @ts-expect-error â€” position should be readonly
+      // @ts-expect-error — position should be readonly
       pose.position = [4, 5, 6];
-      // @ts-expect-error â€” rotation should be readonly
+      // @ts-expect-error — rotation should be readonly
       pose.rotation = [1, 0, 0, 0];
     });
 
@@ -703,13 +703,13 @@ describe('AR Types', () => {
         cameraRot: [0, 0, 0, 1],
         points: [],
       };
-      // @ts-expect-error â€” timestamp should be readonly
+      // @ts-expect-error — timestamp should be readonly
       sample.timestamp = 2000;
-      // @ts-expect-error â€” cameraPos should be readonly
+      // @ts-expect-error — cameraPos should be readonly
       sample.cameraPos = [4, 5, 6];
-      // @ts-expect-error â€” cameraRot should be readonly
+      // @ts-expect-error — cameraRot should be readonly
       sample.cameraRot = [1, 0, 0, 0];
-      // @ts-expect-error â€” points should be readonly
+      // @ts-expect-error — points should be readonly
       sample.points = [];
     });
   });

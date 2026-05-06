@@ -124,7 +124,7 @@ describe('Recording Coordinator', () => {
     /**
      * Why this test matters:
      * Verifies the RawGpsPoint construction with all raw sensor fields.
-     * Derived fields (coordinates, weight, zeroRef, deviceRotation) must NOT be present â€”
+     * Derived fields (coordinates, weight, zeroRef, deviceRotation) must NOT be present —
      * they are computed by the reducer (raw-storage pattern).
      */
     it('builds RawGpsPoint with all raw sensor fields', () => {
@@ -179,8 +179,8 @@ describe('Recording Coordinator', () => {
 
     /**
      * Why this test matters:
-     * Weight computation belongs in the core library (IP protection Â§3.2).
-     * The framework no longer passes weight at all â€” it's computed by the reducer.
+     * Weight computation belongs in the core library (IP protection §3.2).
+     * The framework no longer passes weight at all — it's computed by the reducer.
      */
     it('does not set weight (core library computes it in reducer)', () => {
       const highAccuracy: GpsPosition = {
@@ -208,7 +208,7 @@ describe('Recording Coordinator', () => {
       const highResult = buildRawGpsPoint(highAccuracy, null);
       const lowResult = buildRawGpsPoint(lowAccuracy, null);
 
-      // RawGpsPoint does not include weight â€” reducer computes it
+      // RawGpsPoint does not include weight — reducer computes it
       expect(highResult).not.toHaveProperty('weight');
       expect(lowResult).not.toHaveProperty('weight');
       // Accuracy is still passed through for the core to use
@@ -420,7 +420,7 @@ describe('Recording Coordinator', () => {
       expect(state.gpsData).not.toBeNull();
       expect(state.gpsData?.gpsEvents?.odometryPositions.length).toBe(1);
       // extractOdomPosition returns raw WebXR [1,2,3].
-      // Reducer applies webxrToNUE â†’ state stores [-3, 2, 1] (NUE).
+      // Reducer applies webxrToNUE → state stores [-3, 2, 1] (NUE).
       expect(state.gpsData?.gpsEvents?.odometryPositions[0]).toEqual([
         -3, 2, 1,
       ]);
@@ -530,8 +530,8 @@ describe('Recording Coordinator', () => {
 
       const state = store.getState();
       expect(state.gpsData?.gpsEvents?.odometryPositions.length).toBe(3);
-      // AR pose {x: poseCounter, y: 0, z: 0} â†’ raw WebXR [poseCounter, 0, 0]
-      // Reducer webxrToNUE â†’ NUE [0, 0, poseCounter]. East at index [2].
+      // AR pose {x: poseCounter, y: 0, z: 0} → raw WebXR [poseCounter, 0, 0]
+      // Reducer webxrToNUE → NUE [0, 0, poseCounter]. East at index [2].
       // Last pose (poseCounter=3): east component [2] = 3
       expect(state.gpsData?.gpsEvents?.odometryPositions[2][2]).toBe(3);
     });
@@ -634,8 +634,8 @@ describe('Recording Coordinator', () => {
       // 90Â° around Z: quaternion = [0, 0, sin(45Â°), cos(45Â°)] = [0, 0, 0.707, 0.707]
       expect(result[0]).toBeCloseTo(0, 5); // x
       expect(result[1]).toBeCloseTo(0, 5); // y
-      expect(result[2]).toBeCloseTo(Math.sin(Math.PI / 4), 3); // z â‰ˆ 0.707
-      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w â‰ˆ 0.707
+      expect(result[2]).toBeCloseTo(Math.sin(Math.PI / 4), 3); // z ≈ 0.707
+      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w ≈ 0.707
     });
 
     /**
@@ -646,10 +646,10 @@ describe('Recording Coordinator', () => {
       const result = eulerToQuaternion(0, 90, 0);
 
       // 90Â° around X: quaternion = [sin(45Â°), 0, 0, cos(45Â°)] = [0.707, 0, 0, 0.707]
-      expect(result[0]).toBeCloseTo(Math.sin(Math.PI / 4), 3); // x â‰ˆ 0.707
+      expect(result[0]).toBeCloseTo(Math.sin(Math.PI / 4), 3); // x ≈ 0.707
       expect(result[1]).toBeCloseTo(0, 5); // y
       expect(result[2]).toBeCloseTo(0, 5); // z
-      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w â‰ˆ 0.707
+      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w ≈ 0.707
     });
 
     /**
@@ -661,9 +661,9 @@ describe('Recording Coordinator', () => {
 
       // 90Â° around Y: quaternion = [0, sin(45Â°), 0, cos(45Â°)] = [0, 0.707, 0, 0.707]
       expect(result[0]).toBeCloseTo(0, 5); // x
-      expect(result[1]).toBeCloseTo(Math.sin(Math.PI / 4), 3); // y â‰ˆ 0.707
+      expect(result[1]).toBeCloseTo(Math.sin(Math.PI / 4), 3); // y ≈ 0.707
       expect(result[2]).toBeCloseTo(0, 5); // z
-      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w â‰ˆ 0.707
+      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w ≈ 0.707
     });
 
     /**
@@ -691,8 +691,8 @@ describe('Recording Coordinator', () => {
       // -90Â° around Z: quaternion = [0, 0, -sin(45Â°), cos(45Â°)]
       expect(result[0]).toBeCloseTo(0, 5); // x
       expect(result[1]).toBeCloseTo(0, 5); // y
-      expect(result[2]).toBeCloseTo(-Math.sin(Math.PI / 4), 3); // z â‰ˆ -0.707
-      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w â‰ˆ 0.707
+      expect(result[2]).toBeCloseTo(-Math.sin(Math.PI / 4), 3); // z ≈ -0.707
+      expect(result[3]).toBeCloseTo(Math.cos(Math.PI / 4), 3); // w ≈ 0.707
     });
 
     /**
@@ -732,12 +732,12 @@ describe('Recording Coordinator', () => {
       expect(result[0]).toBeCloseTo(0, 5); // x
       expect(result[1]).toBeCloseTo(0, 5); // y
       expect(Math.abs(result[2])).toBeCloseTo(1, 3); // z = Â±1
-      expect(result[3]).toBeCloseTo(0, 3); // w â‰ˆ 0
+      expect(result[3]).toBeCloseTo(0, 3); // w ≈ 0
     });
 
     /**
      * Why this test matters:
-     * Validates W3C DeviceOrientation spec compliance. The spec Â§A.2 defines
+     * Validates W3C DeviceOrientation spec compliance. The spec §A.2 defines
      * the combined quaternion formula for intrinsic Z-X'-Y'' Tait-Bryan angles.
      * For alpha=90Â°, beta=45Â°, gamma=30Â° the reference quaternion must match
      * q = qZ Â· qX Â· qY (not the reverse). This catches wrong multiplication order.
@@ -748,7 +748,7 @@ describe('Recording Coordinator', () => {
         gamma = 30;
       const q = eulerToQuaternion(alpha, beta, gamma);
 
-      // W3C spec Â§A.2 closed-form formula:
+      // W3C spec §A.2 closed-form formula:
       const toRad = Math.PI / 180;
       const cX = Math.cos((beta * toRad) / 2);
       const sX = Math.sin((beta * toRad) / 2);
@@ -762,10 +762,10 @@ describe('Recording Coordinator', () => {
       const expectedZ = cX * cY * sZ + sX * sY * cZ;
       const expectedW = cX * cY * cZ - sX * sY * sZ;
 
-      expect(q[0]).toBeCloseTo(expectedX, 4); // x â‰ˆ 0.0924
-      expect(q[1]).toBeCloseTo(expectedY, 4); // y â‰ˆ 0.4305
-      expect(q[2]).toBeCloseTo(expectedZ, 4); // z â‰ˆ 0.7011
-      expect(q[3]).toBeCloseTo(expectedW, 4); // w â‰ˆ 0.5610
+      expect(q[0]).toBeCloseTo(expectedX, 4); // x ≈ 0.0924
+      expect(q[1]).toBeCloseTo(expectedY, 4); // y ≈ 0.4305
+      expect(q[2]).toBeCloseTo(expectedZ, 4); // z ≈ 0.7011
+      expect(q[3]).toBeCloseTo(expectedW, 4); // w ≈ 0.5610
     });
 
     /**
@@ -775,7 +775,7 @@ describe('Recording Coordinator', () => {
      * R = Rz(Î±) Â· Rx(Î²) Â· Ry(Î³), so q = qZ Â· qX Â· qY.
      * With alpha=90Â° (Z), beta=90Â° (X), gamma=0Â° (Y):
      * Starting with unit vector [1, 0, 0] (pointing east):
-     * - Rz(90Â°): [1,0,0] â†’ [0,1,0]
+     * - Rz(90Â°): [1,0,0] → [0,1,0]
      * - Rx(90Â°): has no effect on [0,1,0] becoming [0,0,1] in this intrinsic frame;
      *   the combined world-frame result is [0,1,0].
      * Verified numerically: qZÂ·qX applied to [1,0,0] yields [0,1,0].

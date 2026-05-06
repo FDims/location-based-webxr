@@ -6,7 +6,7 @@
  * recording/recordWriteFailure) are written to the StorageBackend when
  * the recording slice is in recording state.
  *
- * @see docs/2026-04-07-architecture-observations-consolidated.md Â§4
+ * @see docs/2026-04-07-architecture-observations-consolidated.md §4
  */
 
 import type { Middleware, UnknownAction } from '@reduxjs/toolkit';
@@ -79,7 +79,7 @@ export interface PersistenceMiddlewareOptions {
  * - Persists `gpsData/*` and `recording/*` actions.
  * - Excludes `recording/recordWriteFailure` to prevent recursive persistence.
  * - Excludes `routing/*`, `refPoints/*`, and any other non-recording actions.
- * - Uses 1-based indexing for action files (000001.json, 000002.json, â€¦).
+ * - Uses 1-based indexing for action files (000001.json, 000002.json, …).
  * - Each middleware instance maintains its own action index (Bug 10 fix).
  */
 export function createPersistenceMiddleware(
@@ -117,7 +117,7 @@ export function createPersistenceMiddleware(
 
     // Check recording state AFTER reducers ran (so startSession is included).
     // Special-case endSession: wasRecording was true before the reducer,
-    // but isRecording is now false â€” still needs to be persisted (Issue 5).
+    // but isRecording is now false — still needs to be persisted (Issue 5).
     const stateAfter = store.getState() as {
       recording?: { isRecording: boolean };
     };
