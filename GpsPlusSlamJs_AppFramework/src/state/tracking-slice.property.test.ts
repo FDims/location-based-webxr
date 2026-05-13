@@ -50,7 +50,13 @@ const arbOrientation: fc.Arbitrary<DeviceOrientation> = fc.record({
   absolute: fc.boolean(),
 });
 
-const arbEvent = fc.oneof(
+type Event =
+  | { type: 'pose'; pose: ARPose; orientation: DeviceOrientation }
+  | { type: 'lost' }
+  | { type: 'reset' }
+  | { type: 'clear' };
+
+const arbEvent: fc.Arbitrary<Event> = fc.oneof(
   fc.record({
     type: fc.constant('pose' as const),
     pose: arbARPose,
@@ -60,8 +66,6 @@ const arbEvent = fc.oneof(
   fc.record({ type: fc.constant('reset' as const) }),
   fc.record({ type: fc.constant('clear' as const) })
 );
-
-type Event = fc.UnpackArbitrary<typeof arbEvent>;
 
 function createStore() {
   return configureStore({ reducer: { tracking: trackingReducer } });
@@ -118,9 +122,11 @@ describe('trackingSlice — property tests', () => {
         for (const ev of events) {
           apply(store, ev);
           const { phase, originResetDuringLoss } = store.getState().tracking;
-          if (phase !== 'lost') {
-            expect(originResetDuringLoss).toBe(false);
-          }
+          // Implication: phase !== 'lost' ⇒ originResetDuringLoss === false.
+          // Encoded as a boolean so the assertion is unconditional.
+          expect(phase === 'lost' || originResetDuringLoss === false).toBe(
+            true
+          );
         }
       }),
       { numRuns: 100 }
@@ -135,9 +141,9 @@ describe('trackingSlice — property tests', () => {
         for (const ev of events) {
           apply(store, ev);
           if (ev.type === 'pose') seenPose = true;
-          if (!seenPose) {
-            expect(store.getState().tracking.lastValidPose).toBeNull();
-          }
+          // Implication: !seenPose ⇒ lastValidPose === null.
+          const lastValidPose = store.getState().tracking.lastValidPose;
+          expect(seenPose || lastValidPose === null).toBe(true);
         }
       }),
       { numRuns: 100 }
