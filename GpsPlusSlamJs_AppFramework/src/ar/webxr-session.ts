@@ -676,7 +676,7 @@ export async function initAR(
   xrSession.addEventListener('end', () => {
     log.info('Session ended');
     // Reset the tracking slice so the next session starts from a clean
-    // INITIALIZING state. Mirrors the prior manager.reset() call.
+    // INITIALIZING state.
     if (trackingStore) {
       trackingStore.dispatch(resetTrackingAction());
     }
