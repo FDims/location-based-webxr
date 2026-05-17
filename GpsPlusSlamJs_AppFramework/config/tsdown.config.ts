@@ -50,9 +50,12 @@ const entryFiles = [
   // state/
   'src/state/index.ts',
   'src/state/app-selectors.ts',
+  'src/state/combined-root-state.ts',
   'src/state/create-slam-app-store.ts',
   'src/state/persistence-middleware.ts',
   'src/state/recording-slice.ts',
+  'src/state/tracking-slice.ts',
+  'src/state/tracking-quality.ts',
   'src/state/gps-event-coordinator.ts',
   'src/state/gps-ar-pose-sampler.ts',
   'src/state/recording-options.ts',
