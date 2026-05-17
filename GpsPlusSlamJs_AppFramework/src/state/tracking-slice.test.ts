@@ -28,6 +28,7 @@ import {
   selectLastValidPose,
   selectLostFrameCount,
   selectLastRestartedPayload,
+  selectLastSensorOrientation,
   type DeviceOrientation,
   type TrackingSliceState,
 } from './tracking-slice';
@@ -65,6 +66,40 @@ describe('trackingSlice — initial state', () => {
     expect(state.tracking.originResetDuringLoss).toBe(false);
     expect(state.tracking.resetTransform).toBeUndefined();
     expect(state.tracking.lastSensorOrientation).toBeNull();
+    expect(selectLastSensorOrientation(state)).toBeNull();
+  });
+});
+
+describe('trackingSlice — selectLastSensorOrientation', () => {
+  // Why: §4.3 of docs/2026-05-16-tracking-quality-metrics-plan.md depends
+  // on a trivial public accessor for the slice's `lastSensorOrientation`
+  // field, alongside the existing selectors.
+  it('returns null before any pose has been received', () => {
+    const store = createStore();
+    expect(selectLastSensorOrientation(store.getState())).toBeNull();
+  });
+
+  it('returns the most recent sensor orientation after poseReceived', () => {
+    const store = createStore();
+    const orientation: DeviceOrientation = {
+      alpha: 42,
+      beta: 5,
+      gamma: -3,
+      absolute: true,
+    };
+    store.dispatch(
+      poseReceived({ pose: initialPose, sensorOrientation: orientation })
+    );
+    expect(selectLastSensorOrientation(store.getState())).toEqual(orientation);
+  });
+
+  it('returns null again after resetTracking', () => {
+    const store = createStore();
+    store.dispatch(
+      poseReceived({ pose: initialPose, sensorOrientation: defaultOrientation })
+    );
+    store.dispatch(resetTracking());
+    expect(selectLastSensorOrientation(store.getState())).toBeNull();
   });
 });
 

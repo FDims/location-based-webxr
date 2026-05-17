@@ -33,6 +33,7 @@ export {
   selectLastValidPose,
   selectLostFrameCount,
   selectLastRestartedPayload,
+  selectLastSensorOrientation,
 } from './tracking-slice.js';
 
 // --- ref-points-slice — moved to recorder app in Iter 3 of the

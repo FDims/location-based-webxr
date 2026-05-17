@@ -19,7 +19,7 @@ Redux Toolkit slice for the AR tracking-loss / tracking-restart state machine. R
   - `resetTracking()` — returns to initial state.
   - `clearLastRestartedPayload()` — host calls after consuming `lastRestartedPayload`.
 - Reducer: `trackingReducer` (mounted as `tracking` in `createSlamAppStore`).
-- Selectors: `selectTrackingPhase`, `selectLastValidPose`, `selectLostFrameCount`, `selectLastRestartedPayload`.
+- Selectors: `selectTrackingPhase`, `selectLastValidPose`, `selectLostFrameCount`, `selectLastRestartedPayload`, `selectLastSensorOrientation`.
 
 ## Invariants & Assumptions
 

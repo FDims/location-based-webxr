@@ -259,3 +259,18 @@ export function selectLastRestartedPayload(
 ): OdometryTrackingRestartedPayload | null {
   return state.tracking.lastRestartedPayload;
 }
+
+/**
+ * Selector for the last `DeviceOrientation` captured alongside a valid
+ * AR pose. Used by the §4.3 compass / alignment heading cross-check in
+ * the tracking-quality reporter (see
+ * docs/2026-05-16-tracking-quality-metrics-plan.md).
+ *
+ * Returns `null` before any pose has been received and after
+ * `resetTracking` clears the slice.
+ */
+export function selectLastSensorOrientation(
+  state: RootWithTracking
+): DeviceOrientation | null {
+  return state.tracking.lastSensorOrientation;
+}

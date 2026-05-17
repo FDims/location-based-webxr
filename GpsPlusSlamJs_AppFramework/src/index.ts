@@ -72,6 +72,7 @@ export {
   selectLastValidPose,
   selectLostFrameCount,
   selectLastRestartedPayload,
+  selectLastSensorOrientation,
   createSlamAppStore,
   type SlamAppStore,
   type SlamAppStoreOptions,
