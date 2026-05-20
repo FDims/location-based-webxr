@@ -512,6 +512,56 @@ describe('GpsEventVisualizer', () => {
     });
   });
 
+  describe('getRawMarkerWorldSizes (§3c bbox diagnostic)', () => {
+    /**
+     * Why these tests matter: the rec31 accuracy-ellipsoid Playwright spec
+     * relies on this accessor to read back the world-space size of each
+     * raw-GPS marker via `THREE.Box3.setFromObject`. Bounding-box math is
+     * the real invariant we want to test (pixel diffs are brittle).
+     */
+
+    it('returns an empty array when no markers exist', () => {
+      expect(visualizer.getRawMarkerWorldSizes()).toEqual([]);
+    });
+
+    it('returns markedly larger bbox for a high-accuracy event vs a low-accuracy event', () => {
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      // Same position so positions don't dominate the bbox — only scale differs.
+      visualizer.addGpsEvent([0, 0, 0], [0, 0, 0], {
+        horizontal: 5,
+        vertical: 5,
+      });
+      visualizer.addGpsEvent([0, 0, 0], [0, 0, 0], {
+        horizontal: 40,
+        vertical: 40,
+      });
+
+      const sizes = visualizer.getRawMarkerWorldSizes();
+      expect(sizes).toHaveLength(2);
+      // Sphere diameter = 2 × radius (= 1) × scale.
+      // Event 1: ~10m on each axis. Event 2: ~80m. Allow tolerance for the
+      // sphere-tessellation approximation in Box3.setFromObject.
+      expect(sizes[0].x).toBeGreaterThan(8);
+      expect(sizes[0].x).toBeLessThan(12);
+      expect(sizes[1].x).toBeGreaterThan(70);
+      expect(sizes[1].x).toBeLessThan(90);
+      // Ratio should be close to 8 (= 40/5).
+      expect(sizes[1].x / sizes[0].x).toBeGreaterThan(6);
+      expect(sizes[1].x / sizes[0].x).toBeLessThan(10);
+    });
+
+    it('legacy fixed sphere has ~16cm bbox (2 × 8cm radius)', () => {
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+      visualizer.addGpsEvent([0, 0, 0], [0, 0, 0]); // no accuracy → legacy
+
+      const sizes = visualizer.getRawMarkerWorldSizes();
+      expect(sizes).toHaveLength(1);
+      expect(sizes[0].x).toBeGreaterThan(0.1);
+      expect(sizes[0].x).toBeLessThan(0.2);
+    });
+  });
+
   describe('marker sizing', () => {
     it('creates spheres with 8cm radius (smaller than ref points)', () => {
       visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });

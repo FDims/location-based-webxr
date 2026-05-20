@@ -273,6 +273,27 @@ export class GpsEventVisualizer {
       snapshots: this.snapshotMarkers.length,
     };
   }
+
+  /**
+   * Diagnostic accessor: returns the world-space size (`THREE.Box3.setFromObject`)
+   * of each raw-GPS marker, in insertion order.
+   *
+   * Used by the rec31 accuracy-ellipsoid Playwright spec (§3c) to verify the
+   * relative scaling of two events with different `latLongAccuracy`. This is
+   * the size of the rendered ellipsoid in scene units (= metres in replay
+   * mode), not the underlying geometry radius — so it correctly reflects the
+   * `mesh.scale.set(h, v, h)` applied for accuracy-aware markers.
+   *
+   * @returns array of `{ x, y, z }` sizes — empty array if there are no markers.
+   */
+  getRawMarkerWorldSizes(): Array<{ x: number; y: number; z: number }> {
+    const tmpBox = new THREE.Box3();
+    return this.rawGpsMarkers.map((mesh) => {
+      tmpBox.setFromObject(mesh);
+      const size = tmpBox.getSize(new THREE.Vector3());
+      return { x: size.x, y: size.y, z: size.z };
+    });
+  }
 }
 
 /**

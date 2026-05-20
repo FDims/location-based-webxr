@@ -57,6 +57,7 @@ import {
 } from './ui/log-panel';
 import { initToast, showToast, TOAST_DURATION_ERROR } from './ui/toast';
 import { destroyConfirmDialog } from './ui/confirm-dialog';
+import * as THREE from 'three';
 import {
   initAR,
   endARSession,
@@ -70,6 +71,8 @@ import {
   getScene,
   getCamera,
   getArWorldGroup,
+  setScene,
+  setArWorldGroup,
   type CapturedImage,
   type DepthSample,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
@@ -1164,6 +1167,29 @@ if (
     setGpsEventVisualizerZeroRef: (lat: number, lon: number) =>
       gpsEventVisualizer.setZeroRef({ lat, lon }),
     clearGpsEventVisualizer: () => gpsEventVisualizer.clearAll(),
+    /**
+     * §3c — Add a GPS event with optional accuracy directly to the
+     * visualizer. Ensures an offline `THREE.Scene` + `arWorldGroup` exist
+     * (Playwright tests don't have an active WebXR session). Idempotent —
+     * subsequent calls reuse the same offline scene.
+     */
+    addGpsEventForTest: (
+      gpsCoords: [number, number, number],
+      odomPosition: [number, number, number],
+      accuracy?: { horizontal?: number; vertical?: number }
+    ) => {
+      if (!getScene()) {
+        setScene(new THREE.Scene());
+      }
+      if (!getArWorldGroup()) {
+        const grp = new THREE.Group();
+        getScene()?.add(grp);
+        setArWorldGroup(grp);
+      }
+      gpsEventVisualizer.addGpsEvent(gpsCoords, odomPosition, accuracy);
+    },
+    getRawGpsMarkerWorldSizes: () =>
+      gpsEventVisualizer.getRawMarkerWorldSizes(),
     // Mandatory storage selection hooks (Task 1a-fix)
     setFolderSelected,
     setSaveLocationSelected,

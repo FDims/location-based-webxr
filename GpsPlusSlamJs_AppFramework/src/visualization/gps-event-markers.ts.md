@@ -28,6 +28,7 @@ Visualizes GPS events as 3D markers during recording and replay. Shows three typ
 - `getAlignmentSnapshotPositions(): number[][]` — return positions of all snapshot markers as arrays.
 - `clearAll(): void` — remove all markers (including snapshots) and reset.
 - `getCounts(): { raw, fused, snapshots }` — get marker counts including alignment snapshots.
+- `getRawMarkerWorldSizes(): Array<{ x, y, z }>` — diagnostic accessor returning the world-space bounding-box size (`THREE.Box3.setFromObject`) of each raw-GPS marker in insertion order. Used by the §3c Playwright spec to verify accuracy-ellipsoid scaling.
 
 ### Exported Singleton
 
