@@ -12,7 +12,7 @@ Uses `subscribeToSelector` for selective change detection — each state slice (
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `wireStoreSubscribers` | `(store: SubscribableStore, deps: StoreSubscriberDeps) => () => void`                                                                                                | Subscribe to store changes and drive visualizers. Returns unsubscribe.   |
 | `SubscribableStore`    | `{ getState, subscribe }` interface                                                                                                                                  | Minimal store contract — satisfied by `RecorderStore` and replay stores. |
-| `StoreSubscriberDeps`  | `{ applyAlignmentMatrix, gpsEventVisualizer, mapOverlay?, refPointVisualizer?, onNewGpsPosition?, onNewOdomPose?, onAlignmentSnapshot?, onNewGpsLatLng? }` interface | Injected dependencies for visualization updates.                         |
+| `StoreSubscriberDeps`  | `{ applyAlignmentMatrix, gpsEventVisualizer, mapOverlay?, refPointVisualizer?, onNewGpsPosition?, onNewOdomPose?, onAlignmentSnapshot?, onNewGpsLatLng?, showAccuracySpheres? }` interface | Injected dependencies for visualization updates.                         |
 
 ### `mapOverlay` dependency (optional)
 
@@ -35,7 +35,8 @@ On each state change the subscriber:
 5. **AR pose update** — if `deps.onNewOdomPose` is provided, calls it with `(odomPosition, odomRotation)` for each new event that has both position and rotation data. Used in replay mode to update the `arpose` Object3D so the camera follows the recorded trajectory.
 6. **Map overlay** — updates `deps.mapOverlay.setGpsPosition(lat, lon)` with the latest GPS position. For each new GPS event with an alignment matrix and zero reference, computes the fused GPS position via `fusedGpsFromOdom(alignmentMatrix, odomPos, zeroRef)` and calls `addFusedPoint`. When alignment matrix changes, calls `addAlignmentSnapshot` with the snapshot's GPS coordinates. Incrementally forwards new reference points via `addRefPoint(lat, lon, id)`. All optional methods are safely skipped if not provided. Skipped entirely if `mapOverlay` is `null`/`undefined`.
 7. **GPS lat/lng callback** — if `deps.onNewGpsLatLng` is provided, calls it with `(lat, lng)` for each new GPS event. Used in live recording to drive ref-point proximity detection for the dynamic button label.
-8. **Reference-point visualization (Finding 5, 2026-04-30)** — if `deps.refPointVisualizer` is provided, two additional subscriptions are wired:
+8. **GPS accuracy ellipsoid (rec31 investigation §3)** — when `deps.showAccuracySpheres === true`, each new GPS event additionally forwards `{ horizontal: gpsPoint.latLongAccuracy, vertical: gpsPoint.altitudeAccuracy }` to `addGpsEvent`. The visualizer then renders the raw-GPS marker as a non-uniform-scaled ellipsoid (see `../visualization/gps-event-markers.ts` §Marker Sizing). When the flag is `false`/omitted (the live-recording default), `undefined` is forwarded and the legacy fixed 8 cm sphere is drawn. See [../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-19-investigate-rec31-altitude-drop.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-19-investigate-rec31-altitude-drop.md).
+9. **Reference-point visualization (Finding 5, 2026-04-30)** — if `deps.refPointVisualizer` is provided, two additional subscriptions are wired:
    - `selectPriorRefPointMarks` → `displayPriorRefPoints(priorMarks)`. Fires whenever `priorMarks` changes by reference, replacing the green-sphere set wholesale.
    - `selectCurrentRefPointMarks` → `addCurrentRefPoint(mark)`. Append-only with a high-water-mark counter (`lastCurrentMarksLen`). When the array shrinks (e.g., `clearCurrentRefPointMarks` on scenario reset), the counter is reset to 0 so subsequent re-adds render again.
      Call sites no longer call `refPointVisualizer.displayPriorRefPoints` / `addCurrentRefPoint` directly — they dispatch `setPriorRefPointMarks` / `addCurrentRefPointMark` instead. See [docs/2026-04-30-refpoint-marks-into-redux-plan.md](../../../GpsPlusSlamJs_Docs/docs/2026-04-30-refpoint-marks-into-redux-plan.md).
@@ -49,6 +50,8 @@ Returns an unsubscribe function that removes all listeners from the store.
 - `gpsPositions` and `odometryPositions` arrays grow monotonically (append-only).
 - A GPS event at index `i` is only visualized once (tracked by the per-subscription counter).
 - `mapOverlay` may be `null` in replay mode or before AR session starts — handled gracefully.
+- `onNewGpsLatLng` is optional — provided in live recording mode for dynamic-button proximity detection.
+- `showAccuracySpheres` defaults to `false`. Live recording leaves it unset (large ellipsoids would be distracting on the operator screen). Replay mode sets it `true` so the diagnostic ellipsoid is visible alongside the fused cyan marker.
 - `onNewGpsPosition` is optional — not provided in live recording mode (camera is XR-controlled). In replay mode, the caller passes a callback that drives `updateOrbitTarget()` from `replay-scene.ts`.
 - `onNewOdomPose` is optional — not provided in live recording mode (arpose stays at identity). In replay mode, the caller passes a callback that writes recorded odom position/rotation to the `arpose` Object3D. Skipped defensively if `odometryRotations[i]` is missing.
 - `onAlignmentSnapshot` is optional — not provided in live recording mode. In replay mode, the caller passes a callback that routes the snapshot NUE position to `updateOrbitTarget()` in `replay-scene.ts`, centering the orbit camera on alignment-snapshot points (Issue #3).
@@ -97,7 +100,7 @@ unsub();
 
 ## Tests
 
-Covered by `store-subscribers.test.ts` (43 test cases):
+Covered by `store-subscribers.test.ts` (46 test cases):
 
 - Subscription lifecycle: subscribe, unsubscribe, no callbacks after unsubscribe
 - Alignment matrix: applied when present, updates fused markers, skipped when gpsData null
@@ -108,6 +111,7 @@ Covered by `store-subscribers.test.ts` (43 test cases):
 - Map overlay fused path (Phase 1b): calls addFusedPoint with alignment-corrected GPS coords, skips when alignment or zeroRef missing, safe when method absent
 - Map overlay alignment snapshots (Phase 1b): calls addAlignmentSnapshot with GPS coords on matrix change, skips when zeroRef missing, safe when method absent
 - Map overlay reference points (Phase 1b): calls addRefPoint incrementally for new ref points, safe when method absent
+- `showAccuracySpheres` flag (rec31 §3): flag on → forwards `{ horizontal, vertical }` from `latLongAccuracy`/`altitudeAccuracy`; flag off/default → forwards `undefined`; partial accuracy fields preserved (e.g. `altitudeAccuracy` missing → `vertical: undefined`)
 - Fresh counter: each `wireStoreSubscribers()` call starts from 0
 
 ## Related Files

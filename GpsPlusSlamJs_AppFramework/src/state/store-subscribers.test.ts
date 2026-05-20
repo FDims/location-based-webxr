@@ -368,7 +368,8 @@ describe('wireStoreSubscribers', () => {
     expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenCalledTimes(1);
     expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenCalledWith(
       gpsPoint1.coordinates,
-      odom1
+      odom1,
+      undefined
     );
 
     // Second update: 2 GPS events — only the new one should be added
@@ -390,7 +391,8 @@ describe('wireStoreSubscribers', () => {
     expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenCalledTimes(2);
     expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenLastCalledWith(
       gpsPoint2.coordinates,
-      odom2
+      odom2,
+      undefined
     );
   });
 
@@ -426,6 +428,137 @@ describe('wireStoreSubscribers', () => {
     );
 
     expect(deps.gpsEventVisualizer.addGpsEvent).not.toHaveBeenCalled();
+  });
+
+  // --- showAccuracySpheres flag (rec31 altitude-drop investigation §3) ---
+  // Why these tests matter: live recording mode must keep the legacy fixed
+  // sphere (large ellipsoids are distracting); replay mode must forward
+  // GPS 1σ accuracies so the new visual diagnostic is available.
+
+  it('forwards latLongAccuracy / altitudeAccuracy when showAccuracySpheres is true', () => {
+    const gpsPoint = {
+      id: 'gps-1',
+      zeroRef: { lat: 50, lon: 8 },
+      latitude: 50.001,
+      longitude: 8.001,
+      altitude: 240,
+      latLongAccuracy: 4.5,
+      altitudeAccuracy: 12,
+      coordinates: [1, 0, 0] as Vector3,
+      weight: 1,
+      timestamp: Date.now(),
+    };
+    const odom: Vector3 = [0.5, 0, 0.5];
+
+    const mock = makeMockStore(makeState());
+    wireStoreSubscribers(mock.store, { ...deps, showAccuracySpheres: true });
+
+    mock.setState(
+      makeState({
+        gpsData: {
+          zero: { lat: 50, lon: 8 },
+          gpsEvents: {
+            alignmentMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            gpsPositions: [gpsPoint],
+            odometryPositions: [odom],
+          },
+          odometryPath: { positions: [], rotations: [] },
+          referencePoints: [],
+        } as unknown as CombinedRootState['gpsData'],
+      })
+    );
+
+    expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenCalledWith(
+      gpsPoint.coordinates,
+      odom,
+      { horizontal: 4.5, vertical: 12 }
+    );
+  });
+
+  it('does NOT forward accuracies when showAccuracySpheres is false (default)', () => {
+    const gpsPoint = {
+      id: 'gps-1',
+      zeroRef: { lat: 50, lon: 8 },
+      latitude: 50.001,
+      longitude: 8.001,
+      altitude: 240,
+      latLongAccuracy: 4.5,
+      altitudeAccuracy: 12,
+      coordinates: [1, 0, 0] as Vector3,
+      weight: 1,
+      timestamp: Date.now(),
+    };
+    const odom: Vector3 = [0.5, 0, 0.5];
+
+    const mock = makeMockStore(makeState());
+    // No showAccuracySpheres prop → default false
+    wireStoreSubscribers(mock.store, deps);
+
+    mock.setState(
+      makeState({
+        gpsData: {
+          zero: { lat: 50, lon: 8 },
+          gpsEvents: {
+            alignmentMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            gpsPositions: [gpsPoint],
+            odometryPositions: [odom],
+          },
+          odometryPath: { positions: [], rotations: [] },
+          referencePoints: [],
+        } as unknown as CombinedRootState['gpsData'],
+      })
+    );
+
+    expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenCalledWith(
+      gpsPoint.coordinates,
+      odom,
+      undefined
+    );
+  });
+
+  it('passes through undefined accuracy fields when showAccuracySpheres is true', () => {
+    // Why: the recording may have missing accuracy on some events (e.g. rec31
+    // has altitudeAccuracy === undefined for every sample). The visualizer's
+    // defensive fallback expects to see the partial object as-is, not get a
+    // synthesized default — that's the visualizer's responsibility, not the
+    // subscriber's.
+    const gpsPoint = {
+      id: 'gps-1',
+      zeroRef: { lat: 50, lon: 8 },
+      latitude: 50.001,
+      longitude: 8.001,
+      altitude: 240,
+      latLongAccuracy: 4.5,
+      // altitudeAccuracy intentionally missing
+      coordinates: [1, 0, 0] as Vector3,
+      weight: 1,
+      timestamp: Date.now(),
+    };
+    const odom: Vector3 = [0.5, 0, 0.5];
+
+    const mock = makeMockStore(makeState());
+    wireStoreSubscribers(mock.store, { ...deps, showAccuracySpheres: true });
+
+    mock.setState(
+      makeState({
+        gpsData: {
+          zero: { lat: 50, lon: 8 },
+          gpsEvents: {
+            alignmentMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            gpsPositions: [gpsPoint],
+            odometryPositions: [odom],
+          },
+          odometryPath: { positions: [], rotations: [] },
+          referencePoints: [],
+        } as unknown as CombinedRootState['gpsData'],
+      })
+    );
+
+    expect(deps.gpsEventVisualizer.addGpsEvent).toHaveBeenCalledWith(
+      gpsPoint.coordinates,
+      odom,
+      { horizontal: 4.5, vertical: undefined }
+    );
   });
 
   // --- Map overlay ---

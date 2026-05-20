@@ -48,7 +48,11 @@ export interface StoreSubscriberDeps {
   gpsEventVisualizer: {
     getZeroRef: () => LatLong | null;
     setZeroRef: (zero: LatLong) => void;
-    addGpsEvent: (gpsCoords: Vector3, odomPosition: Vector3) => void;
+    addGpsEvent: (
+      gpsCoords: Vector3,
+      odomPosition: Vector3,
+      accuracy?: { horizontal?: number; vertical?: number }
+    ) => void;
     addAlignmentSnapshot: (nuePosition: Vector3) => void;
   };
 
@@ -91,6 +95,18 @@ export interface StoreSubscriberDeps {
    * for dynamic button label updates.
    */
   onNewGpsLatLng?: (lat: number, lng: number) => void;
+
+  /**
+   * When `true`, the recorded GPS 1σ accuracies (`latLongAccuracy`,
+   * `altitudeAccuracy`) on each `GpsPoint` are forwarded to `addGpsEvent`
+   * so the raw-GPS marker renders as a non-uniform-scaled ellipsoid (see
+   * `gps-event-markers.ts` §3). When `false` (the default) the accuracies
+   * are dropped and the legacy fixed 8 cm sphere is used.
+   *
+   * Live recording leaves this `false` (large ellipsoids would distract the
+   * operator). Replay mode sets it to `true` so the diagnostic is visible.
+   */
+  showAccuracySpheres?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +197,20 @@ export function wireStoreSubscribers(
           const gpsPoint = gpsPositions[i];
           const odomPos = odomPositions[i];
           if (gpsPoint && odomPos) {
-            deps.gpsEventVisualizer.addGpsEvent(gpsPoint.coordinates, odomPos);
+            // Forward 1σ accuracies only when the caller opts in (replay
+            // mode). Live recording keeps the legacy fixed sphere by passing
+            // `undefined` here.
+            const accuracy = deps.showAccuracySpheres
+              ? {
+                  horizontal: gpsPoint.latLongAccuracy,
+                  vertical: gpsPoint.altitudeAccuracy,
+                }
+              : undefined;
+            deps.gpsEventVisualizer.addGpsEvent(
+              gpsPoint.coordinates,
+              odomPos,
+              accuracy
+            );
             deps.onNewGpsPosition?.(gpsPoint.coordinates);
             deps.onNewGpsLatLng?.(gpsPoint.latitude, gpsPoint.longitude);
 
