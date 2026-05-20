@@ -41,7 +41,10 @@ interface RawDeviceOrientation {
 ## Invariants & Assumptions
 
 - Geolocation API available (`navigator.geolocation`)
-- Uses `enableHighAccuracy: true` for best GPS fix
+- `watchPosition` options are Android-tuned (see [docs/2026-05-20-android-altitude-accuracy-audit.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-20-android-altitude-accuracy-audit.md), R1):
+  - `enableHighAccuracy: true` — forces GNSS instead of Wi-Fi / cell triangulation (required for non-null `altitudeAccuracy` on Android)
+  - `maximumAge: 5000` — allow reuse of fixes up to 5 s old; avoids spurious TIMEOUT errors on weak-fix devices
+  - `timeout: 15000` — gives a cold GNSS chip enough time for a satellite lock
 - DeviceOrientation requires user gesture on iOS 13+
 - `alpha` (compass) may be null if device lacks magnetometer
 - **`startGpsWatch` is idempotent:** calling it again clears any existing watch first (prevents leaked watches when transitioning from warm-up to recording)

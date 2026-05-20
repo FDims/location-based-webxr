@@ -160,7 +160,10 @@ describe('GPS Module', () => {
 
     /**
      * Why this test matters:
-     * startGpsWatch must call navigator.geolocation.watchPosition with correct options.
+     * startGpsWatch must call navigator.geolocation.watchPosition with the
+     * Android-tuned options documented in
+     * docs/2026-05-20-android-altitude-accuracy-audit.md (R1). These values
+     * are easy to silently regress, so we pin them here.
      */
     it('calls watchPosition with high accuracy options', () => {
       const onPosition = vi.fn();
@@ -171,8 +174,8 @@ describe('GPS Module', () => {
       const [, , options] = mockGeolocation.watchPosition.mock.calls[0];
       expect(options).toEqual({
         enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000,
+        maximumAge: 5000,
+        timeout: 15000,
       });
     });
 

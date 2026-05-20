@@ -73,9 +73,17 @@ export function startGpsWatch(
       onError?.(err);
     },
     {
+      // Android-focused tuning (see docs/2026-05-20-android-altitude-accuracy-audit.md, R1):
+      // - enableHighAccuracy forces GNSS instead of Wi-Fi/cell triangulation; without it
+      //   Android typically returns altitudeAccuracy=null and the vertical weight in
+      //   computeVerticalWeights falls back to latLongAccuracy.
+      // - maximumAge=5000 lets the browser reuse a recent fix (up to 5 s old) instead
+      //   of forcing a fresh acquisition on every callback, which on weak-fix Android
+      //   devices caused frequent TIMEOUT errors.
+      // - timeout=15000 gives a cold GNSS chip enough time for a satellite lock.
       enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 10000,
+      maximumAge: 5000,
+      timeout: 15000,
     }
   );
 
