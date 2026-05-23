@@ -213,7 +213,7 @@ describe('matrixDelta', () => {
     const { mat4, quat } = await import('gl-matrix');
     const target = mat4.create();
     mat4.rotateY(target, target, Math.PI / 2);
-    const got = matrixDelta(IDENTITY, Array.from(target) as Matrix4);
+    const got = matrixDelta(IDENTITY, Array.from(target));
 
     const idQ = quat.create();
     const tQ = quat.create();
@@ -1147,8 +1147,8 @@ describe('§4.8 hysteresis (degradedHoldoff)', () => {
     startIdx = 0
   ) {
     for (let i = startIdx; i < startIdx + count; i++) {
-      const n = i < 10 ? i * 2 : 20;
-      const e = i < 10 ? 0 : (i - 10) * 2;
+      const _n = i < 10 ? i * 2 : 20;
+      const _e = i < 10 ? 0 : (i - 10) * 2;
       const allOdom: Vector3[] = [];
       const allGps: GpsPoint[] = [];
       for (let j = 0; j <= i; j++) {

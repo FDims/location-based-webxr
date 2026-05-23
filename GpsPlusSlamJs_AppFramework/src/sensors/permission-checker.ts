@@ -534,11 +534,7 @@ export function subscribePermissionChanges(
   ) {
     const wireStatus = (name: 'geolocation' | 'camera'): void => {
       try {
-        const p = navigator.permissions.query({
-          name,
-        } as unknown as PermissionDescriptor);
-        if (!p || typeof p.then !== 'function') return;
-        p.then(
+        navigator.permissions.query({ name }).then(
           (status) => {
             if (disposed) return;
             const handler = (): void => notify();

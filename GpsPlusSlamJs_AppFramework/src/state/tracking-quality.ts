@@ -421,7 +421,7 @@ export function computeResidualConsensus(
     const gps = gpsPositions[i];
     vec3.set(tmp, odom[0], odom[1], odom[2]);
     vec3.transformMat4(tmp, tmp, glMat);
-    const predicted = calcGpsCoords(zeroRef, tmp as unknown as Vector3);
+    const predicted = calcGpsCoords(zeroRef, tmp);
     const meters = distanceInMeters(predicted, {
       lat: gps.latitude,
       lon: gps.longitude,
@@ -702,7 +702,7 @@ export function computeGpsVsFusedDivergence(
     const odom = odometryPositions[i];
     vec3.set(tmp, odom[0], odom[1], odom[2]);
     vec3.transformMat4(tmp, tmp, glMat);
-    const predicted = calcGpsCoords(zeroRef, tmp as unknown as Vector3);
+    const predicted = calcGpsCoords(zeroRef, tmp);
     const d = distanceInMeters(predicted, {
       lat: gpsPositions[i].latitude,
       lon: gpsPositions[i].longitude,
@@ -825,13 +825,13 @@ export function computeTrackingQualityReport(
   const odometryPositions = selectOdometryPositions(rootState);
   const zeroRef = selectZeroReference(rootState);
   const trackingPhase = selectTrackingPhase(
-    rootState as Parameters<typeof selectTrackingPhase>[0]
+    rootState
   );
   const sensorOrientation = selectLastSensorOrientation(
-    rootState as Parameters<typeof selectLastSensorOrientation>[0]
+    rootState
   );
   const lastPose = selectLastValidPose(
-    rootState as Parameters<typeof selectLastValidPose>[0]
+    rootState
   );
   const snapshots = selectRecentAlignments(rootState);
   const firstAgreementIdx = selectFirstAgreementObservationIndex(rootState);
@@ -1100,10 +1100,10 @@ export function createTrackingQualityListenerMiddleware(
         if (snapshots.length >= 2) {
           const conv = computeConvergence(snapshots);
           const sensorOr = selectLastSensorOrientation(
-            midState as Parameters<typeof selectLastSensorOrientation>[0]
+            midState
           );
           const pose = selectLastValidPose(
-            midState as Parameters<typeof selectLastValidPose>[0]
+            midState
           );
           const alignment = selectAlignmentMatrix(midState);
           const compass = computeCompassAgreement(
