@@ -11,17 +11,46 @@ between calls plus a single `zeroRef` field; no other state.
 
 - `class RefPointVisualizer`
   - `setZeroRef(zero)` / `getZeroRef()`
-  - `displayPriorRefPoints(marks)` — replaces the prior group; marks without `gpsPosition` are skipped
-  - `addCurrentRefPoint(mark)` — appends to the current group (or updates in place on duplicate id); no-op when zero ref or `gpsPosition` is missing
-  - `clearPriorRefPoints()` / `clearCurrentRefPoints()` / `clearAll()`
-  - `getCounts(): { prior, current }`
-- `const refPointVisualizer` — singleton consumed by `recording-session-handlers` and `replay-mode`.
+  - **`syncRefPoints(refs: readonly ReferencePoint[])`** — unified entry
+    point for the canonical library `selectReferencePoints` selector.
+    Renders all marks in a single colour (`VIS_COLORS.CURRENT_REF_POINT`)
+    with mesh name `ref-point-${id}` and animates newly-inserted ids with
+    a brief scale-up (0.2 → 1.0 over `INSERT_ANIMATION_DURATION_SEC`
+    via `registerFrameUpdate`). Step 4 of the 2026-05-27 slice-collapse
+    plan; the per-mesh tick is exposed at
+    `mesh.userData.refPointInsertAnimation` so tests can detect that the
+    animation was scheduled.
+  - `getRefPointCount(): number` — number of meshes managed by
+    `syncRefPoints`.
+  - `displayPriorRefPoints(marks)` — *legacy*; replaces the prior group;
+    marks without `gpsPosition` are skipped. Removed in Step 5 along
+    with the recorder `refPoints` slice.
+  - `addCurrentRefPoint(mark)` — *legacy*; appends to the current group.
+    Removed in Step 5.
+  - `clearPriorRefPoints()` / `clearCurrentRefPoints()` / `clearAll()` —
+    `clearAll` also clears the unified `syncRefPoints` handles and resets
+    the zero ref.
+  - `getCounts(): { prior, current }` — *legacy*; counts for the
+    prior/current pipelines only. Use `getRefPointCount()` for the
+    unified pipeline.
+- `const refPointVisualizer` — singleton consumed by
+  `recording-session-handlers` and `replay-mode`.
 
 ## Invariants & assumptions
 
-- Mesh name format preserved from the original framework version (`prior-ref-${id}` / `current-ref-${id}`).
-- Shared geometry/material lifecycle is owned by the module-level cache inside `syncGpsAnchoredMeshes`; the visualizer never disposes GPU resources directly.
-- Scene access goes through `getScene()` from `gps-plus-slam-app-framework/ar/webxr-session`; the scene is then injected explicitly into the reconciler (P3 rule 1).
+- Mesh name format: `ref-point-${id}` (unified) and `prior-ref-${id}` /
+  `current-ref-${id}` (legacy, removed in Step 5).
+- The insert animation fires **exactly once per id** — a re-render with
+  the same id leaves the existing mesh untouched.
+- Shared geometry/material lifecycle is owned by the module-level cache
+  inside `syncGpsAnchoredMeshes`; the visualizer never disposes GPU
+  resources directly.
+- Scene access goes through `getScene()` from
+  `gps-plus-slam-app-framework/ar/webxr-session`; the scene is then
+  injected explicitly into the reconciler (P3 rule 1).
+- Frame-loop access goes through `registerFrameUpdate` from
+  `gps-plus-slam-app-framework/ar/frame-loop`; the returned unregister
+  is invoked when the animation completes so the registry stays bounded.
 
 ## Tests
 

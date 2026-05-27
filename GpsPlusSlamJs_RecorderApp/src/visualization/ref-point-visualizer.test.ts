@@ -8,6 +8,7 @@ import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-app-framework/licensing';
 import { RefPointVisualizer } from './ref-point-visualizer';
 import type { RefPointMark } from '../storage/ref-point-loader';
 import type { LatLong } from 'gps-plus-slam-app-framework/core';
+import type { ReferencePoint } from 'gps-plus-slam-app-framework/core';
 import * as THREE from 'three';
 
 // Activate the gps-plus-slam-js license once for this suite so calls into
@@ -287,6 +288,110 @@ describe('RefPointVisualizer', () => {
       expect(counts.current).toBe(1);
     });
   });
+
+  describe('syncRefPoints', () => {
+    it('does nothing if zero ref not set', () => {
+      visualizer.syncRefPoints([
+        createMockReferencePoint('rp1', 48.8567, 2.3523),
+      ]);
+
+      expect(mockScene.children).toHaveLength(0);
+      expect(visualizer.getRefPointCount()).toBe(0);
+    });
+
+    it('renders all marks uniformly with the same colour and name prefix', () => {
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      visualizer.syncRefPoints([
+        createMockReferencePoint('rp1', 48.8567, 2.3523),
+        createMockReferencePoint('rp2', 48.8568, 2.3524),
+      ]);
+
+      expect(mockScene.children).toHaveLength(2);
+      expect(mockScene.children[0].name).toBe('ref-point-rp1');
+      expect(mockScene.children[1].name).toBe('ref-point-rp2');
+
+      const mesh1 = mockScene.children[0] as THREE.Mesh;
+      const mesh2 = mockScene.children[1] as THREE.Mesh;
+      const mat1 = mesh1.material as THREE.MeshBasicMaterial;
+      const mat2 = mesh2.material as THREE.MeshBasicMaterial;
+      expect(mat1.color.getHex()).toBe(mat2.color.getHex());
+    });
+
+    it('starts a transient insert animation on newly-inserted ids', async () => {
+      const { runFrameUpdates, clearFrameUpdates } =
+        await import('gps-plus-slam-app-framework/ar/frame-loop');
+      clearFrameUpdates();
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      visualizer.syncRefPoints([
+        createMockReferencePoint('rp1', 48.8567, 2.3523),
+      ]);
+
+      const mesh = mockScene.children[0] as THREE.Mesh;
+      // Animation kicks off at 0.2 scale and exposes its tick callback so
+      // tests can detect that it was scheduled without relying on wall clock.
+      expect(mesh.scale.x).toBeCloseTo(0.2);
+      expect(
+        (mesh.userData as { refPointInsertAnimation?: unknown })
+          .refPointInsertAnimation
+      ).toBeDefined();
+
+      // Drive the frame loop past the animation duration; mesh should
+      // land on scale 1 and clear the in-progress marker.
+      runFrameUpdates(1.0, 1.0);
+      expect(mesh.scale.x).toBeCloseTo(1);
+      expect(
+        (mesh.userData as { refPointInsertAnimation?: unknown })
+          .refPointInsertAnimation
+      ).toBeUndefined();
+    });
+
+    it('does not restart the animation on re-render of the same id', async () => {
+      const { runFrameUpdates, clearFrameUpdates } =
+        await import('gps-plus-slam-app-framework/ar/frame-loop');
+      clearFrameUpdates();
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      const rp1 = createMockReferencePoint('rp1', 48.8567, 2.3523);
+      visualizer.syncRefPoints([rp1]);
+      runFrameUpdates(1.0, 1.0); // run animation to completion
+      const mesh = mockScene.children[0] as THREE.Mesh;
+      expect(mesh.scale.x).toBeCloseTo(1);
+
+      // Re-call with the same id — the diff should treat rp1 as already
+      // known and not kick the animation again.
+      visualizer.syncRefPoints([rp1]);
+      expect(mesh.scale.x).toBeCloseTo(1);
+      expect(
+        (mesh.userData as { refPointInsertAnimation?: unknown })
+          .refPointInsertAnimation
+      ).toBeUndefined();
+    });
+
+    it('only animates the newly-inserted id when appending to an existing set', async () => {
+      const { runFrameUpdates, clearFrameUpdates } =
+        await import('gps-plus-slam-app-framework/ar/frame-loop');
+      clearFrameUpdates();
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      const rp1 = createMockReferencePoint('rp1', 48.8567, 2.3523);
+      visualizer.syncRefPoints([rp1]);
+      runFrameUpdates(1.0, 1.0);
+      const mesh1 = mockScene.children[0] as THREE.Mesh;
+      expect(mesh1.scale.x).toBeCloseTo(1);
+
+      const rp2 = createMockReferencePoint('rp2', 48.8568, 2.3524);
+      visualizer.syncRefPoints([rp1, rp2]);
+
+      const mesh2 = mockScene.children.find(
+        (c) => c.name === 'ref-point-rp2'
+      ) as THREE.Mesh;
+      expect(mesh2).toBeDefined();
+      expect(mesh1.scale.x).toBeCloseTo(1); // untouched
+      expect(mesh2.scale.x).toBeCloseTo(0.2); // animating
+    });
+  });
 });
 
 // Test utilities
@@ -304,6 +409,29 @@ function createMockRefPoint(
       lat,
       lon,
       altitude: 100,
+    },
+    timestamp: Date.now(),
+  };
+}
+
+function createMockReferencePoint(
+  id: string,
+  latitude: number,
+  longitude: number
+): ReferencePoint {
+  return {
+    id,
+    position: [1, 2, 3],
+    rotation: [0, 0, 0, 1],
+    gpsPoint: {
+      id: `gps-${id}`,
+      latitude,
+      longitude,
+      altitude: 100,
+      timestamp: Date.now(),
+      zeroRef: { lat: 48.8566, lon: 2.3522 },
+      coordinates: [0, 0, 0],
+      weight: 1,
     },
     timestamp: Date.now(),
   };

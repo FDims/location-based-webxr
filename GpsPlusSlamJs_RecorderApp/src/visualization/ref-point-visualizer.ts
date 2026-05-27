@@ -13,8 +13,9 @@
  */
 
 import type * as THREE from 'three';
-import type { LatLong } from 'gps-plus-slam-app-framework/core';
+import type { LatLong, ReferencePoint } from 'gps-plus-slam-app-framework/core';
 import { getScene } from 'gps-plus-slam-app-framework/ar/webxr-session';
+import { registerFrameUpdate } from 'gps-plus-slam-app-framework/ar/frame-loop';
 import { VIS_COLORS } from 'gps-plus-slam-app-framework/visualization/vis-colors';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type { RefPointMark } from '../storage/ref-point-loader';
@@ -45,11 +46,70 @@ const CURRENT_OPTS = {
   namePrefix: 'current-ref',
 } as const;
 
+// Used by `syncRefPoints`, the unified entry point that consumes the
+// library's canonical `selectReferencePoints` selector. Renders all marks
+// in one colour (uniformly) per the Step 4 plan
+// (2026-05-27-collapse-refpoint-and-frame-slices-plan.md).
+const REF_POINT_OPTS = {
+  color: VIS_COLORS.CURRENT_REF_POINT.hex,
+  namePrefix: 'ref-point',
+} as const;
+
+/** Duration of the brief scale-up animation played when a new ref point appears. */
+const INSERT_ANIMATION_DURATION_SEC = 0.4;
+const INSERT_ANIMATION_START_SCALE = 0.2;
+
+/**
+ * Register a per-frame scale-up animation for a newly-inserted mesh.
+ * Plays once over `INSERT_ANIMATION_DURATION_SEC`, then unregisters
+ * itself. Exposed via `mesh.userData.refPointInsertAnimation` so tests
+ * can detect that the animation was started without depending on the
+ * frame loop wall-clock.
+ */
+function startInsertAnimation(mesh: THREE.Mesh): void {
+  let elapsed = 0;
+  mesh.scale.setScalar(INSERT_ANIMATION_START_SCALE);
+  const tick = (dt: number): void => {
+    elapsed += dt;
+    const t = Math.min(elapsed / INSERT_ANIMATION_DURATION_SEC, 1);
+    const s =
+      INSERT_ANIMATION_START_SCALE + (1 - INSERT_ANIMATION_START_SCALE) * t;
+    mesh.scale.setScalar(s);
+    if (t >= 1) {
+      mesh.scale.setScalar(1);
+      delete (mesh.userData as { refPointInsertAnimation?: unknown })
+        .refPointInsertAnimation;
+      unregister();
+    }
+  };
+  const unregister = registerFrameUpdate(tick);
+  (
+    mesh.userData as { refPointInsertAnimation?: unknown }
+  ).refPointInsertAnimation = tick;
+}
+
+function referencePointToItem(refPoint: ReferencePoint): GpsAnchoredItem {
+  return {
+    id: refPoint.id,
+    lat: refPoint.gpsPoint.latitude,
+    lon: refPoint.gpsPoint.longitude,
+    altitude: refPoint.gpsPoint.altitude ?? 0,
+  };
+}
+
 export class RefPointVisualizer {
   private zeroRef: LatLong | null = null;
   private priorHandles = new Map<string, THREE.Mesh>();
   private currentItems: GpsAnchoredItem[] = [];
   private currentHandles = new Map<string, THREE.Mesh>();
+  /**
+   * Handles for the unified `syncRefPoints` pipeline (Step 4 of
+   * 2026-05-27-collapse-refpoint-and-frame-slices-plan.md). Parallel to
+   * `priorHandles` / `currentHandles` during the transition; those two
+   * fields and their methods are removed in Step 5 along with the
+   * recorder-local `refPoints` slice.
+   */
+  private refPointHandles = new Map<string, THREE.Mesh>();
 
   setZeroRef(zero: LatLong): void {
     this.zeroRef = zero;
@@ -111,6 +171,37 @@ export class RefPointVisualizer {
     );
   }
 
+  /**
+   * Unified entry point that mirrors the canonical
+   * `selectReferencePoints` selector from gps-plus-slam-js. Renders all
+   * marks in a single colour and animates newly-inserted ids with a brief
+   * scale-up. Subscribers should call this with the full selector result
+   * on every change; an id-based diff inside the visualizer keeps the
+   * scene-graph stable and triggers the animation exactly once per insert
+   * (it does not fire when the same id stays in the result on the next
+   * subscription tick).
+   *
+   * Tolerates missing zero ref or scene by no-op'ing — the next call once
+   * the AR session is up will reconcile.
+   */
+  syncRefPoints(refPoints: readonly ReferencePoint[]): void {
+    if (!this.zeroRef) return;
+    const scene = getScene();
+    if (!scene) return;
+    const items = refPoints.map(referencePointToItem);
+    const prev = this.refPointHandles;
+    const next = syncGpsAnchoredMeshes(scene, prev, items, {
+      zeroRef: this.zeroRef,
+      ...REF_POINT_OPTS,
+    });
+    for (const [id, mesh] of next) {
+      if (!prev.has(id)) {
+        startInsertAnimation(mesh);
+      }
+    }
+    this.refPointHandles = next;
+  }
+
   clearPriorRefPoints(): void {
     const scene = getScene();
     if (!scene) return;
@@ -135,6 +226,15 @@ export class RefPointVisualizer {
   clearAll(): void {
     this.clearPriorRefPoints();
     this.clearCurrentRefPoints();
+    const scene = getScene();
+    if (scene) {
+      this.refPointHandles = syncGpsAnchoredMeshes(
+        scene,
+        this.refPointHandles,
+        [],
+        { zeroRef: this.zeroRef ?? { lat: 0, lon: 0 }, ...REF_POINT_OPTS }
+      );
+    }
     this.zeroRef = null;
   }
 
@@ -143,6 +243,17 @@ export class RefPointVisualizer {
       prior: this.priorHandles.size,
       current: this.currentHandles.size,
     };
+  }
+
+  /**
+   * Number of meshes currently managed by the unified `syncRefPoints`
+   * pipeline. Separate from `getCounts` so the legacy `{prior,current}`
+   * contract stays intact until Step 5 of
+   * 2026-05-27-collapse-refpoint-and-frame-slices-plan.md removes the
+   * old prior/current API entirely.
+   */
+  getRefPointCount(): number {
+    return this.refPointHandles.size;
   }
 }
 
