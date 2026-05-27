@@ -56,6 +56,7 @@ export type {
   RawDeviceOrientation,
   RecordGpsEventPayload,
   MarkReferencePointPayload,
+  Add2dImagePayload,
 } from 'gps-plus-slam-js';
 export type { DepthPoint, DepthSample } from '../types/ar-types.js';
 export type { StorageBackend } from '../storage/storage-backend.js';

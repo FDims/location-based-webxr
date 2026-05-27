@@ -42,6 +42,7 @@ import {
   type FramesInSceneState,
 } from './frames-in-scene-slice';
 import { createRefPointMarkListenerMiddleware } from './ref-point-mark-listener';
+import { createAdd2dImageListenerMiddleware } from './add-2d-image-listener';
 
 // --- Re-exports for backwards compatibility with consumers that previously
 // imported these from `gps-plus-slam-app-framework/state/store`. The framework
@@ -163,7 +164,10 @@ export function createRecorderStore(
       scenario: scenarioReducer,
       framesInScene: framesInSceneReducer,
     },
-    extraMiddleware: [createRefPointMarkListenerMiddleware()],
+    extraMiddleware: [
+      createRefPointMarkListenerMiddleware(),
+      createAdd2dImageListenerMiddleware(),
+    ],
   });
 
   return {
