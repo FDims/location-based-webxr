@@ -30,7 +30,8 @@ Version constant written to `session.json` (`odomCoordVersion: 5`) when stopping
 
 ## Invariants & Assumptions
 
-- **Idempotent for eras 4+5**: If `metadata.odomCoordVersion >= 4`, returns the original array unchanged (same reference). Eras 4 and 5 have identical action formats — the difference is state-side only (era 5 reducer applies `webxrQuaternionToNUE()` to all quaternion fields).
+- **Idempotent for eras 4+5**: If `metadata.odomCoordVersion >= 4`, the era pass returns the original array unchanged (same reference). Eras 4 and 5 have identical action formats — the difference is state-side only (era 5 reducer applies `webxrQuaternionToNUE()` to all quaternion fields).
+- **Step 5.6 — `refPointsV2` injection pass** (always runs, independent of era): synthesises a `refPointsV2/addRefPointEntry` action immediately after each `gpsData/markReferencePoint`, copying `id`, `timestamp`, and the (post-era-migration) `rawGpsPoint` verbatim. This is what populates the flat `refPointsV2` slice for replayed legacy zips — the slice's persistence middleware only records `gpsData/*` / `recording/*` actions, so no zip in the corpus carries `refPointsV2/*` actions yet. **Idempotent**: when the stream already contains any `refPointsV2/*` action (future post-Step-5.7 era), the injection pass is skipped and the original array reference is returned. **Same-reference contract**: when no `markReferencePoint` exists in the stream, the original array reference is also returned. The translator does not invent a `name` field — sidecar names come from the OPFS reader's `setImportedRefPointEntries` dispatch (Step 5.5); `selectKnownAnchorsByCell` merges the two streams by H3 cell and picks the first non-null name per cell. Plan: [§B.5 5.6 of 2026-05-27 slice-collapse plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-27-collapse-refpoint-and-frame-slices-plan.md).
 - **Non-mutating**: Migrated recordings return new array with new payload objects. Original array is never mutated.
 - **Null metadata = era 1**: If `session.json` is absent, the recording is treated as era 1.
 - **`migrateGpsPointField()`** (internal): Renames `gpsPoint` to `rawGpsPoint` and strips derived fields (`coordinates`, `weight`, `zeroRef`, `deviceRotation`). Applied to eras 1, 2, and 3.
@@ -39,7 +40,7 @@ Version constant written to `session.json` (`odomCoordVersion: 5`) when stopping
 
 ## Tests
 
-- `src/storage/recording-migration.test.ts` — 32 unit tests covering all five eras, GPS field migration, position reversal, malformed payload guards, immutability, empty arrays, and null metadata handling.
+- `src/storage/recording-migration.test.ts` — 36 unit tests covering all five eras, GPS field migration, position reversal, malformed payload guards, immutability, empty arrays, null metadata handling, and the Step 5.6 `refPointsV2` injection pass (insertion shape, idempotency on streams already carrying V2 actions, same-reference contract when no `markReferencePoint`, and interaction with era-1 `gpsPoint→rawGpsPoint` rename).
 
 ## Related Docs
 

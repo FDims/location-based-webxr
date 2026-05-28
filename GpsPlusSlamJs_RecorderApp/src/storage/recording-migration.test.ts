@@ -973,5 +973,161 @@ describe('recording-migration', () => {
         expect(raw['coordinates']).toBeUndefined(); // stripped
       });
     });
+
+    // =======================================================================
+    // Step 5.6: legacy zip → refPointsV2 translator
+    // =======================================================================
+
+    describe('refPointsV2 injection (Step 5.6)', () => {
+      /**
+       * Why this test matters:
+       * Legacy zips persist only `gpsData/markReferencePoint`; the new flat
+       * `refPointsV2` slice that the H3 matcher and visualizer read from
+       * (Steps 5.2–5.4) never receives any action on replay unless the
+       * migrator synthesises one. Without this translator, replayed
+       * recordings would render zero ref points.
+       */
+      it('inserts refPointsV2/addRefPointEntry after each markReferencePoint', () => {
+        const actions: RecordedAction[] = [
+          {
+            type: 'gpsData/markReferencePoint',
+            payload: {
+              id: '8b1fa0a3168efff',
+              position: [1, 2, 3],
+              rotation: [0, 0, 0, 1],
+              rawGpsPoint: {
+                id: 'gps-1',
+                latitude: 49,
+                longitude: 8,
+                timestamp: 1500,
+              },
+              timestamp: 2000,
+            },
+          },
+        ];
+
+        const result = migrateActionsIfNeeded(actions, {
+          odomCoordVersion: 5,
+        });
+
+        expect(result).toHaveLength(2);
+        expect(result[0].type).toBe('gpsData/markReferencePoint');
+        expect(result[1].type).toBe('refPointsV2/addRefPointEntry');
+        const v2 = result[1].payload as Record<string, unknown>;
+        expect(v2['id']).toBe('8b1fa0a3168efff');
+        expect(v2['timestamp']).toBe(2000);
+        expect(v2['rawGpsPoint']).toEqual({
+          id: 'gps-1',
+          latitude: 49,
+          longitude: 8,
+          timestamp: 1500,
+        });
+      });
+
+      /**
+       * Why this test matters:
+       * Idempotency — when a recording already carries refPointsV2 actions
+       * (future post-Step-5.7 era), the translator must be a no-op to avoid
+       * doubling every entry on replay.
+       */
+      it('is a no-op when stream already contains refPointsV2 actions', () => {
+        const actions: RecordedAction[] = [
+          {
+            type: 'gpsData/markReferencePoint',
+            payload: {
+              id: 'x',
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              rawGpsPoint: {
+                id: 'g',
+                latitude: 0,
+                longitude: 0,
+                timestamp: 0,
+              },
+              timestamp: 0,
+            },
+          },
+          {
+            type: 'refPointsV2/addRefPointEntry',
+            payload: {
+              id: 'x',
+              timestamp: 0,
+              rawGpsPoint: {
+                id: 'g',
+                latitude: 0,
+                longitude: 0,
+                timestamp: 0,
+              },
+            },
+          },
+        ];
+        const result = migrateActionsIfNeeded(actions, {
+          odomCoordVersion: 5,
+        });
+        expect(result).toBe(actions); // same reference
+      });
+
+      /**
+       * Why this test matters:
+       * Stream with no markReferencePoint must preserve same-reference for
+       * memory- and equality-sensitive callers.
+       */
+      it('returns same reference when no markReferencePoint exists', () => {
+        const actions: RecordedAction[] = [
+          {
+            type: 'gpsData/recordGpsEvent',
+            payload: {
+              odomPosition: [1, 2, 3],
+              rawGpsPoint: {
+                id: 'g',
+                latitude: 0,
+                longitude: 0,
+                timestamp: 0,
+              },
+            },
+          },
+        ];
+        expect(
+          migrateActionsIfNeeded(actions, { odomCoordVersion: 5 })
+        ).toBe(actions);
+      });
+
+      /**
+       * Why this test matters:
+       * Era-1 zips have `gpsPoint` (not `rawGpsPoint`) and no odomCoordVersion;
+       * after the GPS-payload rename pass, the injected refPointsV2 entry
+       * must carry the renamed `rawGpsPoint`.
+       */
+      it('runs after era-1 gpsPoint→rawGpsPoint rename', () => {
+        const actions: RecordedAction[] = [
+          {
+            type: 'gpsData/markReferencePoint',
+            payload: {
+              id: 'r1',
+              position: [1, 2, 3],
+              rotation: [0, 0, 0, 1],
+              gpsPoint: {
+                id: 'g',
+                latitude: 49,
+                longitude: 8,
+                coordinates: [0, 0, 100],
+                weight: 1,
+                timestamp: 1000,
+              },
+              timestamp: 1000,
+            },
+          },
+        ];
+        const result = migrateActionsIfNeeded(actions, null);
+        expect(result).toHaveLength(2);
+        expect(result[1].type).toBe('refPointsV2/addRefPointEntry');
+        const v2 = result[1].payload as Record<string, unknown>;
+        const raw = v2['rawGpsPoint'] as Record<string, unknown>;
+        expect(raw['latitude']).toBe(49);
+        // derived fields were stripped by era-1 migration before injection
+        expect(raw['coordinates']).toBeUndefined();
+        expect(raw['weight']).toBeUndefined();
+      });
+    });
   });
 });

@@ -75,6 +75,14 @@ export function migrateActionsIfNeeded(
   actions: RecordedAction[],
   metadata: Record<string, unknown> | null
 ): RecordedAction[] {
+  const erasMigrated = migrateErasIfNeeded(actions, metadata);
+  return injectRefPointsV2Actions(erasMigrated);
+}
+
+function migrateErasIfNeeded(
+  actions: RecordedAction[],
+  metadata: Record<string, unknown> | null
+): RecordedAction[] {
   const version = metadata
     ? (metadata['odomCoordVersion'] as number | undefined)
     : undefined;
@@ -103,6 +111,61 @@ export function migrateActionsIfNeeded(
   // GPS payloads use old `gpsPoint` with ENU coordinates — rename + strip
   // (coordinates are stripped so no ENU→NUE swap needed).
   return actions.map((action) => migrateGpsPointField(action));
+}
+
+// ---------------------------------------------------------------------------
+// refPointsV2 injection: synthesise `refPointsV2/addRefPointEntry` after
+// each `gpsData/markReferencePoint` so legacy zips populate the new flat
+// slice that the H3 matcher reads from (Step 5.4) and the OPFS sidecar
+// fast-path writes to (Step 5.5).
+//
+// Idempotent: skipped when the action stream already contains any
+// `refPointsV2/...` action (future recordings may persist them directly).
+//
+// Plan: [2026-05-27-collapse-refpoint-and-frame-slices-plan.md §B.5 5.6].
+// ---------------------------------------------------------------------------
+
+function injectRefPointsV2Actions(
+  actions: RecordedAction[]
+): RecordedAction[] {
+  // Idempotency guard — preserve same-reference contract for streams that
+  // already carry the new slice's actions.
+  let hasMark = false;
+  for (const a of actions) {
+    if (a.type.startsWith('refPointsV2/')) return actions;
+    if (a.type === 'gpsData/markReferencePoint') hasMark = true;
+  }
+  if (!hasMark) return actions;
+
+  const out: RecordedAction[] = [];
+  for (const action of actions) {
+    out.push(action);
+    if (action.type !== 'gpsData/markReferencePoint') continue;
+
+    const payload = action.payload as Record<string, unknown> | undefined;
+    if (!payload || typeof payload !== 'object') continue;
+
+    const id = payload['id'];
+    const rawGpsPoint = payload['rawGpsPoint'];
+    if (typeof id !== 'string' || !rawGpsPoint || typeof rawGpsPoint !== 'object') {
+      continue;
+    }
+    const timestamp =
+      typeof payload['timestamp'] === 'number'
+        ? (payload['timestamp'] as number)
+        : (rawGpsPoint as Record<string, unknown>)['timestamp'];
+
+    out.push({
+      type: 'refPointsV2/addRefPointEntry',
+      payload: {
+        id,
+        timestamp:
+          typeof timestamp === 'number' ? timestamp : 0,
+        rawGpsPoint,
+      },
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
