@@ -11,15 +11,18 @@ between calls plus a single `zeroRef` field; no other state.
 
 - `class RefPointVisualizer`
   - `setZeroRef(zero)` / `getZeroRef()`
-  - **`syncRefPoints(refs: readonly ReferencePoint[])`** — unified entry
-    point for the canonical library `selectReferencePoints` selector.
-    Renders all marks in a single colour (`VIS_COLORS.CURRENT_REF_POINT`)
-    with mesh name `ref-point-${id}` and animates newly-inserted ids with
-    a brief scale-up (0.2 → 1.0 over `INSERT_ANIMATION_DURATION_SEC`
-    via `registerFrameUpdate`). Step 4 of the 2026-05-27 slice-collapse
-    plan; the per-mesh tick is exposed at
-    `mesh.userData.refPointInsertAnimation` so tests can detect that the
-    animation was scheduled.
+  - **`syncRefPoints(entries: readonly RefPointEntry[])`** — unified
+    entry point for the recorder's flat `selectRefPointEntries`
+    selector (Step 5.3 of the 2026-05-27 slice-collapse plan). Reads
+    `id` plus `gpsPoint ?? rawGpsPoint` (latitude/longitude/altitude)
+    per entry; the fused snapshot is preferred when present, otherwise
+    the raw GPS sample is used. Renders all entries in a single colour
+    (`VIS_COLORS.CURRENT_REF_POINT`) with mesh name `ref-point-${id}`
+    and animates newly-inserted ids with a brief scale-up
+    (0.2 → 1.0 over `INSERT_ANIMATION_DURATION_SEC` via
+    `registerFrameUpdate`). The per-mesh tick is exposed at
+    `mesh.userData.refPointInsertAnimation` so tests can detect that
+    the animation was scheduled.
   - `getRefPointCount(): number` — number of meshes managed by
     `syncRefPoints`.
   - `displayPriorRefPoints(marks)` — *legacy*; replaces the prior group;

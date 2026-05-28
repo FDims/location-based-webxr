@@ -342,6 +342,7 @@ function createMockStore(): RecorderStore {
       scenario: {
         currentScenarioName: 'TestScenario',
       },
+      refPointsV2: { entries: [] },
     }),
     subscribe: vi.fn().mockReturnValue(() => {}),
     dispatch: vi.fn(),

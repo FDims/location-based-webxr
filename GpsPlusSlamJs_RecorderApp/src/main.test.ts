@@ -57,6 +57,15 @@ const {
       }>;
       sessionRefPointUsage?: Record<string, number>;
     };
+    refPointsV2?: {
+      entries: ReadonlyArray<{
+        id: string;
+        timestamp: number;
+        name?: string;
+        rawGpsPoint?: unknown;
+        gpsPoint?: unknown;
+      }>;
+    };
   } = {
     recording: {
       sessionMetadata: {
@@ -72,6 +81,7 @@ const {
       importedRefPoints: [],
       sessionRefPointUsage: {},
     },
+    refPointsV2: { entries: [] },
   };
   const storeListeners: Array<() => void> = [];
 

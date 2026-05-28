@@ -1,41 +1,36 @@
 /**
  * Tests for wireRefPointSubscribers.
  *
- * Step 4 of 2026-05-27-collapse-refpoint-and-frame-slices-plan.md migrated
- * this subscriber onto the canonical `selectReferencePoints` selector from
- * the library. The wirer must call `visualizer.syncRefPoints` once on
- * attach (initial sync) and exactly once per change of the selector's
- * memoised result, and must not fire when the selector returns the same
- * reference twice in a row.
+ * Step 5.3 of 2026-05-27-collapse-refpoint-and-frame-slices-plan.md
+ * migrated this subscriber from the library's `selectReferencePoints`
+ * onto the recorder-side flat `selectRefPointEntries` selector
+ * (`state.refPointsV2.entries`). The wirer must call
+ * `visualizer.syncRefPoints` once on attach (initial sync) and exactly
+ * once per change of the selector's memoised result, and must not fire
+ * when the selector returns the same reference twice in a row.
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import type { ReferencePoint } from 'gps-plus-slam-app-framework/core';
 import { wireRefPointSubscribers } from './ref-point-subscribers';
 import type { RecorderStore } from './recorder-store';
+import type { RefPointEntry } from './ref-points-v2-slice';
 
 interface MockState {
-  // Only the shape the selector reads from. `gpsData` may be null before
-  // setZeroPos initialises the library reducer.
-  gpsData: { referencePoints: readonly ReferencePoint[] } | null;
+  // Only the shape the selector reads from.
+  refPointsV2: { entries: readonly RefPointEntry[] };
 }
 
-function makeRefPoint(id: string, timestamp = 0): ReferencePoint {
+function makeEntry(id: string, timestamp = 0): RefPointEntry {
   return {
     id,
-    position: [0, 0, 0],
-    rotation: [0, 0, 0, 1],
-    gpsPoint: {
+    timestamp,
+    rawGpsPoint: {
       id: `gps-${id}`,
       latitude: 50,
       longitude: 8,
       altitude: 245,
       timestamp,
-      zeroRef: { lat: 50, lon: 8 },
-      coordinates: [0, 0, 0],
-      weight: 1,
     },
-    timestamp,
   };
 }
 
@@ -67,9 +62,9 @@ function makeVisualizer() {
 describe('wireRefPointSubscribers', () => {
   it('performs an initial sync on attach', () => {
     const v = makeVisualizer();
-    const a = makeRefPoint('a', 1);
+    const a = makeEntry('a', 1);
     const { store } = makeMockStore({
-      gpsData: { referencePoints: [a] },
+      refPointsV2: { entries: [a] },
     });
 
     wireRefPointSubscribers(store, v);
@@ -81,48 +76,48 @@ describe('wireRefPointSubscribers', () => {
   it('syncs again when the selector result reference changes', () => {
     const v = makeVisualizer();
     const { store, setState } = makeMockStore({
-      gpsData: { referencePoints: [] },
+      refPointsV2: { entries: [] },
     });
     wireRefPointSubscribers(store, v);
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
 
-    const a = makeRefPoint('a', 1);
-    setState({ gpsData: { referencePoints: [a] } });
+    const a = makeEntry('a', 1);
+    setState({ refPointsV2: { entries: [a] } });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(2);
     expect(v.syncRefPoints).toHaveBeenLastCalledWith([a]);
 
-    const b = makeRefPoint('b', 2);
-    setState({ gpsData: { referencePoints: [a, b] } });
+    const b = makeEntry('b', 2);
+    setState({ refPointsV2: { entries: [a, b] } });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(3);
     expect(v.syncRefPoints).toHaveBeenLastCalledWith([a, b]);
   });
 
   it('does not sync when the selector returns the same reference', () => {
     const v = makeVisualizer();
-    const gpsData = { referencePoints: [makeRefPoint('a', 1)] };
-    const { store, setState } = makeMockStore({ gpsData });
+    const refPointsV2 = { entries: [makeEntry('a', 1)] };
+    const { store, setState } = makeMockStore({ refPointsV2 });
     wireRefPointSubscribers(store, v);
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
 
-    // Top-level state object changes but `gpsData` reference is reused →
-    // `selectReferencePoints` (a `createSelector`) returns the same
-    // memoised array, so the wirer must not re-dispatch.
-    setState({ gpsData });
+    // Top-level state object changes but `refPointsV2` reference is
+    // reused → `selectRefPointEntries` (a `createSelector`) returns the
+    // same memoised array, so the wirer must not re-dispatch.
+    setState({ refPointsV2 });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
 
-    setState({ gpsData });
+    setState({ refPointsV2 });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
   });
 
   it('is a no-op when visualizer is null', () => {
     const { store, setState } = makeMockStore({
-      gpsData: { referencePoints: [] },
+      refPointsV2: { entries: [] },
     });
     const unsubscribe = wireRefPointSubscribers(store, null);
     expect(typeof unsubscribe).toBe('function');
     expect(() => {
       setState({
-        gpsData: { referencePoints: [makeRefPoint('x', 1)] },
+        refPointsV2: { entries: [makeEntry('x', 1)] },
       });
     }).not.toThrow();
     unsubscribe();
@@ -131,14 +126,14 @@ describe('wireRefPointSubscribers', () => {
   it('returned unsubscribe detaches the store listener', () => {
     const v = makeVisualizer();
     const { store, setState } = makeMockStore({
-      gpsData: { referencePoints: [] },
+      refPointsV2: { entries: [] },
     });
     const unsubscribe = wireRefPointSubscribers(store, v);
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
     unsubscribe();
 
     setState({
-      gpsData: { referencePoints: [makeRefPoint('p', 1)] },
+      refPointsV2: { entries: [makeEntry('p', 1)] },
     });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
   });

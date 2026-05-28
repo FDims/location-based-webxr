@@ -8,7 +8,7 @@ import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-app-framework/licensing';
 import { RefPointVisualizer } from './ref-point-visualizer';
 import type { RefPointMark } from '../storage/ref-point-loader';
 import type { LatLong } from 'gps-plus-slam-app-framework/core';
-import type { ReferencePoint } from 'gps-plus-slam-app-framework/core';
+import type { RefPointEntry } from '../state/ref-points-v2-slice';
 import * as THREE from 'three';
 
 // Activate the gps-plus-slam-js license once for this suite so calls into
@@ -418,21 +418,16 @@ function createMockReferencePoint(
   id: string,
   latitude: number,
   longitude: number
-): ReferencePoint {
+): RefPointEntry {
   return {
     id,
-    position: [1, 2, 3],
-    rotation: [0, 0, 0, 1],
-    gpsPoint: {
+    timestamp: Date.now(),
+    rawGpsPoint: {
       id: `gps-${id}`,
       latitude,
       longitude,
       altitude: 100,
       timestamp: Date.now(),
-      zeroRef: { lat: 48.8566, lon: 2.3522 },
-      coordinates: [0, 0, 0],
-      weight: 1,
     },
-    timestamp: Date.now(),
   };
 }

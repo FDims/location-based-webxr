@@ -13,12 +13,13 @@
  */
 
 import type * as THREE from 'three';
-import type { LatLong, ReferencePoint } from 'gps-plus-slam-app-framework/core';
+import type { LatLong } from 'gps-plus-slam-app-framework/core';
 import { getScene } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import { registerFrameUpdate } from 'gps-plus-slam-app-framework/ar/frame-loop';
 import { VIS_COLORS } from 'gps-plus-slam-app-framework/visualization/vis-colors';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type { RefPointMark } from '../storage/ref-point-loader';
+import type { RefPointEntry } from '../state/ref-points-v2-slice';
 import {
   syncGpsAnchoredMeshes,
   type GpsAnchoredItem,
@@ -47,9 +48,11 @@ const CURRENT_OPTS = {
 } as const;
 
 // Used by `syncRefPoints`, the unified entry point that consumes the
-// library's canonical `selectReferencePoints` selector. Renders all marks
-// in one colour (uniformly) per the Step 4 plan
-// (2026-05-27-collapse-refpoint-and-frame-slices-plan.md).
+// recorder's flat `selectRefPointEntries` selector (Step 5.3 of
+// 2026-05-27-collapse-refpoint-and-frame-slices-plan.md). Renders all
+// entries in one colour. When an alignment matrix was in effect at
+// mark-time the entry's `gpsPoint` carries the fused snapshot, so we
+// prefer it over the raw GPS sample for the visual anchor.
 const REF_POINT_OPTS = {
   color: VIS_COLORS.CURRENT_REF_POINT.hex,
   namePrefix: 'ref-point',
@@ -88,12 +91,17 @@ function startInsertAnimation(mesh: THREE.Mesh): void {
   ).refPointInsertAnimation = tick;
 }
 
-function referencePointToItem(refPoint: ReferencePoint): GpsAnchoredItem {
+function refPointEntryToItem(entry: RefPointEntry): GpsAnchoredItem {
+  // Prefer the fused snapshot when it was captured (alignment matrix
+  // was in effect at mark-time); otherwise fall back to the raw GPS
+  // sample. The visualizer only needs lat/lon/altitude and both shapes
+  // expose them under the same field names (`RawGpsPoint`).
+  const src = entry.gpsPoint ?? entry.rawGpsPoint;
   return {
-    id: refPoint.id,
-    lat: refPoint.gpsPoint.latitude,
-    lon: refPoint.gpsPoint.longitude,
-    altitude: refPoint.gpsPoint.altitude ?? 0,
+    id: entry.id,
+    lat: src.latitude,
+    lon: src.longitude,
+    altitude: src.altitude ?? 0,
   };
 }
 
@@ -184,11 +192,11 @@ export class RefPointVisualizer {
    * Tolerates missing zero ref or scene by no-op'ing — the next call once
    * the AR session is up will reconcile.
    */
-  syncRefPoints(refPoints: readonly ReferencePoint[]): void {
+  syncRefPoints(refPoints: readonly RefPointEntry[]): void {
     if (!this.zeroRef) return;
     const scene = getScene();
     if (!scene) return;
-    const items = refPoints.map(referencePointToItem);
+    const items = refPoints.map(refPointEntryToItem);
     const prev = this.refPointHandles;
     const next = syncGpsAnchoredMeshes(scene, prev, items, {
       zeroRef: this.zeroRef,

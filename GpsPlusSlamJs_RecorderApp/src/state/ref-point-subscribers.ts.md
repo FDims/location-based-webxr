@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Recorder-app wiring between the canonical library `selectReferencePoints`
-selector and the `RefPointVisualizer`. Step 4 of
+Recorder-app wiring between the flat `selectRefPointEntries` selector
+and the `RefPointVisualizer`. Step 5.3 of
 `2026-05-27-collapse-refpoint-and-frame-slices-plan.md` migrated this
-subscriber off the recorder-local `refPoints.{priorMarks,currentMarks}`
-fields onto the library's authoritative reference-point array
-(`state.gpsData.referencePoints`) so the 3D view tracks the same data
-that ships in the recording and feeds replay.
+subscriber from the library's `selectReferencePoints` (over
+`state.gpsData.referencePoints`) onto the recorder-side slice
+`state.refPointsV2.entries`, which is now the single source of truth
+for ref points in the recorder.
 
 ## Public API
 
@@ -20,12 +20,13 @@ that ships in the recording and feeds replay.
 
 ## Invariants & assumptions
 
-- Performs an initial `syncRefPoints` call on attach so existing marks
-  render immediately (e.g. after a mid-session subscriber swap).
-- Subsequent calls fire **iff** `selectReferencePoints` returns a new
+- Performs an initial `syncRefPoints` call on attach so existing entries
+  render immediately (e.g. imported via the OPFS sidecar fast-path
+  before the subscriber attached).
+- Subsequent calls fire **iff** `selectRefPointEntries` returns a new
   array reference. The memoised selector returns the same reference when
-  `state.gpsData` is unchanged, so unrelated state mutations don't trigger
-  re-renders.
+  `state.refPointsV2` is unchanged, so unrelated state mutations don't
+  trigger re-renders.
 - The visualizer owns the id-based diff and decides which inserts to
   animate; this wirer just forwards the full selector result.
 
@@ -39,6 +40,6 @@ that ships in the recording and feeds replay.
 
 - `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-27-collapse-refpoint-and-frame-slices-plan.md`
 - `recorder-store.ts.md`
+- `ref-points-v2-slice.ts.md`
 - `ref-point-visualizer.ts.md`
-- `app-selectors.ts.md` (framework — defines `selectReferencePoints`)
 
