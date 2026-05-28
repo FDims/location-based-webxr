@@ -143,6 +143,37 @@ export const selectKnownAnchorsByCell = createSelector(
 const EMPTY_ANCHORS: readonly KnownGeoAnchor[] = Object.freeze([]);
 
 /**
+ * Returns one `KnownGeoAnchor` per *imported* entry (those whose
+ * `timestamp === 0` — the sidecar marker written by
+ * `loadAndDisplayRefPoints` via `setImportedRefPointEntries`). Mirrors
+ * the legacy `selectCachedKnownRefPoints` output so the §A.6 Option C
+ * collapse of the parallel `refPoints` slice in
+ * [2026-05-27-collapse-refpoint-and-frame-slices-plan.md] preserves the
+ * imported-anchor projection as a documented derivation.
+ *
+ * Unlike `selectKnownAnchorsByCell`, this selector does **not** group by
+ * H3 cell — duplicates in the imported list (rare) surface as separate
+ * anchors. The proximity matcher uses `selectKnownAnchorsByCell` and is
+ * unaffected.
+ */
+export const selectImportedKnownAnchors = createSelector(
+  (state: RefPointsV2State) => state.entries,
+  (entries): readonly KnownGeoAnchor[] => {
+    const out: KnownGeoAnchor[] = [];
+    for (const e of entries) {
+      if (e.timestamp !== 0) continue;
+      out.push({
+        h3Index: e.id,
+        displayName: e.name || e.id,
+        lat: e.rawGpsPoint.latitude,
+        lon: e.rawGpsPoint.longitude,
+      });
+    }
+    return out.length === 0 ? EMPTY_ANCHORS : out;
+  }
+);
+
+/**
  * Counts entries per H3 cell whose `timestamp` falls in the inclusive
  * range [start, end]. Useful for "what was added in this session".
  */

@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest';
 import type { RawGpsPoint } from './recorder-store';
 import {
   countEntriesByCellInSession,
+  selectImportedKnownAnchors,
   selectKnownAnchorsByCell,
   selectRefPointEntries,
   type RefPointEntry,
@@ -122,6 +123,64 @@ describe('selectKnownAnchorsByCell', () => {
     );
     expect(anchor?.lat).toBeCloseTo(50.1, 3);
     expect(anchor?.lon).toBeCloseTo(6.1, 3);
+  });
+});
+
+describe('selectImportedKnownAnchors', () => {
+  // Why this test matters: §A.6 Option C of the 2026-05-27 slice-collapse
+  // plan requires a memoised selector that mirrors the legacy
+  // `selectCachedKnownRefPoints` output by filtering V2 entries to the
+  // sidecar imports (the `timestamp === 0` marker that
+  // `loadAndDisplayRefPoints` writes via `setImportedRefPointEntries`).
+  it('returns one KnownGeoAnchor per imported (timestamp===0) entry', () => {
+    const state = withEntries([
+      { ...importedA, timestamp: 0 },
+      observationA, // timestamp > 0 — live observation, must be excluded
+      { ...importedB, timestamp: 0 },
+    ]);
+    const anchors = selectImportedKnownAnchors(state);
+    expect(anchors.map((a) => a.h3Index).sort()).toEqual(
+      [ID_A, ID_B].sort()
+    );
+  });
+
+  it('excludes entries with timestamp > 0 (live observations)', () => {
+    const state = withEntries([observationA]);
+    expect(selectImportedKnownAnchors(state)).toEqual([]);
+  });
+
+  it('uses the entry name (falling back to the H3 id) for displayName', () => {
+    const state = withEntries([
+      { ...importedA, timestamp: 0 },
+      // imported entry without a name — surface the H3 id instead
+      { ...importedB, timestamp: 0, name: undefined },
+    ]);
+    const anchors = selectImportedKnownAnchors(state);
+    const a = anchors.find((x) => x.h3Index === ID_A);
+    const b = anchors.find((x) => x.h3Index === ID_B);
+    expect(a?.displayName).toBe('Bench Corner');
+    expect(b?.displayName).toBe(ID_B);
+  });
+
+  it('surfaces lat/lon straight from the entry rawGpsPoint', () => {
+    const state = withEntries([{ ...importedA, timestamp: 0 }]);
+    const anchor = selectImportedKnownAnchors(state)[0];
+    expect(anchor?.lat).toBeCloseTo(50.1, 3);
+    expect(anchor?.lon).toBeCloseTo(6.1, 3);
+  });
+
+  it('memoises on the entries reference', () => {
+    const state = withEntries([{ ...importedA, timestamp: 0 }]);
+    expect(selectImportedKnownAnchors(state)).toBe(
+      selectImportedKnownAnchors(state)
+    );
+  });
+
+  it('returns a stable empty sentinel when no imports exist', () => {
+    const a = selectImportedKnownAnchors(withEntries([]));
+    const b = selectImportedKnownAnchors(withEntries([]));
+    expect(a).toEqual([]);
+    expect(a).toBe(b);
   });
 });
 

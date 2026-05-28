@@ -25,6 +25,7 @@ collapses the two.
 | `resetRefPoints()` | action | Restores empty initial state. |
 | `selectRefPointEntries(state)` | selector | Memoised; returns a stable empty sentinel when no entries. |
 | `selectKnownAnchorsByCell(state)` | selector | Memoised; groups by H3 cell `id`; first-non-null `name` per cell wins. |
+| `selectImportedKnownAnchors(state)` | selector | Memoised; filters entries by `timestamp === 0` (sidecar imports) and maps to `KnownGeoAnchor[]`. Mirrors the legacy `selectCachedKnownRefPoints` output (Option C, §A.6). |
 | `countEntriesByCellInSession(state, start, end)` | helper | `Map<id, count>` filtered by inclusive timestamp range. |
 
 ## Invariants
@@ -48,5 +49,6 @@ collapses the two.
 - [ref-points-v2-selectors.test.ts](ref-points-v2-selectors.test.ts) —
   `selectRefPointEntries` (incl. stable empty sentinel),
   `selectKnownAnchorsByCell` (grouping, first-non-null name, lat/lon
-  surface, memoisation), and `countEntriesByCellInSession` (inclusive
-  range filtering).
+  surface, memoisation), `selectImportedKnownAnchors` (timestamp-0
+  filter, displayName fallback, memoisation, stable empty sentinel),
+  and `countEntriesByCellInSession` (inclusive range filtering).
