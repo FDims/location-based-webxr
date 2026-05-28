@@ -252,8 +252,7 @@ describe('app-level selectors', () => {
     it('converts each NUE-stored entry back to WebXR coordinates', () => {
       // Round-trip: nueToWebXR(webxrToNUE([1,2,-3])) === [1,2,-3]
       const webxrPosition: [number, number, number] = [1, 2, -3];
-      const webxrRotation: [number, number, number, number] =
-        normalizeQuaternion([0.1, 0.2, 0.3, 0.9]);
+      const webxrRotation = normalizeQuaternion([0.1, 0.2, 0.3, 0.9]);
       const nueEntry: ArImageCapture = {
         imageFile: 'frames/frame-000001.jpg',
         position: webxrToNUE(webxrPosition),
