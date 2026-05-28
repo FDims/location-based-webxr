@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Recorder Store — composable store for the recorder app.
  *
  * Wraps the framework's `createSlamAppStore` factory and supplies the
@@ -28,11 +28,10 @@ import {
   createSlamAppStore,
   type SlamAppStore,
 } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
-import { refPointsReducer, type RefPointsState } from './ref-points-slice';
 import {
-  refPointsV2Reducer,
-  type RefPointsV2State,
-} from './ref-points-v2-slice';
+  refPointsReducer,
+  type RefPointsState,
+} from './ref-points-slice';
 import type { RecordingState } from 'gps-plus-slam-app-framework/state/recording-slice';
 import type { TrackingSliceState } from 'gps-plus-slam-app-framework/state/tracking-slice';
 import type { TrackingQualitySliceState } from 'gps-plus-slam-app-framework';
@@ -85,17 +84,7 @@ export type {
   DepthSample,
 } from 'gps-plus-slam-app-framework/types/ar-types';
 
-export {
-  setImportedRefPoints,
-  incrementRefPointUsage,
-  clearSessionRefPointUsage,
-  setPriorRefPointMarks,
-  addCurrentRefPointMark,
-  clearCurrentRefPointMarks,
-  resetRefPointsState,
-  selectCachedKnownRefPoints,
-  type RefPointsState,
-} from './ref-points-slice';
+export type { RefPointsState } from './ref-points-slice';
 
 export type { RecordingOptions } from 'gps-plus-slam-app-framework/state/recording-options';
 export type { StorageBackend } from 'gps-plus-slam-app-framework/storage/storage-backend';
@@ -112,7 +101,6 @@ export interface CombinedRootState extends LibraryRootState {
   tracking: TrackingSliceState;
   trackingQuality: TrackingQualitySliceState;
   refPoints: RefPointsState;
-  refPointsV2: RefPointsV2State;
   routing: RoutingState;
   scenario: ScenarioState;
 }
@@ -158,7 +146,6 @@ export function createRecorderStore(
     licenseKey: options.licenseKey,
     extraReducers: {
       refPoints: refPointsReducer,
-      refPointsV2: refPointsV2Reducer,
       routing: routingReducer,
       scenario: scenarioReducer,
     },

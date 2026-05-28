@@ -54,7 +54,7 @@ vi.mock('../state/recorder-store', () => ({
     getState: vi.fn(() => ({
       gpsData: null,
       recording: { isRecording: false },
-      refPointsV2: { entries: [] },
+      refPoints: { entries: [] },
     })),
     dispatch: vi.fn(),
     subscribe: vi.fn(() => vi.fn()),

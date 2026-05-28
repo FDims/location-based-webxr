@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Aachen Recording Audit — Ref Point Display & Storage Bugs
  *
  * Two Aachen sessions recorded on 2026-04-09 (morning and evening) exposed
@@ -35,9 +35,9 @@ import {
 } from 'gps-plus-slam-app-framework/storage/zip-reader';
 import {
   selectKnownAnchorsByCell,
-  type RefPointsV2State,
+  type RefPointsState,
   type RefPointEntry,
-} from '../state/ref-points-v2-slice';
+} from '../state/ref-points-slice';
 import type { ImportedRefPoint } from '../storage/ref-point-importer';
 import {
   gpsToH3,
@@ -338,7 +338,7 @@ describe('Aachen 2026-04-09 Recording Audit', () => {
      * session, the button label showed "📍 Capture '8b1fa0a3168efff'" because
      * the H3 selector used `rp.id` (H3 index) as `displayName`.
      *
-     * Post-Step 5.4 the matcher reads from the flat `refPointsV2` slice via
+     * Post-Step 5.4 the matcher reads from the flat `refPoints` slice via
      * `selectKnownAnchorsByCell`. Same first-non-null-`name` per cell rule.
      */
     it('displayName should be human-readable, not an H3 index', () => {
@@ -373,7 +373,7 @@ describe('Aachen 2026-04-09 Recording Audit', () => {
       }));
 
       // 4. selectKnownAnchorsByCell derives KnownGeoAnchor[] for proximity
-      //    from the flat `refPointsV2` entries.
+      //    from the flat `refPoints` entries.
       const entries: RefPointEntry[] = importedRefPoints.map((rp) => ({
         id: rp.id,
         timestamp: 0,
@@ -386,8 +386,8 @@ describe('Aachen 2026-04-09 Recording Audit', () => {
           timestamp: 0,
         },
       }));
-      const refPointsV2State: RefPointsV2State = { entries };
-      const knownRefPoints = selectKnownAnchorsByCell(refPointsV2State);
+      const RefPointsState: RefPointsState = { entries };
+      const knownRefPoints = selectKnownAnchorsByCell(RefPointsState);
 
       // FIXED: displayName is now the human-readable name, not the H3 hex
       for (const kp of knownRefPoints) {

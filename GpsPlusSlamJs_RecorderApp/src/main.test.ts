@@ -47,7 +47,7 @@ const {
     scenario?: {
       currentScenarioName?: string;
     };
-    refPointsV2?: {
+    refPoints?: {
       entries: ReadonlyArray<{
         id: string;
         timestamp: number;
@@ -67,7 +67,7 @@ const {
     scenario: {
       currentScenarioName: '',
     },
-    refPointsV2: { entries: [] },
+    refPoints: { entries: [] },
   };
   const storeListeners: Array<() => void> = [];
 
@@ -91,14 +91,14 @@ const {
       // selectors (and exports like `getImportedRefPoints`) observe
       // the write. Legacy `refPoints/*` actions were removed in
       // 5.7a-3 Option C.
-      if (action?.type === 'refPointsV2/setImportedRefPointEntries') {
-        mockState.refPointsV2 = {
+      if (action?.type === 'refPoints/setImportedRefPointEntries') {
+        mockState.refPoints = {
           entries: action.payload as NonNullable<
-            typeof mockState.refPointsV2
+            typeof mockState.refPoints
           >['entries'],
         };
-      } else if (action?.type === 'refPointsV2/resetRefPoints') {
-        mockState.refPointsV2 = { entries: [] };
+      } else if (action?.type === 'refPoints/resetRefPoints') {
+        mockState.refPoints = { entries: [] };
       } else if (action?.type === 'scenario/setCurrentScenarioName') {
         mockState.scenario = {
           ...mockState.scenario,
@@ -1686,13 +1686,13 @@ describe('Imported Reference Points in Picker (Task 1e)', () => {
       },
     ]);
 
-    // Step 5.4: matcher reads from refPointsV2. Seed the slice with the
+    // Step 5.4: matcher reads from refPoints. Seed the slice with the
     // same anchor (using a real H3-resolution-11 cell id at (49.0, 8.0)).
     const { gpsToH3 } = await import(
       'gps-plus-slam-app-framework/geo/h3-proximity'
     );
     const bankH3 = gpsToH3(49.0, 8.0);
-    mockState.refPointsV2 = {
+    mockState.refPoints = {
       entries: [
         {
           id: bankH3,
@@ -2055,12 +2055,12 @@ describe('loadAndDisplayRefPoints', () => {
 
     expect(loadAllRefPoints).toHaveBeenCalledWith(mockHandle);
     expect(flattenRefPointsToMarks).toHaveBeenCalledWith(mockDefs);
-    // 5.7a-3 Option C: visualizer is driven by `refPointsV2` (see
+    // 5.7a-3 Option C: visualizer is driven by `refPoints` (see
     // ref-point-subscribers Step 5.3). The call site dispatches the
     // averaged sidecar entries instead of the legacy prior-marks action.
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'refPointsV2/setImportedRefPointEntries',
+        type: 'refPoints/setImportedRefPointEntries',
       })
     );
     expect(result).toEqual({ refPointCount: 2, observationCount: 3 });
@@ -2086,7 +2086,7 @@ describe('loadAndDisplayRefPoints', () => {
 
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'refPointsV2/setImportedRefPointEntries',
+        type: 'refPoints/setImportedRefPointEntries',
         payload: [],
       })
     );
@@ -2155,7 +2155,7 @@ describe('handleClearRefPointCache', () => {
 
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'refPointsV2/setImportedRefPointEntries',
+        type: 'refPoints/setImportedRefPointEntries',
         payload: [],
       })
     );
@@ -2194,7 +2194,7 @@ describe('handleClearRefPointCache', () => {
 
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'refPointsV2/setImportedRefPointEntries',
+        type: 'refPoints/setImportedRefPointEntries',
         payload: [],
       })
     );
@@ -2256,7 +2256,7 @@ describe('handleClearRefPointCache', () => {
     expect(loadAllRefPoints).toHaveBeenCalledWith(mockHandle);
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'refPointsV2/setImportedRefPointEntries',
+        type: 'refPoints/setImportedRefPointEntries',
       })
     );
   });

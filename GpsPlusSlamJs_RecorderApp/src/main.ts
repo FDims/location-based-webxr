@@ -97,7 +97,7 @@ import {
   setImportedRefPointEntries,
   selectImportedKnownAnchors,
   type RefPointEntry,
-} from './state/ref-points-v2-slice';
+} from './state/ref-points-slice';
 
 import {
   showRefPointPicker,
@@ -297,7 +297,7 @@ const folderManager = createFolderManager({
  * Exported for testing.
  */
 export function getImportedRefPoints() {
-  return selectImportedKnownAnchors(store.getState().refPointsV2);
+  return selectImportedKnownAnchors(store.getState().refPoints);
 }
 
 /**
@@ -519,7 +519,7 @@ export async function resetForNewRecording(): Promise<void> {
     const folderHandle = getReadFolderHandle();
     if (folderHandle) {
       const refPointCount = selectImportedKnownAnchors(
-        store.getState().refPointsV2
+        store.getState().refPoints
       ).length;
       updateFolderStatus(`✅ ${folderHandle.name} (${refPointCount} ref pts)`);
     }

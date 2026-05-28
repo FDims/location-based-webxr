@@ -4,7 +4,7 @@
  * Step 5.3 of 2026-05-27-collapse-refpoint-and-frame-slices-plan.md
  * migrated this subscriber from the library's `selectReferencePoints`
  * onto the recorder-side flat `selectRefPointEntries` selector
- * (`state.refPointsV2.entries`). The wirer must call
+ * (`state.refPoints.entries`). The wirer must call
  * `visualizer.syncRefPoints` once on attach (initial sync) and exactly
  * once per change of the selector's memoised result, and must not fire
  * when the selector returns the same reference twice in a row.
@@ -13,11 +13,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { wireRefPointSubscribers } from './ref-point-subscribers';
 import type { RecorderStore } from './recorder-store';
-import type { RefPointEntry } from './ref-points-v2-slice';
+import type { RefPointEntry } from './ref-points-slice';
 
 interface MockState {
   // Only the shape the selector reads from.
-  refPointsV2: { entries: readonly RefPointEntry[] };
+  refPoints: { entries: readonly RefPointEntry[] };
 }
 
 function makeEntry(id: string, timestamp = 0): RefPointEntry {
@@ -64,7 +64,7 @@ describe('wireRefPointSubscribers', () => {
     const v = makeVisualizer();
     const a = makeEntry('a', 1);
     const { store } = makeMockStore({
-      refPointsV2: { entries: [a] },
+      refPoints: { entries: [a] },
     });
 
     wireRefPointSubscribers(store, v);
@@ -76,48 +76,48 @@ describe('wireRefPointSubscribers', () => {
   it('syncs again when the selector result reference changes', () => {
     const v = makeVisualizer();
     const { store, setState } = makeMockStore({
-      refPointsV2: { entries: [] },
+      refPoints: { entries: [] },
     });
     wireRefPointSubscribers(store, v);
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
 
     const a = makeEntry('a', 1);
-    setState({ refPointsV2: { entries: [a] } });
+    setState({ refPoints: { entries: [a] } });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(2);
     expect(v.syncRefPoints).toHaveBeenLastCalledWith([a]);
 
     const b = makeEntry('b', 2);
-    setState({ refPointsV2: { entries: [a, b] } });
+    setState({ refPoints: { entries: [a, b] } });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(3);
     expect(v.syncRefPoints).toHaveBeenLastCalledWith([a, b]);
   });
 
   it('does not sync when the selector returns the same reference', () => {
     const v = makeVisualizer();
-    const refPointsV2 = { entries: [makeEntry('a', 1)] };
-    const { store, setState } = makeMockStore({ refPointsV2 });
+    const refPoints = { entries: [makeEntry('a', 1)] };
+    const { store, setState } = makeMockStore({ refPoints });
     wireRefPointSubscribers(store, v);
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
 
-    // Top-level state object changes but `refPointsV2` reference is
+    // Top-level state object changes but `refPoints` reference is
     // reused → `selectRefPointEntries` (a `createSelector`) returns the
     // same memoised array, so the wirer must not re-dispatch.
-    setState({ refPointsV2 });
+    setState({ refPoints });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
 
-    setState({ refPointsV2 });
+    setState({ refPoints });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
   });
 
   it('is a no-op when visualizer is null', () => {
     const { store, setState } = makeMockStore({
-      refPointsV2: { entries: [] },
+      refPoints: { entries: [] },
     });
     const unsubscribe = wireRefPointSubscribers(store, null);
     expect(typeof unsubscribe).toBe('function');
     expect(() => {
       setState({
-        refPointsV2: { entries: [makeEntry('x', 1)] },
+        refPoints: { entries: [makeEntry('x', 1)] },
       });
     }).not.toThrow();
     unsubscribe();
@@ -126,14 +126,14 @@ describe('wireRefPointSubscribers', () => {
   it('returned unsubscribe detaches the store listener', () => {
     const v = makeVisualizer();
     const { store, setState } = makeMockStore({
-      refPointsV2: { entries: [] },
+      refPoints: { entries: [] },
     });
     const unsubscribe = wireRefPointSubscribers(store, v);
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
     unsubscribe();
 
     setState({
-      refPointsV2: { entries: [makeEntry('p', 1)] },
+      refPoints: { entries: [makeEntry('p', 1)] },
     });
     expect(v.syncRefPoints).toHaveBeenCalledTimes(1);
   });

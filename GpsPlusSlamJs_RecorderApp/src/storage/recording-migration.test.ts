@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Recording Migration Tests
  *
  * Why these tests matter:
@@ -975,19 +975,19 @@ describe('recording-migration', () => {
     });
 
     // =======================================================================
-    // Step 5.6: legacy zip → refPointsV2 translator
+    // Step 5.6: legacy zip → refPoints translator
     // =======================================================================
 
-    describe('refPointsV2 injection (Step 5.6)', () => {
+    describe('refPoints injection (Step 5.6)', () => {
       /**
        * Why this test matters:
        * Legacy zips persist only `gpsData/markReferencePoint`; the new flat
-       * `refPointsV2` slice that the H3 matcher and visualizer read from
+       * `refPoints` slice that the H3 matcher and visualizer read from
        * (Steps 5.2–5.4) never receives any action on replay unless the
        * migrator synthesises one. Without this translator, replayed
        * recordings would render zero ref points.
        */
-      it('inserts refPointsV2/addRefPointEntry after each markReferencePoint', () => {
+      it('inserts refPoints/addRefPointEntry after each markReferencePoint', () => {
         const actions: RecordedAction[] = [
           {
             type: 'gpsData/markReferencePoint',
@@ -1012,7 +1012,7 @@ describe('recording-migration', () => {
 
         expect(result).toHaveLength(2);
         expect(result[0].type).toBe('gpsData/markReferencePoint');
-        expect(result[1].type).toBe('refPointsV2/addRefPointEntry');
+        expect(result[1].type).toBe('refPoints/addRefPointEntry');
         const v2 = result[1].payload as Record<string, unknown>;
         expect(v2['id']).toBe('8b1fa0a3168efff');
         expect(v2['timestamp']).toBe(2000);
@@ -1026,11 +1026,11 @@ describe('recording-migration', () => {
 
       /**
        * Why this test matters:
-       * Idempotency — when a recording already carries refPointsV2 actions
+       * Idempotency — when a recording already carries refPoints actions
        * (future post-Step-5.7 era), the translator must be a no-op to avoid
        * doubling every entry on replay.
        */
-      it('is a no-op when stream already contains refPointsV2 actions', () => {
+      it('is a no-op when stream already contains refPoints actions', () => {
         const actions: RecordedAction[] = [
           {
             type: 'gpsData/markReferencePoint',
@@ -1048,7 +1048,7 @@ describe('recording-migration', () => {
             },
           },
           {
-            type: 'refPointsV2/addRefPointEntry',
+            type: 'refPoints/addRefPointEntry',
             payload: {
               id: 'x',
               timestamp: 0,
@@ -1095,7 +1095,7 @@ describe('recording-migration', () => {
       /**
        * Why this test matters:
        * Era-1 zips have `gpsPoint` (not `rawGpsPoint`) and no odomCoordVersion;
-       * after the GPS-payload rename pass, the injected refPointsV2 entry
+       * after the GPS-payload rename pass, the injected refPoints entry
        * must carry the renamed `rawGpsPoint`.
        */
       it('runs after era-1 gpsPoint→rawGpsPoint rename', () => {
@@ -1120,7 +1120,7 @@ describe('recording-migration', () => {
         ];
         const result = migrateActionsIfNeeded(actions, null);
         expect(result).toHaveLength(2);
-        expect(result[1].type).toBe('refPointsV2/addRefPointEntry');
+        expect(result[1].type).toBe('refPoints/addRefPointEntry');
         const v2 = result[1].payload as Record<string, unknown>;
         const raw = v2['rawGpsPoint'] as Record<string, unknown>;
         expect(raw['latitude']).toBe(49);

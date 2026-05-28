@@ -146,14 +146,13 @@ import {
   type RefPointHandlers,
   type RefPointHandlersDeps,
 } from './ref-point-handlers';
-import { refPointsReducer } from '../state/ref-points-slice';
 import {
-  refPointsV2Reducer,
+  refPointsReducer,
   addRefPointEntry,
   setImportedRefPointEntries,
-  resetRefPoints as resetRefPointsV2,
+  resetRefPoints,
   type RefPointEntry,
-} from '../state/ref-points-v2-slice';
+} from '../state/ref-points-slice';
 import { gpsToH3 } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -167,7 +166,7 @@ import { gpsToH3 } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 let lastTestStore: RecorderStore | null = null;
 
 /**
- * Test-only helper: seed the `refPointsV2` slice with sidecar-imported
+ * Test-only helper: seed the `refPoints` slice with sidecar-imported
  * known anchors. Replaces the removed `handlers.setImportedRefPoints`
  * convenience after 5.7a-3 Option C collapsed the legacy slice.
  */
@@ -199,7 +198,6 @@ function createMockStore(
   options?: { alignmentMatrix?: number[] }
 ): RecorderStore {
   let refPointsState = refPointsReducer(undefined, { type: '@@INIT' });
-  let refPointsV2State = refPointsV2Reducer(undefined, { type: '@@INIT' });
 
   const store = {
     getState: vi.fn().mockImplementation(() => ({
@@ -211,32 +209,11 @@ function createMockStore(
         },
       },
       refPoints: refPointsState,
-      refPointsV2: refPointsV2State,
     })),
     subscribe: vi.fn().mockReturnValue(() => {}),
     dispatch: vi.fn().mockImplementation((action: { type: string; payload?: unknown }) => {
       if (action.type.startsWith('refPoints/')) {
         refPointsState = refPointsReducer(refPointsState, action);
-        // Test-only bridge: mirror legacy `setImportedRefPoints` into
-        // refPointsV2 so existing tests that exercise the proximity matcher
-        // via `handlers.setImportedRefPoints` keep working after the Step
-        // 5.4 matcher swap. Production wiring instead lands in Step 5.5
-        // (OPFS reader will dispatch `setImportedRefPointEntries` directly).
-        if (action.type === 'refPoints/setImportedRefPoints') {
-          const imported = action.payload as ImportedRefPoint[];
-          const entries = imported.map((rp) => importedToEntry(rp, Date.now()));
-          refPointsV2State = refPointsV2Reducer(
-            refPointsV2State,
-            setImportedRefPointEntries(entries)
-          );
-        } else if (action.type === 'refPoints/resetRefPointsState') {
-          refPointsV2State = refPointsV2Reducer(
-            refPointsV2State,
-            resetRefPointsV2()
-          );
-        }
-      } else if (action.type.startsWith('refPointsV2/')) {
-        refPointsV2State = refPointsV2Reducer(refPointsV2State, action);
       }
       return action;
     }),
@@ -249,7 +226,7 @@ function createMockStore(
 }
 
 /**
- * Step 5.4 test helper: seed a known geo anchor directly in `refPointsV2`
+ * Step 5.4 test helper: seed a known geo anchor directly in `refPoints`
  * so the H3 proximity matcher (`selectKnownAnchorsByCell`) can find it
  * without routing through the legacy `importedRefPoints` field.
  */
@@ -282,7 +259,7 @@ function populateKnownAnchor(
 /**
  * Step 5.7 helpers: query the V2 dispatch stream for ref-point markings.
  *
- * Production source-of-truth is the `refPointsV2/addRefPointEntry` action.
+ * Production source-of-truth is the `refPoints/addRefPointEntry` action.
  * These helpers replace the previous `mockMarkReferencePoint.mock.calls`
  * lookups (the parallel `gpsData/markReferencePoint` dispatch was dropped
  * in Step 5.7 of the 2026-05-27 slice-collapse plan).
@@ -309,7 +286,7 @@ function getMarkCalls(store: RecorderStore): V2EntryPayload[] {
   };
   return dispatchMock.mock.calls
     .map((c) => c[0] as { type?: string; payload?: unknown })
-    .filter((a) => a?.type === 'refPointsV2/addRefPointEntry')
+    .filter((a) => a?.type === 'refPoints/addRefPointEntry')
     .map((a) => a.payload as V2EntryPayload);
 }
 
@@ -322,7 +299,7 @@ function expectMarkDispatchedTimes(store: RecorderStore, n: number): void {
 }
 
 function getDispatchedCurrentMark(store: RecorderStore): RefPointMark {
-  // Step 5.7: source-of-truth dispatch is the V2 `refPointsV2/addRefPointEntry`
+  // Step 5.7: source-of-truth dispatch is the V2 `refPoints/addRefPointEntry`
   // action. Synthesise the legacy `RefPointMark` shape for assertion convenience
   // by combining the V2 payload (id / timestamp / rawGpsPoint / gpsPoint?) with
   // the latest extractOdomPosition / extractOdomRotation mock returns (the same
@@ -333,7 +310,7 @@ function getDispatchedCurrentMark(store: RecorderStore): RefPointMark {
   };
   const v2Calls = dispatchMock.mock.calls
     .map((c) => c[0] as { type?: string; payload?: unknown })
-    .filter((a) => a?.type === 'refPointsV2/addRefPointEntry');
+    .filter((a) => a?.type === 'refPoints/addRefPointEntry');
   const payload = v2Calls.at(-1)?.payload as
     | {
         id: string;
@@ -352,7 +329,7 @@ function getDispatchedCurrentMark(store: RecorderStore): RefPointMark {
     | undefined;
   if (!payload) {
     throw new Error(
-      'Expected a refPointsV2/addRefPointEntry action to have been dispatched'
+      'Expected a refPoints/addRefPointEntry action to have been dispatched'
     );
   }
   const position = mockExtractOdomPosition.mock.results.at(-1)?.value as
@@ -376,7 +353,7 @@ function getDispatchedCurrentMark(store: RecorderStore): RefPointMark {
 }
 
 /**
- * Assert that at least one `refPointsV2/addRefPointEntry` action was
+ * Assert that at least one `refPoints/addRefPointEntry` action was
  * dispatched (Step 5.7: the V2 slice is the canonical mark log).
  */
 function expectCurrentRefPointDispatched(store: RecorderStore): void {
@@ -385,7 +362,7 @@ function expectCurrentRefPointDispatched(store: RecorderStore): void {
   };
   const v2Calls = dispatchMock.mock.calls
     .map((c) => c[0] as { type?: string })
-    .filter((a) => a?.type === 'refPointsV2/addRefPointEntry');
+    .filter((a) => a?.type === 'refPoints/addRefPointEntry');
   expect(v2Calls.length).toBeGreaterThan(0);
 }
 
@@ -445,7 +422,7 @@ describe('createRefPointHandlers', () => {
 
   // Why: The factory must return an object with the public handler functions.
   // Imported-ref-point reads/writes and session usage now live in the
-  // `refPointsV2` slice (Step 5.7a-3 Option C); the factory no longer
+  // `refPoints` slice (Step 5.7a-3 Option C); the factory no longer
   // exposes those accessors.
   it('should return all handler functions', () => {
     expect(handlers.handleMarkRefPoint).toBeTypeOf('function');
@@ -682,7 +659,7 @@ describe('handleMarkRefPoint — picker integration', () => {
 });
 
 // ============================================================================
-// handleMarkRefPoint — Step 5.4: matcher reads refPointsV2
+// handleMarkRefPoint — Step 5.4: matcher reads refPoints
 // ============================================================================
 
 describe('handleMarkRefPoint — Step 5.4 matcher source', () => {
@@ -690,8 +667,8 @@ describe('handleMarkRefPoint — Step 5.4 matcher source', () => {
    * Why this test matters:
    * Step 5.4 of the 2026-05-27 slice-collapse plan switches the H3
    * proximity matcher from `selectCachedKnownRefPoints(state.refPoints)`
-   * to `selectKnownAnchorsByCell(state.refPointsV2)`. After the swap, a
-   * known anchor stored only in `refPointsV2` (i.e. no entry in the
+   * to `selectKnownAnchorsByCell(state.refPoints)`. After the swap, a
+   * known anchor stored only in `refPoints` (i.e. no entry in the
    * legacy `importedRefPoints` field) must still trigger the
    * re-observation path and propagate its human-readable name through
    * to the persisted observation.
@@ -700,7 +677,7 @@ describe('handleMarkRefPoint — Step 5.4 matcher source', () => {
    * legacy list → no nearby match → picker is shown). After the change
    * it passes.
    */
-  it('re-observes via refPointsV2 anchor when legacy importedRefPoints is empty', async () => {
+  it('re-observes via refPoints anchor when legacy importedRefPoints is empty', async () => {
     vi.clearAllMocks();
     mockIsRefPointPickerVisible.mockReturnValue(false);
     const mockArPose = createMockArPose();
@@ -716,7 +693,7 @@ describe('handleMarkRefPoint — Step 5.4 matcher source', () => {
       createDefaultDeps({ getStore: () => store })
     );
 
-    // Seed refPointsV2 only — legacy importedRefPoints stays empty.
+    // Seed refPoints only — legacy importedRefPoints stays empty.
     populateKnownAnchor(store, {
       name: 'Bench Corner',
       lat: 49.0,
@@ -727,7 +704,7 @@ describe('handleMarkRefPoint — Step 5.4 matcher source', () => {
 
     // Re-observation path: picker must NOT be shown.
     expect(mockShowRefPointPicker).not.toHaveBeenCalled();
-    // The persisted display name must come from the refPointsV2 anchor.
+    // The persisted display name must come from the refPoints anchor.
     expect(mockSaveRefPointObservation).toHaveBeenCalled();
     const persistedName = mockSaveRefPointObservation.mock.calls[0][2];
     expect(persistedName).toBe('Bench Corner');
@@ -737,10 +714,10 @@ describe('handleMarkRefPoint — Step 5.4 matcher source', () => {
    * Why this test matters:
    * `checkNearbyRefPoint` is the capture-button label feeder and must
    * also use the new matcher source. The asymmetry of having the mark
-   * path read from refPointsV2 while the label path still reads from
+   * path read from refPoints while the label path still reads from
    * the legacy slice would surface as a stale or empty button label.
    */
-  it('checkNearbyRefPoint resolves displayName via refPointsV2', () => {
+  it('checkNearbyRefPoint resolves displayName via refPoints', () => {
     const store = createMockStore();
     const handlers = createRefPointHandlers(
       createDefaultDeps({ getStore: () => store })
@@ -1934,12 +1911,12 @@ describe('handleMarkRefPoint — re-observation toast feedback', () => {
 });
 
 // ============================================================================
-// Step 5.2 + 5.7 (2026-05-27 slice-collapse plan): refPointsV2 dispatch
+// Step 5.2 + 5.7 (2026-05-27 slice-collapse plan): refPoints dispatch
 // ============================================================================
 
 /**
  * Why these tests matter: `handleMarkRefPoint` must dispatch a
- * `refPointsV2/addRefPointEntry` action carrying the H3-cell `id`,
+ * `refPoints/addRefPointEntry` action carrying the H3-cell `id`,
  * `timestamp`, `rawGpsPoint`, and the picker/imported `name`. When an
  * alignment matrix is in effect at mark-time the entry's `gpsPoint`
  * snapshot carries the fused lat/lon; otherwise it is omitted
@@ -1947,7 +1924,7 @@ describe('handleMarkRefPoint — re-observation toast feedback', () => {
  * previously-parallel `gpsData/markReferencePoint` dispatch — the V2
  * action is now the sole source of truth.
  */
-describe('handleMarkRefPoint — refPointsV2 dispatch (Step 5.2 / 5.7)', () => {
+describe('handleMarkRefPoint — refPoints dispatch (Step 5.2 / 5.7)', () => {
   function findV2Dispatch(
     store: RecorderStore
   ): { type: string; payload: unknown } | undefined {
@@ -1956,10 +1933,10 @@ describe('handleMarkRefPoint — refPointsV2 dispatch (Step 5.2 / 5.7)', () => {
     };
     return dispatchMock.mock.calls
       .map((c) => c[0])
-      .find((a) => a?.type === 'refPointsV2/addRefPointEntry');
+      .find((a) => a?.type === 'refPoints/addRefPointEntry');
   }
 
-  it('dispatches refPointsV2/addRefPointEntry with id/timestamp/rawGpsPoint/name', async () => {
+  it('dispatches refPoints/addRefPointEntry with id/timestamp/rawGpsPoint/name', async () => {
     vi.clearAllMocks();
     mockIsRefPointPickerVisible.mockReturnValue(false);
     mockGetCurrentArPose.mockReturnValue(createMockArPose());

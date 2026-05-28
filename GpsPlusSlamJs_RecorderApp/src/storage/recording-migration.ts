@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Recording Migration
  *
  * Migrates recorded Redux actions from older coordinate conventions to the
@@ -76,7 +76,7 @@ export function migrateActionsIfNeeded(
   metadata: Record<string, unknown> | null
 ): RecordedAction[] {
   const erasMigrated = migrateErasIfNeeded(actions, metadata);
-  return injectRefPointsV2Actions(erasMigrated);
+  return injectRefPointsActions(erasMigrated);
 }
 
 function migrateErasIfNeeded(
@@ -114,25 +114,25 @@ function migrateErasIfNeeded(
 }
 
 // ---------------------------------------------------------------------------
-// refPointsV2 injection: synthesise `refPointsV2/addRefPointEntry` after
+// refPoints injection: synthesise `refPoints/addRefPointEntry` after
 // each `gpsData/markReferencePoint` so legacy zips populate the new flat
 // slice that the H3 matcher reads from (Step 5.4) and the OPFS sidecar
 // fast-path writes to (Step 5.5).
 //
 // Idempotent: skipped when the action stream already contains any
-// `refPointsV2/...` action (future recordings may persist them directly).
+// `refPoints/...` action (future recordings may persist them directly).
 //
 // Plan: [2026-05-27-collapse-refpoint-and-frame-slices-plan.md §B.5 5.6].
 // ---------------------------------------------------------------------------
 
-function injectRefPointsV2Actions(
+function injectRefPointsActions(
   actions: RecordedAction[]
 ): RecordedAction[] {
   // Idempotency guard — preserve same-reference contract for streams that
   // already carry the new slice's actions.
   let hasMark = false;
   for (const a of actions) {
-    if (a.type.startsWith('refPointsV2/')) return actions;
+    if (a.type.startsWith('refPoints/')) return actions;
     if (a.type === 'gpsData/markReferencePoint') hasMark = true;
   }
   if (!hasMark) return actions;
@@ -156,7 +156,7 @@ function injectRefPointsV2Actions(
         : (rawGpsPoint as Record<string, unknown>)['timestamp'];
 
     out.push({
-      type: 'refPointsV2/addRefPointEntry',
+      type: 'refPoints/addRefPointEntry',
       payload: {
         id,
         timestamp:

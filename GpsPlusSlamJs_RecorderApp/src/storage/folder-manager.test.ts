@@ -105,8 +105,7 @@ function createMockStore(): RecorderStore {
       currentScenarioName: '',
     },
     refPoints: {
-      importedRefPoints: [],
-      sessionRefPointUsage: {},
+      entries: [],
     },
     gpsData: null,
   };
@@ -704,9 +703,9 @@ describe('createFolderManager', () => {
       expect(result).toEqual({ refPointCount: 1, observationCount: 1 });
     });
 
-    it('should dispatch setImportedRefPointEntries into refPointsV2 (Step 5.5)', async () => {
+    it('should dispatch setImportedRefPointEntries into refPoints (Step 5.5)', async () => {
       // Why: post-Step-5.5 the OPFS sidecar fast-path populates the new flat
-      // `refPointsV2` slice via `setImportedRefPointEntries`. The matcher
+      // `refPoints` slice via `setImportedRefPointEntries`. The matcher
       // (`selectKnownAnchorsByCell`) reads from there since Step 5.4. Each
       // averaged ref point becomes a single `RefPointEntry` carrying the
       // human-readable `name` and a `rawGpsPoint` synthesised from the
@@ -728,7 +727,7 @@ describe('createFolderManager', () => {
 
       expect(store.dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'refPointsV2/setImportedRefPointEntries',
+          type: 'refPoints/setImportedRefPointEntries',
           payload: [
             expect.objectContaining({
               id: 'p1',

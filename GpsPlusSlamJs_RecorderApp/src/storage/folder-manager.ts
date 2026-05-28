@@ -32,7 +32,7 @@ import {
 import { recoverRefPointDefinitionsFromZips } from '../storage/ref-point-recovery';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { setCurrentScenarioName } from '../state/recorder-store';
-import { setImportedRefPointEntries } from '../state/ref-points-v2-slice';
+import { setImportedRefPointEntries } from '../state/ref-points-slice';
 import type { RecorderStore } from '../state/recorder-store';
 
 const log = createLogger('FolderManager');
@@ -316,7 +316,7 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     // Compute averaged GPS per ref point ID for H3 + 2D map
     const averaged = averageGpsPerRefPoint(refPointDefs);
 
-    // Populate the flat `refPointsV2` slice — the single source of truth
+    // Populate the flat `refPoints` slice — the single source of truth
     // since 5.7a-3 Option C of the 2026-05-27 slice-collapse plan. Each
     // averaged ref point becomes a single sidecar `RefPointEntry` with
     // `timestamp: 0` (sidecar imports are not live observations). The 3D

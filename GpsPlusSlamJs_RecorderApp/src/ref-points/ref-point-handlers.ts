@@ -32,7 +32,7 @@ import {
   addRefPointEntry,
   resetRefPoints,
   selectKnownAnchorsByCell,
-} from '../state/ref-points-v2-slice';
+} from '../state/ref-points-slice';
 import { fusedGpsFromOdom } from 'gps-plus-slam-app-framework/utils/fused-path';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
@@ -89,7 +89,7 @@ export function createRefPointHandlers(
 ): RefPointHandlers {
   // --- State ---
   // Only markRefPointInProgress remains as closure state (transient concurrency guard).
-  // Ref-point entries live in the `refPointsV2` slice (the single source of
+  // Ref-point entries live in the `refPoints` slice (the single source of
   // truth after 5.7a-3 Option C of the 2026-05-27 slice-collapse plan).
   let markRefPointInProgress = false;
 
@@ -165,7 +165,7 @@ export function createRefPointHandlers(
       ...rawGpsPoint
     } = gpsPoint;
 
-    // Single source of truth: the flat `refPointsV2` slice. Step 5.7 of
+    // Single source of truth: the flat `refPoints` slice. Step 5.7 of
     // the 2026-05-27 slice-collapse plan dropped the parallel
     // `gpsData/markReferencePoint` dispatch; the library no longer
     // tracks ref points. Carries the fused lat/lon (+altitude) snapshot
@@ -265,10 +265,10 @@ export function createRefPointHandlers(
       const scenarioHandle = getCurrentScenarioHandle();
 
       // Read cached known ref points from Redux (memoized selector).
-      // Step 5.4: source is the flat `refPointsV2` slice; grouping by H3
+      // Step 5.4: source is the flat `refPoints` slice; grouping by H3
       // cell happens in `selectKnownAnchorsByCell`.
       const cachedKnownRefPoints = selectKnownAnchorsByCell(
-        deps.getStore().getState().refPointsV2
+        deps.getStore().getState().refPoints
       );
 
       // Check if we're near a known ref point (re-observation).
@@ -415,9 +415,9 @@ export function createRefPointHandlers(
       lat: number,
       lng: number
     ): NearbyRefPointInfo | undefined {
-      // Step 5.4: matcher reads from the flat `refPointsV2` slice.
+      // Step 5.4: matcher reads from the flat `refPoints` slice.
       const cachedKnown = selectKnownAnchorsByCell(
-        deps.getStore().getState().refPointsV2
+        deps.getStore().getState().refPoints
       );
       const match = findNearbyGeoAnchor(lat, lng, cachedKnown);
       if (!match) return undefined;

@@ -19,7 +19,7 @@ import { registerFrameUpdate } from 'gps-plus-slam-app-framework/ar/frame-loop';
 import { VIS_COLORS } from 'gps-plus-slam-app-framework/visualization/vis-colors';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type { RefPointMark } from '../storage/ref-point-loader';
-import type { RefPointEntry } from '../state/ref-points-v2-slice';
+import type { RefPointEntry } from '../state/ref-points-slice';
 import {
   syncGpsAnchoredMeshes,
   type GpsAnchoredItem,

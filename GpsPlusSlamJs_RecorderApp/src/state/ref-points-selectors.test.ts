@@ -1,5 +1,5 @@
 /**
- * Failing-first tests for the `refPointsV2` selectors.
+ * Failing-first tests for the `refPoints` selectors.
  *
  * Plan: [2026-05-27-collapse-refpoint-and-frame-slices-plan.md §B.5 5.1].
  * Selectors under test:
@@ -22,8 +22,8 @@ import {
   selectKnownAnchorsByCell,
   selectRefPointEntries,
   type RefPointEntry,
-  type RefPointsV2State,
-} from './ref-points-v2-slice';
+  type RefPointsState,
+} from './ref-points-slice';
 
 function raw(lat: number, lon: number): RawGpsPoint {
   return {
@@ -59,7 +59,7 @@ const importedB: RefPointEntry = {
   rawGpsPoint: raw(50.2, 6.2),
 };
 
-function withEntries(entries: RefPointEntry[]): RefPointsV2State {
+function withEntries(entries: RefPointEntry[]): RefPointsState {
   return { entries };
 }
 

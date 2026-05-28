@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Reference Point Visualizer Tests
  */
 
@@ -8,7 +8,7 @@ import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-app-framework/licensing';
 import { RefPointVisualizer } from './ref-point-visualizer';
 import type { RefPointMark } from '../storage/ref-point-loader';
 import type { LatLong } from 'gps-plus-slam-app-framework/core';
-import type { RefPointEntry } from '../state/ref-points-v2-slice';
+import type { RefPointEntry } from '../state/ref-points-slice';
 import * as THREE from 'three';
 
 // Activate the gps-plus-slam-js license once for this suite so calls into
