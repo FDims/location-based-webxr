@@ -17,7 +17,9 @@ Part of F3 of
 ```ts
 class FrameTileVisualizer {
   constructor(scene: THREE.Scene, options?: { sizeMeters?: number });
-  addTile(frame: FrameInScene, texture: THREE.Texture): void;
+  // `FrameTile` is a local alias for the framework's `ArImageCapture`
+  // (the shape `selectFrameTilesInWebXR` produces).
+  addTile(frame: FrameTile, texture: THREE.Texture): void;
   clear(): void;
   dispose(): void;
   getCount(): number;

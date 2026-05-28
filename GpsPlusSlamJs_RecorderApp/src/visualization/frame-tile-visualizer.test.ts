@@ -11,9 +11,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { FrameTileVisualizer } from './frame-tile-visualizer';
-import type { FrameInScene } from '../state/frames-in-scene-slice';
+import type { ArImageCapture } from 'gps-plus-slam-app-framework/core';
 
-function makeFrame(overrides: Partial<FrameInScene> = {}): FrameInScene {
+function makeFrame(overrides: Partial<ArImageCapture> = {}): ArImageCapture {
   return {
     imageFile: overrides.imageFile ?? 'frames/frame-000001.jpg',
     position: overrides.position ?? [1, 2, -3],

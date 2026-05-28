@@ -30,7 +30,17 @@
  */
 
 import * as THREE from 'three';
-import type { FrameInScene } from '../state/frames-in-scene-slice';
+import type { ArImageCapture } from 'gps-plus-slam-app-framework/core';
+
+/**
+ * Pose-carrying frame descriptor consumed by the visualizer. Matches
+ * the shape produced by `selectFrameTilesInWebXR` (one
+ * `ArImageCapture` per captured frame). Previously imported from the
+ * recorder-local `framesInScene` slice, which was deleted in Step
+ * 5.7a-2 of the slice-collapse plan; the selector is now the sole
+ * source.
+ */
+type FrameTile = ArImageCapture;
 
 /** 1 m × 1 m base plane — scaled per tile (F3.4 may pass an option). */
 const SHARED_GEOMETRY = new THREE.PlaneGeometry(1, 1);
@@ -64,7 +74,7 @@ export class FrameTileVisualizer {
    * second call with the same `imageFile` is a no-op (append-only
    * mirror of the slice — frames are never re-published).
    */
-  addTile(frame: FrameInScene, texture: THREE.Texture): void {
+  addTile(frame: FrameTile, texture: THREE.Texture): void {
     if (this.tiles.has(frame.imageFile)) return;
     const material = new THREE.MeshBasicMaterial({
       map: texture,
