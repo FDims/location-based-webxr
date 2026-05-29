@@ -44,6 +44,21 @@ const {
   };
 });
 
+// Tracking-quality subscriber spy. Each call returns a distinct dispose spy so
+// tests can assert prior subscriptions are disposed before a new one is wired.
+const { mockSubscribeHudToTrackingQuality, trackingQualityDisposers } =
+  vi.hoisted(() => {
+    const trackingQualityDisposers: Array<() => void> = [];
+    return {
+      trackingQualityDisposers,
+      mockSubscribeHudToTrackingQuality: vi.fn(() => {
+        const dispose = vi.fn();
+        trackingQualityDisposers.push(dispose);
+        return dispose;
+      }),
+    };
+  });
+
 // ---------- mocks for all main.ts dependencies ----------
 
 vi.mock('gps-plus-slam-app-framework/visualization/camera-follower', () => ({
@@ -321,6 +336,12 @@ vi.mock('gps-plus-slam-app-framework/ar/capture-failure-tracker', () => ({
 vi.mock('gps-plus-slam-app-framework', () => ({
   selectTrackingQuality: vi.fn().mockReturnValue(null),
 }));
+// Spy on the HUD tracking-quality subscriber so we can assert the dispose
+// handle returned by `subscribeHudToTrackingQuality` is honored across
+// enter-AR cycles and on resetMainState (subscription-leak regression).
+vi.mock('./ui/hud-tracking-quality-subscriber', () => ({
+  subscribeHudToTrackingQuality: mockSubscribeHudToTrackingQuality,
+}));
 vi.mock('./replay/replay-handlers', () => ({
   createReplayHandlers: vi.fn().mockReturnValue({
     handleStartReplay: vi.fn(),
@@ -366,6 +387,7 @@ import { handleEnterARForTesting, resetMainState } from './main';
 describe('Issue 8: CameraFollower wiring in live AR', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    trackingQualityDisposers.length = 0;
     resetMainState();
 
     // Set up minimal DOM expected by main.ts module init
@@ -453,5 +475,63 @@ describe('Issue 8: CameraFollower wiring in live AR', () => {
 
     expect(mockCreateCameraFollower).not.toHaveBeenCalled();
     expect(mockCreateGpsCompassCubes).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Tracking-quality HUD subscription lifecycle.
+ *
+ * Why these tests matter:
+ * `subscribeHudToTrackingQuality` returns a dispose function that detaches both
+ * the per-store subscription and the store-swap listener. `handleEnterAR` can
+ * run multiple times per page load (back to setup → Enter AR again). If the
+ * dispose handle is ignored, every cycle appends another `storeRef` + `store`
+ * subscriber that is never cleaned up — leaking memory and firing redundant HUD
+ * updates. These tests pin the dispose-before-resubscribe and reset behavior.
+ */
+describe('Tracking-quality HUD subscription cleanup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    trackingQualityDisposers.length = 0;
+    resetMainState();
+
+    document.body.innerHTML = `
+      <div id="app"></div>
+      <div id="setup-modal">
+        <h1 id="setup-title">Recorder</h1>
+      </div>
+      <div id="controls"></div>
+      <div id="replay-controls" class="hidden"></div>
+      <div id="ref-point-picker-modal"></div>
+    `;
+  });
+
+  it('subscribes the HUD to tracking quality on AR entry', async () => {
+    await handleEnterARForTesting();
+
+    expect(mockSubscribeHudToTrackingQuality).toHaveBeenCalledTimes(1);
+    expect(trackingQualityDisposers).toHaveLength(1);
+    // The single live subscription must still be active (not disposed).
+    expect(trackingQualityDisposers[0]).not.toHaveBeenCalled();
+  });
+
+  it('disposes the previous subscription before re-subscribing on a second AR entry', async () => {
+    await handleEnterARForTesting();
+    await handleEnterARForTesting();
+
+    expect(mockSubscribeHudToTrackingQuality).toHaveBeenCalledTimes(2);
+    expect(trackingQualityDisposers).toHaveLength(2);
+    // First subscription was torn down; only the latest stays active.
+    expect(trackingQualityDisposers[0]).toHaveBeenCalledTimes(1);
+    expect(trackingQualityDisposers[1]).not.toHaveBeenCalled();
+  });
+
+  it('disposes the live subscription on resetMainState', async () => {
+    await handleEnterARForTesting();
+    expect(trackingQualityDisposers[0]).not.toHaveBeenCalled();
+
+    resetMainState();
+
+    expect(trackingQualityDisposers[0]).toHaveBeenCalledTimes(1);
   });
 });

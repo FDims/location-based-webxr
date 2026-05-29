@@ -232,6 +232,13 @@ const liveFrameBlobs = new FrameBlobCache({
 let frameTileVisualizer: FrameTileVisualizer | null = null;
 let unsubscribeFrameTiles: (() => void) | null = null;
 
+// HUD tracking-quality subscription. `subscribeHudToTrackingQuality` returns a
+// dispose function that detaches both the per-store subscription and the
+// store-swap listener. We keep the handle here so re-entering AR (back to
+// setup → Enter AR again) and `resetMainState` can tear it down instead of
+// leaking an extra subscriber on every cycle.
+let unsubscribeTrackingQuality: (() => void) | null = null;
+
 // Replay mode handlers — encapsulates all replay state and event handlers
 // (Finding #7 decomposition: extracted from main.ts to replay/replay-handlers.ts)
 const replayHandlers = createReplayHandlers({
@@ -371,6 +378,12 @@ export function resetMainState(): void {
   if (alignmentLerper) {
     alignmentLerper.dispose();
     alignmentLerper = null;
+  }
+  // Tear down the HUD tracking-quality subscription so it doesn't outlive the
+  // AR session (prevents accumulating subscribers across enter-AR cycles).
+  if (unsubscribeTrackingQuality) {
+    unsubscribeTrackingQuality();
+    unsubscribeTrackingQuality = null;
   }
   // F3.5d — tear down frame-tile visualizer + drop cached frame blobs so
   // GPU textures and JPEG bytes don't outlive the AR session.
@@ -1001,7 +1014,13 @@ async function handleEnterAR(): Promise<void> {
     // health. Goes through `storeRef` so the subscription follows every
     // store swap (Start Recording / replay) — see F1 in
     // `docs/2026-05-26-tracking-quality-regression-and-replay-gaps-user-feedback.md`.
-    subscribeHudToTrackingQuality({
+    //
+    // Dispose any prior subscription first: `handleEnterAR` can run multiple
+    // times per page load (back to setup → Enter AR again), and each call
+    // would otherwise append a fresh `storeRef` + `store` subscriber that is
+    // never cleaned up, leaking memory and firing redundant HUD updates.
+    unsubscribeTrackingQuality?.();
+    unsubscribeTrackingQuality = subscribeHudToTrackingQuality({
       storeRef,
       updateHud: updateTrackingQuality,
     });
