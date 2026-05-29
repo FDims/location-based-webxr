@@ -118,9 +118,24 @@ export class RefPointVisualizer {
    * recorder-local `refPoints` slice.
    */
   private refPointHandles = new Map<string, THREE.Mesh>();
+  /**
+   * Last entries handed to `syncRefPoints`, retained so that `setZeroRef`
+   * can replay them once a zero reference becomes available. Without this,
+   * any entries pushed while `zeroRef` was still null are silently dropped
+   * until an unrelated store mutation re-triggers the subscriber — the
+   * visualizer relied on subscriber ordering rather than being
+   * self-healing.
+   */
+  private lastRefPoints: readonly RefPointEntry[] = [];
 
   setZeroRef(zero: LatLong): void {
     this.zeroRef = zero;
+    // Replay the most recent entries now that we can place them. Entries
+    // pushed before GPS lock were cached but no-op'd; this renders them
+    // without waiting for the next store mutation.
+    if (this.lastRefPoints.length > 0) {
+      this.syncRefPoints(this.lastRefPoints);
+    }
   }
 
   getZeroRef(): LatLong | null {
@@ -193,6 +208,9 @@ export class RefPointVisualizer {
    * the AR session is up will reconcile.
    */
   syncRefPoints(refPoints: readonly RefPointEntry[]): void {
+    // Cache first so `setZeroRef` can replay these even when we bail out
+    // below because the zero reference or scene is not available yet.
+    this.lastRefPoints = refPoints;
     if (!this.zeroRef) return;
     const scene = getScene();
     if (!scene) return;
@@ -244,6 +262,7 @@ export class RefPointVisualizer {
       );
     }
     this.zeroRef = null;
+    this.lastRefPoints = [];
   }
 
   getCounts(): { prior: number; current: number } {

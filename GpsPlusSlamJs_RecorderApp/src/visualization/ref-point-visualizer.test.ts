@@ -299,6 +299,44 @@ describe('RefPointVisualizer', () => {
       expect(visualizer.getRefPointCount()).toBe(0);
     });
 
+    /**
+     * Why this test matters: `syncRefPoints` no-ops while `zeroRef` is
+     * null. The class docstring promises "the next call once the AR
+     * session is up will reconcile", but the only place a zero reference
+     * arrives is `setZeroRef`. Without caching the last entries, points
+     * pushed before GPS lock are silently dropped until an unrelated
+     * store mutation re-triggers the subscriber. This codifies that
+     * `setZeroRef` itself replays the cached entries so the visualizer
+     * is self-healing and not dependent on subscriber ordering.
+     */
+    it('renders cached entries when zeroRef arrives after syncRefPoints', () => {
+      visualizer.syncRefPoints([
+        createMockReferencePoint('rp1', 48.8567, 2.3523),
+        createMockReferencePoint('rp2', 48.8568, 2.3524),
+      ]);
+
+      // No zero ref yet — nothing rendered.
+      expect(visualizer.getRefPointCount()).toBe(0);
+
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      // setZeroRef replays the cached entries.
+      expect(visualizer.getRefPointCount()).toBe(2);
+      expect(mockScene.children).toHaveLength(2);
+    });
+
+    it('does not replay stale entries after clearAll', () => {
+      visualizer.syncRefPoints([
+        createMockReferencePoint('rp1', 48.8567, 2.3523),
+      ]);
+      visualizer.clearAll();
+
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+
+      expect(visualizer.getRefPointCount()).toBe(0);
+      expect(mockScene.children).toHaveLength(0);
+    });
+
     it('renders all marks uniformly with the same colour and name prefix', () => {
       visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
 

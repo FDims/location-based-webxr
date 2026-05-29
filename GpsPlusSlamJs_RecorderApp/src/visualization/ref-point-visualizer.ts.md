@@ -10,7 +10,12 @@ between calls plus a single `zeroRef` field; no other state.
 ## Public API
 
 - `class RefPointVisualizer`
-  - `setZeroRef(zero)` / `getZeroRef()`
+  - `setZeroRef(zero)` / `getZeroRef()` — `setZeroRef` also **replays**
+    the entries most recently passed to `syncRefPoints` (cached in
+    `lastRefPoints`), so entries pushed before GPS lock render as soon
+    as the zero reference arrives instead of waiting for the next store
+    mutation. This makes the visualizer self-healing rather than
+    dependent on subscriber ordering.
   - **`syncRefPoints(entries: readonly RefPointEntry[])`** — unified
     entry point for the recorder's flat `selectRefPointEntries`
     selector (Step 5.3 of the 2026-05-27 slice-collapse plan). Reads
@@ -31,8 +36,9 @@ between calls plus a single `zeroRef` field; no other state.
   - `addCurrentRefPoint(mark)` — _legacy_; appends to the current group.
     Removed in Step 5.
   - `clearPriorRefPoints()` / `clearCurrentRefPoints()` / `clearAll()` —
-    `clearAll` also clears the unified `syncRefPoints` handles and resets
-    the zero ref.
+    `clearAll` also clears the unified `syncRefPoints` handles, resets
+    the zero ref, and drops the cached `lastRefPoints` so a later
+    `setZeroRef` does not replay stale entries.
   - `getCounts(): { prior, current }` — _legacy_; counts for the
     prior/current pipelines only. Use `getRefPointCount()` for the
     unified pipeline.
