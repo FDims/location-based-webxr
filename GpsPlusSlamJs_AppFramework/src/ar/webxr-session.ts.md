@@ -73,6 +73,7 @@ scene (GPS world frame — NUE: X=North, Y=Up, Z=East)
 - Depth sensing optional (for depth point capture)
 - Camera-access optional (for blit-based image capture; falls back to canvas.toBlob)
 - **Container element must be provided** — `initAR(container)` no longer queries the DOM internally; the caller passes the container element
+- **Single active session (re-entry guard)** — `initAR()` throws `AR session already initialized …` if a `renderer` or `xrSession` is still set. This prevents a second call from orphaning the previous renderer's canvas in the DOM and leaking its GPU resources. The host must call `endARSession()` (or `resetWebXRState()` in tests) before starting a new session. Covered by `webxr-session.init-guard.test.ts`.
 - `ARPose` is a plain object suitable for JSON serialization
 - **Camera MUST be parented under arpose (which is under basisChangeNode under arWorldGroup)** for pose separation to work
 - **arpose is identity during recording** — transparent in the transform chain

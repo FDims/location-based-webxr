@@ -631,6 +631,18 @@ export async function initAR(
     throw new Error('WebXR not available');
   }
 
+  // Guard against re-entry. A renderer/session is only non-null between a
+  // successful initAR() and a matching endARSession()/resetWebXRState(). If
+  // either is still set, calling initAR() again would orphan the previous
+  // renderer's canvas in the DOM and leak its GPU resources while silently
+  // overwriting the module-level references. Surface this as a programming
+  // error so the host tears down the existing session explicitly first.
+  if (renderer || xrSession) {
+    throw new Error(
+      'AR session already initialized — call endARSession() before initAR() again'
+    );
+  }
+
   currentArCrashIsolationOptions =
     validateArCrashIsolationOptions(isolationOptions);
 
