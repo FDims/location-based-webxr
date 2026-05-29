@@ -235,6 +235,46 @@ describe('wireFrameTileSubscribers', () => {
     expect(visualizer.addTile).not.toHaveBeenCalled();
   });
 
+  it('disposes a decoded texture when disposed flips true mid-decode', async () => {
+    // Why this test matters: decodeTexture is async. If dispose() runs
+    // after the texture is decoded but before addTile() is called, the
+    // texture never reaches the visualizer (which is what disposes the
+    // textures it owns), so the wirer must dispose it itself to avoid a
+    // GPU memory leak.
+    const visualizer = makeVisualizerSpy();
+    const texture = new THREE.Texture();
+    const disposeSpy = vi.spyOn(texture, 'dispose');
+    const blobSource = vi.fn().mockResolvedValue(makeBlobOfSize(5000));
+
+    let resolveDecode: ((t: THREE.Texture) => void) | undefined;
+    const decodeTexture = vi.fn(
+      () =>
+        new Promise<THREE.Texture>((resolve) => {
+          resolveDecode = resolve;
+        })
+    );
+
+    const dispose = wireFrameTileSubscribers({
+      storeRef,
+      visualizer,
+      blobSource,
+      decodeTexture,
+    });
+
+    storeRef.get().dispatch(add2dImage(makeFrame()));
+    await flushMicrotasks();
+    expect(decodeTexture).toHaveBeenCalledTimes(1);
+
+    // Dispose the subscriber while decodeTexture is still pending, then
+    // resolve the decode.
+    dispose();
+    resolveDecode?.(texture);
+    await flushMicrotasks();
+
+    expect(visualizer.addTile).not.toHaveBeenCalled();
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('reports errors via onError and does not crash', async () => {
     const visualizer = makeVisualizerSpy();
     const onError = vi.fn();

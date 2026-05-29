@@ -30,6 +30,12 @@ mirror — `selectFrameTilesInWebXR` is now the sole source.
   3. decode via the injected `decodeTexture(blob)` (caller wires
      `createImageBitmap` in production),
   4. call `visualizer.addTile(frame, texture)`.
+- Texture-leak guard: `decodeTexture` is async, so the subscriber may
+  be disposed (or the store swapped) while a decode is in flight. If
+  `disposed` is true after the decode resolves, the wirer disposes the
+  freshly decoded `THREE.Texture` itself instead of handing it to the
+  visualizer — otherwise that texture's GPU resources would leak, since
+  only the visualizer disposes the textures it actually receives.
 - De-duplicate by `imageFile` within a single store lifetime via an
   internal `Set<string>`.
 - React to store swaps (F1 pattern): clear the visualizer, reset the

@@ -97,7 +97,15 @@ export function wireFrameTileSubscribers(
           const blob = await blobSource(frame.imageFile);
           if (disposed || !blob || blob.size < minFrameBytes) return;
           const texture = await decodeTexture(blob);
-          if (disposed || !texture) return;
+          if (!texture) return;
+          // If the subscriber was disposed while decodeTexture was
+          // awaiting, the texture never reaches the visualizer (which
+          // owns disposal of the textures it holds), so dispose it here
+          // to avoid leaking GPU memory.
+          if (disposed) {
+            texture.dispose();
+            return;
+          }
           visualizer.addTile(frame, texture);
         } catch (err) {
           onError?.(err, frame.imageFile);
