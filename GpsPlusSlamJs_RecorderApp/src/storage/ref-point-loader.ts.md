@@ -24,6 +24,7 @@ Manages loading, saving, and transforming reference points from the scenario's `
 | `listRefPointIds`         | `(scenarioHandle) => Promise<string[]>`                     | List all ref point IDs for autocomplete                                                        |
 | `flattenRefPointsToMarks` | `(defs) => RefPointMark[]`                                  | Transform definitions to flat visualization list (prefers `fusedGpsPoint` over raw `gpsPoint`) |
 | `averageGpsPerRefPoint`   | `(defs) => AveragedRefPoint[]`                              | Compute GPS centroid per ref point ID (prefers fusedGpsPoint over raw gpsPoint)                |
+| `isRefPointDefinition`    | `(value: unknown) => value is RefPointDefinition`           | Deep type guard: validates base shape **and** every observation's `arPose`/`gpsPoint` nested fields. Reused by `recording-loader.ts` for sidecar validation |
 
 ## Invariants & Assumptions
 

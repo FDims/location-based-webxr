@@ -40,10 +40,10 @@ import {
 import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage/null-storage-backend';
 import { migrateActionsIfNeeded } from './recording-migration';
 import {
+  isRefPointDefinition,
   type RefPointDefinition,
   type RefPointObservation,
 } from './ref-point-loader';
-import { isRefPointDefinitionShape } from './ref-point-zip-helpers';
 import {
   createRecorderStore,
   type CombinedRootState,
@@ -170,7 +170,11 @@ async function readSidecarRefPoints(
     try {
       const text = await entry.getText();
       const parsed: unknown = JSON.parse(text);
-      if (isRefPointDefinitionShape(parsed)) {
+      // Deep validation (not just the top-level shape): rejects sidecars
+      // whose observations are malformed so downstream consumers such as
+      // `flattenRefPointsToMarks` never read `obs.arPose.position` /
+      // `obs.gpsPoint.latitude` off undefined.
+      if (isRefPointDefinition(parsed)) {
         defs.push(parsed);
       } else {
         log.warn(

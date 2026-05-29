@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 import {
   loadRecording,
   isMarkRefPointAction,
@@ -166,5 +167,87 @@ describe('isMarkRefPointAction — pose-array length contract', () => {
 
   it('rejects empty pose arrays even though they are arrays', () => {
     expect(isMarkRefPointAction(baseAction([], []))).toBe(false);
+  });
+});
+
+/**
+ * Deep-validation contract for sidecar `refPoints/*.json`.
+ *
+ * Why this matters: `readSidecarRefPoints` must apply the same deep
+ * validation as the OPFS loader (`isRefPointDefinition`), not the shape-only
+ * `isRefPointDefinitionShape`. A sidecar whose top-level shape is valid but
+ * whose observations are malformed (missing `arPose` / `gpsPoint` / their
+ * nested fields) would otherwise be surfaced in `LoadedRecording.refPoints`
+ * and later crash consumers such as `flattenRefPointsToMarks` when they read
+ * `obs.arPose.position` / `obs.gpsPoint.latitude` off undefined.
+ */
+describe('readSidecarRefPoints — deep observation validation', () => {
+  async function buildZip(
+    sidecars: Record<string, unknown>
+  ): Promise<Uint8Array> {
+    const zipWriter = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await zipWriter.add(
+      'session.json',
+      new TextReader(
+        JSON.stringify({
+          version: 1,
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          scenarioName: 'TestScenario',
+          actionCount: 0,
+          frameCount: 0,
+          userAgent: 'test',
+        })
+      )
+    );
+    for (const [id, body] of Object.entries(sidecars)) {
+      await zipWriter.add(
+        `refPoints/${id}.json`,
+        new TextReader(JSON.stringify(body))
+      );
+    }
+    const blob = await zipWriter.close();
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  const validDef = {
+    id: 'pointGood',
+    name: 'Good Point',
+    createdAt: 1_700_000_000_000,
+    observations: [
+      {
+        sessionId: 's1',
+        timestamp: 1_700_000_000_000,
+        arPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        gpsPoint: { latitude: 50.77, longitude: 6.08 },
+      },
+    ],
+  };
+
+  // Top-level shape is valid (id/name/createdAt/observations[]) but the lone
+  // observation lacks `arPose` and `gpsPoint`, so deep validation must reject
+  // the whole sidecar.
+  const malformedObsDef = {
+    id: 'pointBad',
+    name: 'Bad Point',
+    createdAt: 1_700_000_000_000,
+    observations: [{ sessionId: 's1', timestamp: 1_700_000_000_000 }],
+  };
+
+  it('keeps a sidecar whose observations are well-formed', async () => {
+    const loaded = await loadRecording(await buildZip({ pointGood: validDef }));
+    expect(loaded.refPoints.map((d) => d.id)).toContain('pointGood');
+    expect(loaded.capabilities.hasSidecarRefPoints).toBe(true);
+  });
+
+  it('skips a sidecar with malformed observations while keeping valid ones', async () => {
+    const loaded = await loadRecording(
+      await buildZip({ pointGood: validDef, pointBad: malformedObsDef })
+    );
+    const ids = loaded.refPoints.map((d) => d.id);
+    expect(ids).toContain('pointGood');
+    expect(ids).not.toContain('pointBad');
   });
 });

@@ -93,8 +93,15 @@ function isValidObservation(obs: unknown): obs is RefPointObservation {
  * Type guard to validate parsed JSON matches RefPointDefinition shape.
  * Prevents runtime errors from malformed or corrupted JSON files.
  * Also validates each observation to ensure nested properties exist.
+ *
+ * Exported so other sidecar readers (e.g. `recording-loader.ts`) can apply
+ * the same deep validation instead of the shape-only
+ * {@link isRefPointDefinitionShape}, which would let malformed observations
+ * through and later crash consumers like `flattenRefPointsToMarks`.
  */
-function isRefPointDefinition(value: unknown): value is RefPointDefinition {
+export function isRefPointDefinition(
+  value: unknown
+): value is RefPointDefinition {
   if (!isRefPointDefinitionShape(value)) {
     return false;
   }
