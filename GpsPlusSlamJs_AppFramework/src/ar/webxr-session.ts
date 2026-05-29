@@ -1160,39 +1160,37 @@ export function nueQuaternionToWebXR(
 /**
  * End the current XR session and clean up all resources.
  *
- * Stops the animation loop, disposes the WebGL renderer, removes the
- * canvas from the DOM, and tears down the CSS3D overlay. This is the
- * production cleanup path — call it when the AR experience is finished.
+ * Stops the animation loop, ends the XR session, then delegates the full
+ * teardown to {@link resetWebXRState} so every module-level reference is
+ * cleared (renderer/scene/camera, image-capture, depth, the tracking-phase
+ * subscription, the frame-update registry, diagnostics, blit resources).
+ * This is the production cleanup path — call it when the AR experience is
+ * finished.
  */
 export async function endARSession(): Promise<void> {
-  // Stop render loop first so onXRFrame no longer fires
+  // Stop the render loop first so onXRFrame stops firing before we end the
+  // session and tear everything down.
   if (renderer) {
     renderer.setAnimationLoop(null);
   }
 
+  // End the actual XR session and await it. resetWebXRState() below only
+  // nulls the `xrSession` reference — it never calls XRSession.end() — so
+  // ending the session here is the one piece of teardown that is unique to
+  // the production path.
   if (xrSession) {
     await xrSession.end();
-    xrSession = null;
-  }
-  latestArPose = null;
-
-  // Dispose CSS3D overlay
-  if (css3dManager) {
-    css3dManager.dispose();
-    css3dManager = null;
   }
 
-  // Remove canvas from DOM and dispose GPU resources
-  if (renderer) {
-    if (renderer.domElement.parentElement) {
-      renderer.domElement.parentElement.removeChild(renderer.domElement);
-    }
-    renderer.dispose();
-    renderer = null;
-  }
-
-  // Clean up blit capture resources
-  cleanupBlitResources();
+  // Delegate the rest of the teardown to resetWebXRState() so we never leak
+  // any module-level reference. Re-implementing a subset here (the previous
+  // approach) silently dropped imageCaptureManager, depthSampler, the
+  // tracking-phase subscription, the frame-update registry, the scene-graph
+  // references and the diagnostic counters — all of which resetWebXRState()
+  // clears. Keeping a single source of truth for cleanup prevents new module
+  // state from leaking between sessions when it is added to resetWebXRState()
+  // but forgotten here.
+  resetWebXRState();
 }
 
 /**

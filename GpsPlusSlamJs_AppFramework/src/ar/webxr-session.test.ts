@@ -1347,12 +1347,16 @@ describe('DOM hardcoding audit regressions', () => {
 
   /**
    * Why this test matters:
-   * endARSession must provide a production cleanup path: stop
-   * the render loop, dispose GPU resources, and remove the canvas.
-   * Previously it only called xrSession.end() — nothing else.
+   * endARSession is the production teardown path. It must perform the same
+   * thorough cleanup as resetWebXRState() — ending the XR session AND
+   * clearing every module-level reference — so no state leaks into the
+   * next session. Asserting it delegates to resetWebXRState() (rather than
+   * re-implementing a subset of the teardown inline) guards against the
+   * leak class where new module state is added to resetWebXRState() but
+   * forgotten in endARSession().
    * See: 2026-04-01-code-review-dom-hardcoding-audit.md, Finding 11 (P2).
    */
-  it('endARSession stops render loop, disposes renderer, removes canvas', async () => {
+  it('endARSession ends the XR session and delegates teardown to resetWebXRState', async () => {
     const { readFileSync } = await import('node:fs');
     const { resolve } = await import('node:path');
     const source = readFileSync(
@@ -1363,10 +1367,36 @@ describe('DOM hardcoding audit regressions', () => {
       source.indexOf('function endARSession'),
       source.indexOf('function setImageCaptureCallback')
     );
-    expect(endBlock).toContain('setAnimationLoop(null)');
-    expect(endBlock).toContain('renderer.dispose()');
-    expect(endBlock).toContain('removeChild(renderer.domElement)');
-    expect(endBlock).toContain('css3dManager');
+    // Must still end the actual XR session — resetWebXRState() only nulls
+    // the reference, it never calls XRSession.end().
+    expect(endBlock).toContain('xrSession.end()');
+    // Must reuse the comprehensive synchronous teardown rather than
+    // re-implementing a subset of it.
+    expect(endBlock).toContain('resetWebXRState()');
+  });
+
+  /**
+   * Why this test matters:
+   * This is the behavioural proof of the leak the delegation fixes. Before
+   * delegating to resetWebXRState(), endARSession() left the scene-graph
+   * references (scene, camera, arWorldGroup, arPose) dangling, so a fresh
+   * session could observe stale objects via getScene()/getCamera()/etc.
+   * We seed those references through the public setters (the same surface
+   * replay mode uses) because initAR() cannot run under jsdom.
+   */
+  it('endARSession clears scene-graph references so they do not leak into the next session', async () => {
+    resetWebXRState();
+    setScene(new Scene());
+    setCamera(new PerspectiveCamera());
+    setArWorldGroup(new Group());
+    setArPose(new THREE.Object3D());
+
+    await endARSession();
+
+    expect(getScene()).toBeNull();
+    expect(getCamera()).toBeNull();
+    expect(getArWorldGroup()).toBeNull();
+    expect(getArPose()).toBeNull();
   });
 
   /**

@@ -55,7 +55,7 @@ scene (GPS world frame — NUE: X=North, Y=Up, Z=East)
 | `applyAlignmentMatrix()`         | `(matrix: number[]) => void`                         | Write alignment directly to arWorldGroup.matrix                                                                                                                                      |
 | `nuePositionToWebXR()`           | `(nue: number[]) => [n, n, n]`                       | Convert NUE position to WebXR (for replay arpose)                                                                                                                                    |
 | `nueQuaternionToWebXR()`         | `(nue: readonly number[]) => [n, n, n, n]`           | Convert NUE quaternion to WebXR `[z, y, -x, w]` (for replay arpose rotation)                                                                                                         |
-| `endARSession()`                 | `async () => void`                                   | Full AR cleanup: stops animation loop, ends XR session, disposes CSS3D manager, removes canvas from DOM, disposes renderer, cleans blit resources                                    |
+| `endARSession()`                 | `async () => void`                                   | Full AR cleanup: stops animation loop, ends XR session, then delegates teardown to `resetWebXRState()` (disposes renderer/CSS3D, removes canvas, clears all module-level references) |
 | `setImageCaptureCallback()`      | `(cb, getRotation) => void`                          | Set callback for when images are captured                                                                                                                                            |
 | `startImageCapture()`            | `(config?: Partial<ImageCaptureConfig>) => void`     | Start periodic image capture with optional config                                                                                                                                    |
 | `stopImageCapture()`             | `() => void`                                         | Stop periodic image capture                                                                                                                                                          |
@@ -181,7 +181,7 @@ Unit tests in `webxr-session.test.ts` cover:
 
 - P1: source code grep confirms no hardcoded `ar-canvas` ID on the renderer canvas
 - P2: `resetWebXRState()` stops animation loop, removes canvas, disposes renderer
-- P2: `endARSession()` performs full cleanup (stops loop, ends session, disposes CSS3D, removes canvas, disposes renderer)
+- P2: `endARSession()` ends the XR session and delegates teardown to `resetWebXRState()` (asserted by the delegation grep test + a behavioural test that scene-graph references are cleared)
 - P2: `endARSession()` is safe to call when no AR session is active
 
 Full integration testing requires an Android device with WebXR support.
