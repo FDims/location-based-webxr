@@ -2,7 +2,7 @@
  * Unit tests for tracking-quality.ts.
  *
  * Phase A of docs/2026-05-16-tracking-quality-metrics-plan.md. Focus
- * is on the pure compute helpers (Â§4.1â€“Â§4.7) and the slice/listener
+ * is on the pure compute helpers (§4.1–§4.7) and the slice/listener
  * wiring. The full Investigation parameter sweep is exercised
  * separately in `GpsPlusSlamJs_Investigation/src/investigations/tracking-quality.test.ts`.
  */
@@ -79,7 +79,7 @@ function gps(
   lonOffsetM: number,
   acc = 3
 ): GpsPoint {
-  // Approx 1 m â‰ˆ 9e-6Â° lat at this latitude.
+  // Approx 1 m ≈ 9e-6° lat at this latitude.
   const lat = ZERO_REF.lat + latOffsetM / 111_320;
   const lon =
     ZERO_REF.lon +
@@ -109,7 +109,7 @@ const DEFAULT_POSE: ARPose = {
 };
 
 // ---------------------------------------------------------------------------
-// matrixDelta â€” kernel
+// matrixDelta — kernel
 // ---------------------------------------------------------------------------
 
 describe('matrixDelta', () => {
@@ -131,7 +131,7 @@ describe('matrixDelta', () => {
     expect(translationDeltaM).toBeCloseTo(5, 5);
   });
 
-  it('measures pure rotation (30Â° about Y)', () => {
+  it('measures pure rotation (30° about Y)', () => {
     const { rotationDeltaDeg, translationDeltaM } = matrixDelta(
       IDENTITY,
       rotY(Math.PI / 6)
@@ -147,12 +147,12 @@ describe('matrixDelta', () => {
     });
   });
 
-  // Why this test matters: Â§11 (a) of the tracking-quality plan requires
+  // Why this test matters: §11 (a) of the tracking-quality plan requires
   // matrixDelta to agree numerically with the gl-matrix-quat reference
   // kernel used by GpsPlusSlamJs_Investigation/src/investigation-helpers.ts
-  // (`computeStabilityDelta`). The Â§6.1 corpus sweep correlates the
+  // (`computeStabilityDelta`). The §6.1 corpus sweep correlates the
   // AppFramework's runtime convergence score with the Investigation's
-  // hindsight error â€” both must use the same numeric definition or the
+  // hindsight error — both must use the same numeric definition or the
   // correlation is meaningless. The reference kernel below mirrors
   // computeStabilityDelta exactly; this test asserts identical output on
   // a tricky compound-rotation+translation case.
@@ -190,14 +190,14 @@ describe('matrixDelta', () => {
       };
     }
 
-    // Compose: rotate 17Â° about Y then 11Â° about X, then translate (1.2, -0.4, 2.7).
+    // Compose: rotate 17° about Y then 11° about X, then translate (1.2, -0.4, 2.7).
     // Build column-major directly via gl-matrix to avoid hand-error.
     const m = mat4.create();
     mat4.fromTranslation(m, [1.2, -0.4, 2.7]);
     mat4.rotateY(m, m, (17 * Math.PI) / 180);
     mat4.rotateX(m, m, (11 * Math.PI) / 180);
     const a: Matrix4 = Array.from(m) as unknown as Matrix4;
-    // A second matrix: rotate -23Â° about Y + translate (0.7, 0.2, -1.1).
+    // A second matrix: rotate -23° about Y + translate (0.7, 0.2, -1.1).
     const n = mat4.create();
     mat4.fromTranslation(n, [0.7, 0.2, -1.1]);
     mat4.rotateY(n, n, (-23 * Math.PI) / 180);
@@ -209,7 +209,7 @@ describe('matrixDelta', () => {
     expect(got.translationDeltaM).toBeCloseTo(ref.translationDeltaM, 9);
   });
 
-  it('matches the gl-matrix reference for an identity â†’ 90Â°-Y transform', async () => {
+  it('matches the gl-matrix reference for an identity → 90°-Y transform', async () => {
     const { mat4, quat } = await import('gl-matrix');
     const target = mat4.create();
     mat4.rotateY(target, target, Math.PI / 2);
@@ -226,7 +226,7 @@ describe('matrixDelta', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§4.1 convergence
+// §4.1 convergence
 // ---------------------------------------------------------------------------
 
 describe('computeConvergence', () => {
@@ -237,7 +237,7 @@ describe('computeConvergence', () => {
     ).toBe(0);
   });
 
-  it('returns score â‰ˆ 1 for nearly-identical snapshots', () => {
+  it('returns score ≈ 1 for nearly-identical snapshots', () => {
     const snaps: AlignmentSnapshot[] = [
       { observationIndex: 1, matrix: [...IDENTITY] },
       { observationIndex: 2, matrix: [...shifted(0.01, 0, 0.01)] },
@@ -252,14 +252,14 @@ describe('computeConvergence', () => {
   it('drops score for large rotation jumps', () => {
     const snaps: AlignmentSnapshot[] = [
       { observationIndex: 1, matrix: [...IDENTITY] },
-      { observationIndex: 2, matrix: [...rotY(Math.PI / 2)] }, // 90Â°
+      { observationIndex: 2, matrix: [...rotY(Math.PI / 2)] }, // 90°
     ];
     expect(computeConvergence(snaps).score).toBe(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Â§4.2 residual consensus
+// §4.2 residual consensus
 // ---------------------------------------------------------------------------
 
 describe('computeResidualConsensus', () => {
@@ -274,7 +274,7 @@ describe('computeResidualConsensus', () => {
     ).toBe(0);
   });
 
-  it('returns high score when odomâ†’GPS prediction is exact', () => {
+  it('returns high score when odom→GPS prediction is exact', () => {
     const odom: Vector3[] = [
       [0, 0, 0],
       [1, 0, 0],
@@ -305,7 +305,7 @@ describe('computeResidualConsensus', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§4.4 GPS-accuracy budget
+// §4.4 GPS-accuracy budget
 // ---------------------------------------------------------------------------
 
 describe('computeGpsAccuracy', () => {
@@ -313,13 +313,13 @@ describe('computeGpsAccuracy', () => {
     expect(computeGpsAccuracy([]).score).toBe(0);
   });
 
-  it('returns 1.0 for tight GPS (median â‰¤ 3 m)', () => {
+  it('returns 1.0 for tight GPS (median ≤ 3 m)', () => {
     const pts = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => gps(i, i, 0, 2));
     expect(computeGpsAccuracy(pts).score).toBe(1);
     expect(computeGpsAccuracy(pts).medianM).toBe(2);
   });
 
-  it('returns 0 for very loose GPS (median â‰¥ 25 m)', () => {
+  it('returns 0 for very loose GPS (median ≥ 25 m)', () => {
     const pts = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => gps(i, i, 0, 30));
     expect(computeGpsAccuracy(pts).score).toBe(0);
   });
@@ -333,7 +333,7 @@ describe('computeGpsAccuracy', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§4.5 coverage
+// §4.5 coverage
 // ---------------------------------------------------------------------------
 
 describe('computeCoverage', () => {
@@ -353,11 +353,11 @@ describe('computeCoverage', () => {
     const odom: Vector3[] = Array.from({ length: 21 }, (_, i) => [i, 0, 0]);
     const r = computeCoverage(odom);
     expect(r.walkedDistanceM).toBeCloseTo(20, 5);
-    // Single direction â†’ spread â‰ˆ 0, so score â‰ˆ 0.
+    // Single direction → spread ≈ 0, so score ≈ 0.
     expect(r.score).toBeLessThan(0.1);
   });
 
-  it('returns 1.0 for a 20 m loop covering >= 90Â° spread', () => {
+  it('returns 1.0 for a 20 m loop covering >= 90° spread', () => {
     const odom: Vector3[] = [];
     // North leg
     for (let i = 0; i <= 10; i++) odom.push([i, 0, 0]);
@@ -371,7 +371,7 @@ describe('computeCoverage', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§4.3 compass / heading
+// §4.3 compass / heading
 // ---------------------------------------------------------------------------
 
 describe('computeCompassAgreement', () => {
@@ -390,9 +390,9 @@ describe('computeCompassAgreement', () => {
   });
 
   it('returns score 1 when alignment heading matches compass', () => {
-    // AR-forward = (0,0,-1) at identity rotation; identity alignment â†’
+    // AR-forward = (0,0,-1) at identity rotation; identity alignment →
     // ENU forward = (0,0,-1), which under our (N,U,E) ENU labelling has
-    // N = 0, E = -1, bearing = 270Â°. Compass alpha = 270 â‡’ delta = 0.
+    // N = 0, E = -1, bearing = 270°. Compass alpha = 270 ⇒ delta = 0.
     const orientation: DeviceOrientation = {
       alpha: 270,
       beta: 0,
@@ -417,7 +417,7 @@ describe('computeCompassAgreement', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§4.6 GPS-vs-fused divergence
+// §4.6 GPS-vs-fused divergence
 // ---------------------------------------------------------------------------
 
 describe('computeGpsVsFusedDivergence', () => {
@@ -516,7 +516,7 @@ describe('computeTrackingQualityReport', () => {
       ),
       zeroRef: ZERO_REF,
     });
-    // Cast â€” buildRootState satisfies the structural minimum used by selectors.
+    // Cast — buildRootState satisfies the structural minimum used by selectors.
     const report = computeTrackingQualityReport(root as never);
     expect(report.state).toBe('ar-lost');
     expect(report.confidence).toBe(0);
@@ -567,7 +567,7 @@ describe('computeTrackingQualityReport', () => {
     expect(report.state).toBe('ok');
   });
 
-  // Anti-validation Â§6: bad GPS + stable matrix must NOT report 1.0.
+  // Anti-validation §6: bad GPS + stable matrix must NOT report 1.0.
   it('anti-validation: bad GPS pulls confidence down even with stable matrix', () => {
     const odom: Vector3[] = [];
     for (let i = 0; i <= 20; i++) odom.push([i, 0, 0]);
@@ -593,7 +593,7 @@ describe('computeTrackingQualityReport', () => {
     expect(report.state).toBe('degraded');
   });
 
-  // Anti-validation Â§6: standing still must NOT report 'ok'.
+  // Anti-validation §6: standing still must NOT report 'ok'.
   it('anti-validation: standing still keeps state in warming-up', () => {
     const odom: Vector3[] = Array.from({ length: 60 }, () => [0, 0, 0]);
     const gpsPts = Array.from({ length: 60 }, (_, i) => gps(i, 0, 0, 2));
@@ -608,8 +608,8 @@ describe('computeTrackingQualityReport', () => {
     expect(report.state).toBe('warming-up');
   });
 
-  // Anti-validation Â§6: 180Â°-flip compass disagreement degrades quality.
-  it('anti-validation: 180Â° heading disagreement drives compass score to 0', () => {
+  // Anti-validation §6: 180°-flip compass disagreement degrades quality.
+  it('anti-validation: 180° heading disagreement drives compass score to 0', () => {
     const odom: Vector3[] = [];
     for (let i = 0; i <= 20; i++) odom.push([i, 0, 0]);
     for (let i = 1; i <= 20; i++) odom.push([20, 0, i]);
@@ -621,8 +621,8 @@ describe('computeTrackingQualityReport', () => {
         matrix: [...IDENTITY],
       })
     );
-    // Identity alignment + AR-forward (0,0,-1) puts heading at 270Â°;
-    // a compass reporting 90Â° (the 180Â° flip) should fail.
+    // Identity alignment + AR-forward (0,0,-1) puts heading at 270°;
+    // a compass reporting 90° (the 180° flip) should fail.
     const root = buildRootState({
       alignmentMatrix: IDENTITY,
       gpsPositions: gpsPts,
@@ -892,7 +892,7 @@ describe('createTrackingQualityListenerMiddleware', () => {
       });
     }
     const buf = selectRecentAlignments(store.getState());
-    expect(buf.length).toBe(1); // matrix only changed once (null â†’ IDENTITY)
+    expect(buf.length).toBe(1); // matrix only changed once (null → IDENTITY)
     const report = selectTrackingQuality(store.getState());
     expect(report).not.toBeNull();
     expect(report?.diagnostics.observationsSeen).toBe(5);
@@ -960,15 +960,15 @@ describe('createTrackingQualityListenerMiddleware', () => {
       payload: snapshotGpsAfter(IDENTITY, [gps(0, 0, 0)], [[0, 0, 0]]),
     });
     const after1 = reportUpdatedCount;
-    // Same payload again â€” listener computes the same report, no diff dispatch.
+    // Same payload again — listener computes the same report, no diff dispatch.
     store.dispatch({ type: 'tracking/poseLost' });
-    // poseLost may flip phase â†’ state changes â†’ one new dispatch.
+    // poseLost may flip phase → state changes → one new dispatch.
     expect(reportUpdatedCount).toBeGreaterThanOrEqual(after1);
     unsub();
   });
 
   // Why this test matters: `poseReceived` fires on every XR frame. The
-  // compass cross-check (Â§4.3) consumes the live pose + sensor heading,
+  // compass cross-check (§4.3) consumes the live pose + sensor heading,
   // so sub-perceptual per-frame jitter must NOT churn `reportUpdated` at
   // frame rate (high Redux dispatch volume + HUD re-renders). This test
   // reproduces the per-frame jitter scenario and asserts the dispatch
@@ -1011,11 +1011,11 @@ describe('createTrackingQualityListenerMiddleware', () => {
       }
     });
 
-    // 30 frames of imperceptible orientation jitter (< 0.01Â° about Y) and
-    // sub-millimetre position drift â€” the kind of float noise a held
+    // 30 frames of imperceptible orientation jitter (< 0.01° about Y) and
+    // sub-millimetre position drift — the kind of float noise a held
     // device emits at 60 fps.
     for (let frame = 1; frame <= 30; frame++) {
-      const theta = frame * 1e-6; // radians â€” far below 0.001Â°
+      const theta = frame * 1e-6; // radians — far below 0.001°
       store.dispatch(
         poseReceived({
           pose: {
@@ -1035,14 +1035,14 @@ describe('createTrackingQualityListenerMiddleware', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§11 (d) â€” corpus-derived defaults regression test
+// §11 (d) — corpus-derived defaults regression test
 // ---------------------------------------------------------------------------
 
-// Why this test matters: the Â§6.1 parameter sweep (Â§11 (c)) derived these
+// Why this test matters: the §6.1 parameter sweep (§11 (c)) derived these
 // values from the TestDataJs corpus. Changing them without re-running the
 // sweep risks silently degrading the tracking-quality signal. If this test
-// fails, re-run the Â§6.1 sweep and update both the defaults and this test.
-describe('Â§11 (d) corpus-derived defaults', () => {
+// fails, re-run the §6.1 sweep and update both the defaults and this test.
+describe('§11 (d) corpus-derived defaults', () => {
   it('matrixHistorySize, residualWindowSize, and gpsAccuracyWindowSize match corpus results', () => {
     expect(DEFAULT_TRACKING_QUALITY_OPTIONS.matrixHistorySize).toBe(5);
     expect(DEFAULT_TRACKING_QUALITY_OPTIONS.residualWindowSize).toBe(16);
@@ -1060,12 +1060,12 @@ describe('Â§11 (d) corpus-derived defaults', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§11 (e) â€” compassDriftDetected / first-agreement detector
+// §11 (e) — compassDriftDetected / first-agreement detector
 // ---------------------------------------------------------------------------
 
-describe('compassDriftDetected (Â§4.3 first-agreement)', () => {
+describe('compassDriftDetected (§4.3 first-agreement)', () => {
   // Why this test matters: compassDriftDetected should only fire after
-  // first-agreement has been established â€” it catches compass/alignment
+  // first-agreement has been established — it catches compass/alignment
   // drift mid-session, not the initial convergence phase.
   it('is false when firstAgreementObservationIndex is null', () => {
     const odom: Vector3[] = [];
@@ -1076,7 +1076,7 @@ describe('compassDriftDetected (Â§4.3 first-agreement)', () => {
       { length: 8 },
       (_, i) => ({ observationIndex: i + 30, matrix: [...IDENTITY] })
     );
-    // Compass disagrees (90Â° vs 270Â°) but first agreement never reached.
+    // Compass disagrees (90° vs 270°) but first agreement never reached.
     const root = buildRootState({
       alignmentMatrix: IDENTITY,
       gpsPositions: gpsPts,
@@ -1101,7 +1101,7 @@ describe('compassDriftDetected (Â§4.3 first-agreement)', () => {
       { length: 8 },
       (_, i) => ({ observationIndex: i + 30, matrix: [...IDENTITY] })
     );
-    // Compass disagrees (90Â° off from alignment heading of 270Â°).
+    // Compass disagrees (90° off from alignment heading of 270°).
     const root = buildRootState({
       alignmentMatrix: IDENTITY,
       gpsPositions: gpsPts,
@@ -1116,7 +1116,7 @@ describe('compassDriftDetected (Â§4.3 first-agreement)', () => {
   });
 
   // Why this test matters: when heading is within the warn threshold after
-  // first agreement, drift should NOT be flagged â€” the compass is fine.
+  // first agreement, drift should NOT be flagged — the compass is fine.
   it('is false when firstAgreement is set but heading agrees', () => {
     const odom: Vector3[] = [];
     for (let i = 0; i <= 20; i++) odom.push([i, 0, 0]);
@@ -1126,7 +1126,7 @@ describe('compassDriftDetected (Â§4.3 first-agreement)', () => {
       { length: 8 },
       (_, i) => ({ observationIndex: i + 30, matrix: [...IDENTITY] })
     );
-    // Compass agrees (270Â° matches alignment heading for identity matrix).
+    // Compass agrees (270° matches alignment heading for identity matrix).
     const root = buildRootState({
       alignmentMatrix: IDENTITY,
       gpsPositions: gpsPts,
@@ -1188,7 +1188,7 @@ describe('first-agreement detector in listener middleware', () => {
   }
 
   // Helper: dispatch GPS observations with slightly varying matrices so
-  // the ring buffer collects â‰¥ 2 snapshots and convergence is non-zero.
+  // the ring buffer collects ≥ 2 snapshots and convergence is non-zero.
   function feedObservations(
     store: ReturnType<typeof makeFirstAgreementStore>,
     count: number,
@@ -1262,10 +1262,10 @@ describe('first-agreement detector in listener middleware', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Â§11 (f) â€” Â§4.8 hysteresis (degradedHoldoff)
+// §11 (f) — §4.8 hysteresis (degradedHoldoff)
 // ---------------------------------------------------------------------------
 
-describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
+describe('§4.8 hysteresis (degradedHoldoff)', () => {
   function makeHysteresisStore(holdoff = 3) {
     const gpsDataReducer = (
       state: ListenerHarnessState['gpsData'] = {
@@ -1312,7 +1312,7 @@ describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
 
   // Dispatches `count` GPS observations starting at `startIdx`. The first
   // observation always uses a tiny matrix offset so the ring buffer gets a
-  // second unique snapshot (needed for convergence â‰¥ 0). Subsequent
+  // second unique snapshot (needed for convergence ≥ 0). Subsequent
   // observations reuse IDENTITY. The path forms an L-shape for coverage.
   function dispatchGps(
     store: ReturnType<typeof makeHysteresisStore>,
@@ -1347,10 +1347,10 @@ describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
     }
   }
 
-  // Why this test matters: 1â€“2 sub-threshold observations should NOT flip
-  // the user-visible state to 'degraded' â€” the holdoff absorbs transient
+  // Why this test matters: 1–2 sub-threshold observations should NOT flip
+  // the user-visible state to 'degraded' — the holdoff absorbs transient
   // GPS blips while keeping the raw confidence honest.
-  it('1â€“2 sub-threshold observations stay ok when holdoff is 3', () => {
+  it('1–2 sub-threshold observations stay ok when holdoff is 3', () => {
     const store = makeHysteresisStore(3);
     store.dispatch(
       poseReceived({
@@ -1369,7 +1369,7 @@ describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
   });
 
   // Why this test matters: after degradedHoldoff consecutive sub-threshold
-  // observations, the transition must fire â€” the holdoff is a grace period,
+  // observations, the transition must fire — the holdoff is a grace period,
   // not a permanent override.
   it('transitions to degraded after holdoff consecutive observations', () => {
     const store = makeHysteresisStore(3);
@@ -1388,7 +1388,7 @@ describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
   });
 
   // Why this test matters: recovery from degraded to ok must be immediate
-  // per Â§4.8 â€” the user should see improvement as soon as it happens.
+  // per §4.8 — the user should see improvement as soon as it happens.
   it('recovery from degraded to ok is immediate', () => {
     const store = makeHysteresisStore(3);
     store.dispatch(
@@ -1407,7 +1407,7 @@ describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
   });
 
   // Why this test matters: ar-lost is catastrophic and must bypass the
-  // holdoff entirely â€” the user needs to know immediately.
+  // holdoff entirely — the user needs to know immediately.
   it('ar-lost bypasses holdoff entirely', () => {
     const store = makeHysteresisStore(3);
     store.dispatch(
@@ -1456,7 +1456,7 @@ describe('Â§4.8 hysteresis (degradedHoldoff)', () => {
 
 // Reference unused imports so future maintainers don't accidentally drop them
 // (matrixDelta, DEFAULT_TRACKING_QUALITY_OPTIONS are exported for the
-// Investigation harness â€” keep them part of the public surface).
+// Investigation harness — keep them part of the public surface).
 describe('exports', () => {
   it('keeps matrixDelta + DEFAULT_TRACKING_QUALITY_OPTIONS in the public API', () => {
     expect(typeof DEFAULT_TRACKING_QUALITY_OPTIONS).toBe('object');
