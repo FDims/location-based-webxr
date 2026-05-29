@@ -868,17 +868,31 @@ export function updatePermissionStatus(result: PermissionCheckResult): void {
   const btnRequestPermissions = document.getElementById(
     'btn-request-permissions'
   );
+  // Mandatory permissions mirror `allMandatoryReady` in permission-checker.ts:
+  // WebXR, Location and Camera must all be granted to enter AR. (File system
+  // is mandatory too but is requested separately via the folder picker, not
+  // this button, so it is omitted here.) `requestAllPermissions` probes WebXR,
+  // so a denied AR/depth probe must keep the button visible for retry.
   const missingMandatory: string[] = [];
+  if (result.webxr.supported && result.webxr.granted !== true) {
+    missingMandatory.push('AR');
+  }
   if (result.geolocation.supported && result.geolocation.granted !== true) {
     missingMandatory.push('Location');
   }
   if (result.camera.supported && result.camera.granted !== true) {
     missingMandatory.push('Camera');
   }
+  // Recommended (non-mandatory) permissions: Compass/orientation improves
+  // tracking but is intentionally excluded from `allMandatoryReady`. The Grant
+  // Permissions button still requests it, so a missing Compass keeps the
+  // button visible — but it must never be labeled "mandatory" (see below).
+  const missingRecommended: string[] = [];
   if (result.orientation.supported && result.orientation.granted !== true) {
-    missingMandatory.push('Compass');
+    missingRecommended.push('Compass');
   }
-  const needsRequest = missingMandatory.length > 0;
+  const needsRequest =
+    missingMandatory.length > 0 || missingRecommended.length > 0;
 
   if (btnRequestPermissions) {
     if (needsRequest) {
@@ -913,11 +927,11 @@ export function updatePermissionStatus(result: PermissionCheckResult): void {
       errors.push(
         `${listFormatter.format(denied)} access denied. Please enable in browser settings.`
       );
-    } else if (needsRequest) {
+    } else if (missingMandatory.length > 0) {
       // Nothing explicitly denied yet, but mandatory permissions are still
       // pending. Surface a generic red explanation next to the visible
       // "Grant Permissions" button so the button's purpose is obvious
-      // without changing its label.
+      // without changing its label. Compass is excluded — it is not mandatory.
       errors.push(
         `${listFormatter.format(missingMandatory)} access is mandatory for AR recording.`
       );

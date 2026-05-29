@@ -2265,17 +2265,23 @@ describe('updatePermissionStatus — Grant Permissions button visibility', () =>
 
   function makeResult(
     overrides: Partial<{
+      webxr: boolean | null;
       geolocation: boolean | null;
       camera: boolean | null;
       orientation: boolean | null;
     }> = {}
   ): PermissionCheckResult {
     // Use `in` checks so explicit `null` overrides aren't coerced by `??`.
+    const xr = 'webxr' in overrides ? overrides.webxr! : true;
     const geo = 'geolocation' in overrides ? overrides.geolocation! : true;
     const cam = 'camera' in overrides ? overrides.camera! : true;
     const ori = 'orientation' in overrides ? overrides.orientation! : true;
     return {
-      webxr: { supported: true, granted: true },
+      webxr: {
+        supported: true,
+        granted: xr,
+        error: xr === false ? 'AR access denied.' : undefined,
+      },
       geolocation: {
         supported: true,
         granted: geo,
@@ -2288,7 +2294,9 @@ describe('updatePermissionStatus — Grant Permissions button visibility', () =>
       },
       orientation: { supported: true, granted: ori },
       fileSystem: { supported: true, granted: true },
-      allMandatoryReady: geo === true && cam === true,
+      // Mirrors allMandatoryReady in permission-checker.ts: WebXR + Location +
+      // Camera (+ FileSystem, always true here). Compass is excluded.
+      allMandatoryReady: xr === true && geo === true && cam === true,
     };
   }
 
@@ -2384,6 +2392,73 @@ describe('updatePermissionStatus — Grant Permissions button visibility', () =>
 
     const err = document.getElementById('permission-error')!;
     expect(err.classList.contains('hidden')).toBe(true);
+  });
+
+  // Why: WebXR is mandatory (part of allMandatoryReady in
+  // permission-checker.ts) and requestAllPermissions probes it. If the user
+  // denies the AR/depth probe, the button MUST stay visible so they can
+  // retry — the old logic omitted WebXR entirely and hid the button,
+  // dead-ending the user with an error and no recovery path.
+  it('keeps button visible when WebXR is denied', () => {
+    setupPermissionDOM();
+    initUI(createMockCallbacks());
+
+    updatePermissionStatus(makeResult({ webxr: false }));
+
+    const btn = document.getElementById('btn-request-permissions')!;
+    expect(btn.classList.contains('hidden')).toBe(false);
+  });
+
+  // Why: While WebXR is still pending (granted === null) the mandatory hint
+  // must list AR so the user understands the AR permission is required.
+  it('lists AR in the mandatory hint while WebXR is pending', () => {
+    setupPermissionDOM();
+    initUI(createMockCallbacks());
+
+    updatePermissionStatus(makeResult({ webxr: null }));
+
+    const err = document.getElementById('permission-error')!;
+    expect(err.classList.contains('hidden')).toBe(false);
+    expect(err.textContent).toMatch(/mandatory/i);
+    expect(err.textContent).toMatch(/AR/);
+  });
+
+  // Why: Compass/orientation is NOT mandatory (excluded from
+  // allMandatoryReady). When it is the only missing permission the button
+  // must still show (the button requests it too), but the message must NOT
+  // claim Compass access is "mandatory" — that was the incorrect messaging.
+  it('keeps button visible for missing Compass without a mandatory error', () => {
+    setupPermissionDOM();
+    initUI(createMockCallbacks());
+
+    updatePermissionStatus(makeResult({ orientation: null }));
+
+    const btn = document.getElementById('btn-request-permissions')!;
+    expect(btn.classList.contains('hidden')).toBe(false);
+
+    const err = document.getElementById('permission-error')!;
+    // No mandatory permission is missing, so the mandatory hint must stay
+    // hidden and Compass must never be described as mandatory.
+    expect(err.textContent ?? '').not.toMatch(/mandatory/i);
+    expect(err.textContent ?? '').not.toMatch(/Compass/);
+  });
+
+  // Why: The mandatory hint must never include Compass even when other
+  // mandatory permissions are also pending — Compass is recommended-only.
+  it('excludes Compass from the mandatory hint when several are pending', () => {
+    setupPermissionDOM();
+    initUI(createMockCallbacks());
+
+    updatePermissionStatus(
+      makeResult({ geolocation: null, camera: null, orientation: null })
+    );
+
+    const err = document.getElementById('permission-error')!;
+    expect(err.classList.contains('hidden')).toBe(false);
+    expect(err.textContent).toMatch(/mandatory/i);
+    expect(err.textContent).toMatch(/Location/);
+    expect(err.textContent).toMatch(/Camera/);
+    expect(err.textContent).not.toMatch(/Compass/);
   });
 });
 
