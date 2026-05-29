@@ -8,12 +8,12 @@ Application entry point. Initializes WebXR, wires up UI callbacks, and orchestra
 
 This module is the entry point that runs on page load. It also exports the following for the soft-reset flow and testing:
 
-| Export                                   | Type                           | Description                                                                                                                                                                            |
-| ---------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resetForNewRecording()`                 | `async () => void`             | Orchestrates soft reset: tears down current session (store, trackers, sync, map), creates fresh store, resets storage/UI state, and checks if read folder permission is still granted. |
-| `getImportedRefPoints()`                 | `() => KnownGeoAnchor[]`       | Returns the sidecar-imported known anchors (entries with `timestamp === 0`) from the flat `refPoints` slice via `selectImportedKnownAnchors`. Test-only seam.                          |
-| `setImportedRefPointsForTesting(points)` | `(points) => void`             | Dispatches `setImportedRefPointEntries` into the flat `refPoints` slice; each input becomes a `RefPointEntry` with `timestamp: 0` (sidecar marker). Test-only.                          |
-| `setCurrentScenarioName(name)`           | `(string) => void`             | Sets current scenario name (test-only).                                                                                                                                                |
+| Export                                   | Type                     | Description                                                                                                                                                                            |
+| ---------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resetForNewRecording()`                 | `async () => void`       | Orchestrates soft reset: tears down current session (store, trackers, sync, map), creates fresh store, resets storage/UI state, and checks if read folder permission is still granted. |
+| `getImportedRefPoints()`                 | `() => KnownGeoAnchor[]` | Returns the sidecar-imported known anchors (entries with `timestamp === 0`) from the flat `refPoints` slice via `selectImportedKnownAnchors`. Test-only seam.                          |
+| `setImportedRefPointsForTesting(points)` | `(points) => void`       | Dispatches `setImportedRefPointEntries` into the flat `refPoints` slice; each input becomes a `RefPointEntry` with `timestamp: 0` (sidecar marker). Test-only.                         |
+| `setCurrentScenarioName(name)`           | `(string) => void`       | Sets current scenario name (test-only).                                                                                                                                                |
 
 ## Internal Flow
 

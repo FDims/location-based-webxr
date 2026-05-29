@@ -144,6 +144,7 @@ import { createGpsCompassCubes } from 'gps-plus-slam-app-framework/visualization
 import { FrameTileVisualizer } from './visualization/frame-tile-visualizer';
 import { decodeFrameTexture } from './visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from './visualization/wire-frame-tile-subscribers';
+import { FrameBlobCache } from './visualization/frame-blob-cache';
 
 import {
   initReplayUI,
@@ -219,7 +220,15 @@ let alignmentLerper: AlignmentLerper | null = null;
 // The wirer subscribes to `selectFrameTilesInWebXR` (memoised over
 // `state.gpsData.odometryPath.points`), and FrameTileVisualizer.addTile
 // reads the blob out of this cache. Cleared on `resetMainState`.
-const liveFrameBlobs = new Map<string, Blob>();
+//
+// Step 7 of the 2026-05-27 slice-collapse plan: bounded by an LRU byte
+// cap so multi-hour outdoor sessions don't accumulate every JPEG in RAM
+// (review §E). The wirer processes frames tail-first and never re-reads a
+// blob once its tile is decoded, so evicting cold/old blobs is safe.
+const LIVE_FRAME_BLOB_CACHE_MAX_BYTES = 64 * 1024 * 1024; // 64 MiB
+const liveFrameBlobs = new FrameBlobCache({
+  maxBytes: LIVE_FRAME_BLOB_CACHE_MAX_BYTES,
+});
 let frameTileVisualizer: FrameTileVisualizer | null = null;
 let unsubscribeFrameTiles: (() => void) | null = null;
 
