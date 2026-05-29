@@ -109,7 +109,10 @@ describe('persistence middleware synchronous overhead', () => {
             serializableCheck: false,
             immutableCheck: false,
           }).concat(
-            createPersistenceMiddleware({ storageBackend: mockBackend })
+            createPersistenceMiddleware({
+              storageBackend: mockBackend,
+              persistedPrefixes: ['gpsData', 'recording'],
+            })
           ),
       });
 
@@ -154,7 +157,10 @@ describe('persistence middleware synchronous overhead', () => {
             serializableCheck: false,
             immutableCheck: false,
           }).concat(
-            createPersistenceMiddleware({ storageBackend: mockBackend })
+            createPersistenceMiddleware({
+              storageBackend: mockBackend,
+              persistedPrefixes: ['gpsData', 'recording'],
+            })
           ),
       });
 

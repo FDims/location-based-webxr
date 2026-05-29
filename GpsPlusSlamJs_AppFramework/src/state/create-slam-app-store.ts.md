@@ -19,7 +19,7 @@ thin `createRecorderStore` that calls this factory with its own extras.
 - `createSlamAppStore<ExtraReducers>(options)` — returns a `SlamAppStore`.
 - `SlamAppStore<ExtraReducers>` — opaque store with `getState` / `dispatch` /
   `subscribe` / `writeFrame` / `writeSessionMetadata`.
-- `SlamAppStoreOptions<ExtraReducers>` — `{ storageBackend, extraReducers?, extraMiddleware?, onWriteFailure?, enableDevChecks?, licenseKey? }`.
+- `SlamAppStoreOptions<ExtraReducers>` — `{ storageBackend, extraReducers?, extraMiddleware?, persistedExtraPrefixes?, onWriteFailure?, enableDevChecks?, licenseKey? }`.
 - `SlamAppRootState` — base state shape (no extras).
 - `SlamAppCombinedState<ExtraReducers>` — base state plus typed extras.
 - `SlamAppMiddleware` — middleware signature accepted by `extraMiddleware`.
@@ -37,6 +37,16 @@ thin `createRecorderStore` that calls this factory with its own extras.
   built-in if a collision occurs — callers are responsible for avoiding it.
 - `extraMiddleware` is appended **after** the persistence middleware, so
   consumer middleware sees actions that have already been persisted.
+- **Persisted-action whitelist is slice-derived, not literal.** The factory
+  builds the persistence middleware's `persistedPrefixes` from the actual
+  action creators: `slicePrefixOf(setZeroPos.type)` (`gpsData`) and
+  `slicePrefixOf(recordWriteFailure.type)` (`recording`), plus any
+  `persistedExtraPrefixes` the caller supplies. The recorder passes
+  `slicePrefixOf(addRefPointEntry.type)` (`refPoints`). Callers MUST derive
+  these from the slice (never hand-type a literal) so a slice rename cannot
+  silently drop its actions from recordings — see
+  [persistence-middleware.ts.md](persistence-middleware.ts.md) and the
+  2026-05-29 architecture review (§5 P0).
 - The factory does **not** know about routing, ref-points, or scenarios. Any
   app needing those plugs them in via `extraReducers`.
 

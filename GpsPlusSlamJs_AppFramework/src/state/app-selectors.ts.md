@@ -6,13 +6,13 @@ App-level memoized selectors wrapping library getter functions with `createSelec
 
 ## Public API
 
-| Symbol                       | Signature                                               | Returns                                       |
-| ---------------------------- | ------------------------------------------------------- | --------------------------------------------- |
-| `selectAlignmentMatrix`      | `(state: CombinedRootState) => Matrix4 \| null`         | 4×4 alignment matrix, or null                 |
-| `selectGpsPositions`         | `(state: CombinedRootState) => readonly GpsPoint[]`     | Recorded GPS positions with metadata          |
-| `selectOdometryPositions`    | `(state: CombinedRootState) => readonly Vector3[]`      | Odometry positions (AR-local space)           |
-| `selectOdometryRotations`    | `(state: CombinedRootState) => readonly Quaternion[]`   | Odometry rotations (AR-local space)           |
-| `selectZeroReference`        | `(state: CombinedRootState) => LatLong \| null`         | GPS origin for coordinate conversion          |
+| Symbol                    | Signature                                             | Returns                              |
+| ------------------------- | ----------------------------------------------------- | ------------------------------------ |
+| `selectAlignmentMatrix`   | `(state: CombinedRootState) => Matrix4 \| null`       | 4×4 alignment matrix, or null        |
+| `selectGpsPositions`      | `(state: CombinedRootState) => readonly GpsPoint[]`   | Recorded GPS positions with metadata |
+| `selectOdometryPositions` | `(state: CombinedRootState) => readonly Vector3[]`    | Odometry positions (AR-local space)  |
+| `selectOdometryRotations` | `(state: CombinedRootState) => readonly Quaternion[]` | Odometry rotations (AR-local space)  |
+| `selectZeroReference`     | `(state: CombinedRootState) => LatLong \| null`       | GPS origin for coordinate conversion |
 
 All selectors use `state.gpsData` as the input dependency for `createSelector` memoization. If `gpsData` reference hasn't changed between calls, the cached result is returned without re-evaluating.
 

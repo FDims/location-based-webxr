@@ -28,7 +28,12 @@ import {
   createSlamAppStore,
   type SlamAppStore,
 } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
-import { refPointsReducer, type RefPointsState } from './ref-points-slice';
+import { slicePrefixOf } from 'gps-plus-slam-app-framework/state';
+import {
+  addRefPointEntry,
+  refPointsReducer,
+  type RefPointsState,
+} from './ref-points-slice';
 import type { RecordingState } from 'gps-plus-slam-app-framework/state/recording-slice';
 import type { TrackingSliceState } from 'gps-plus-slam-app-framework/state/tracking-slice';
 import type { TrackingQualitySliceState } from 'gps-plus-slam-app-framework';
@@ -139,6 +144,10 @@ export function createRecorderStore(
     onWriteFailure: options.onWriteFailure,
     enableDevChecks: options.enableDevChecks,
     licenseKey: options.licenseKey,
+    // Persist the recorder-owned refPoints slice. Derived from the slice's
+    // own action type (never a literal) so a rename can't silently drop
+    // marks from recordings — see the 2026-05-28 refPointsV2/ regression.
+    persistedExtraPrefixes: [slicePrefixOf(addRefPointEntry.type)],
     extraReducers: {
       refPoints: refPointsReducer,
       routing: routingReducer,

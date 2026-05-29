@@ -6,17 +6,18 @@ Redux middleware factory that persists qualifying actions to a `StorageBackend` 
 
 ## Public API
 
-| Export                          | Kind     | Description                                                       |
-| ------------------------------- | -------- | ----------------------------------------------------------------- |
-| `PersistenceMiddlewareOptions`  | Type     | Options: `storageBackend` (required), `onWriteFailure` (optional) |
-| `createPersistenceMiddleware()` | Function | Factory returning a Redux `Middleware`                            |
+| Export                          | Kind     | Description                                                                                  |
+| ------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `PersistenceMiddlewareOptions`  | Type     | Options: `storageBackend` (required), `persistedPrefixes` (required), `onWriteFailure` (opt) |
+| `createPersistenceMiddleware()` | Function | Factory returning a Redux `Middleware`                                                       |
+| `slicePrefixOf()`               | Function | `'gpsData/setZeroPos'` → `'gpsData'`; used by callers to derive prefixes from action types   |
 
 ## Persistence Rules
 
 1. **Recording gate:** Persists when `state.recording.isRecording` is `true` after the reducer runs. Also persists `endSession` when the pre-reducer state was recording (captures `wasRecording` before `next(action)`).
-2. **Prefix whitelist:** `gpsData/*`, `refPoints/*`, and `recording/*` actions are persisted.
-3. **Exclusion:** `recording/recordWriteFailure` is excluded to prevent recursive persistence.
-4. **Non-persisted prefixes:** `routing/*`, `gpsElements/*`, `arElements/*`, and any other action types are not persisted.
+2. **Data-driven prefix whitelist:** Persists actions whose slice prefix is in `persistedPrefixes`. The store factory derives this list from real action creators (`slicePrefixOf(setZeroPos.type)` → `gpsData`, `slicePrefixOf(recordWriteFailure.type)` → `recording`) plus caller-supplied `persistedExtraPrefixes` (the recorder passes `slicePrefixOf(addRefPointEntry.type)` → `refPoints`). No prefix literal is hand-typed in the middleware — a slice rename propagates automatically (the 2026-05-28 `refPointsV2/` → `refPoints/` regression class). With the recorder wired, the effective whitelist is `gpsData/*`, `recording/*`, `refPoints/*`.
+3. **Exclusion:** `recording/recordWriteFailure` is always excluded (derived from the imported `recordWriteFailure.type`, not a literal) to prevent recursive persistence.
+4. **Non-persisted prefixes:** `routing/*`, `scenario/*`, `gpsElements/*`, `arElements/*`, `tracking/*`, `trackingQuality/*`, and any other non-whitelisted action types are not persisted.
 5. **Stop semantics:** `endSession` itself IS persisted (detected via `wasRecording` check). After `endSession`, `isRecording` is `false`, so no further actions are persisted.
 
 ## Invariants & Assumptions
@@ -35,6 +36,8 @@ import { OpfsStorageBackend } from '../storage/opfs-storage-backend';
 
 const middleware = createPersistenceMiddleware({
   storageBackend: new OpfsStorageBackend(),
+  // Derive prefixes from the actual slices, never hand-typed literals.
+  persistedPrefixes: ['gpsData', 'recording'],
   onWriteFailure: (err) => showToast(`Write failed: ${err.message}`),
 });
 
@@ -49,7 +52,7 @@ configureStore({
 
 ## Tests
 
-- `persistence-middleware.test.ts` — 16 tests covering:
+- `persistence-middleware.test.ts` — covering:
   - No persistence when not recording
   - `startSession` persistence (recording gate checked after reduce)
   - `gpsData/*`, `refPoints/*`, and `recording/*` persistence
@@ -65,6 +68,9 @@ configureStore({
   - Concurrent write limit when storage is slow (backpressure)
   - Multi-session actionIndex reset (new sessions start at index 1)
   - `endSession` persistence (not dropped by isRecording=false gate)
+  - **Data-driven whitelist:** only slices listed in `persistedPrefixes` are persisted; an unlisted slice is dropped even while recording (the rename-drift guard)
+  - **`slicePrefixOf`** unit tests (namespaced type → prefix, no-slash passthrough, first-slash split)
+- The end-to-end producer guard wiring the REAL recorder slice + REAL middleware lives in `recorder-store.test.ts` → "should persist refPoints/ mark actions when recording".
 
 ## Related
 

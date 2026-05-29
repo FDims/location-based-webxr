@@ -28,12 +28,17 @@ import {
   arElementsReducer,
   sanitizeForDevTools,
   validateLicenseKey,
+  setZeroPos,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
 import type { StorageBackend } from '../storage/storage-backend';
 import type { SessionMetadata as OpfsSessionMetadata } from '../storage/opfs-storage';
-import { recordingReducer, type RecordingState } from './recording-slice';
+import {
+  recordingReducer,
+  recordWriteFailure,
+  type RecordingState,
+} from './recording-slice';
 import { trackingReducer, type TrackingSliceState } from './tracking-slice';
 import {
   trackingQualityReducer,
@@ -41,7 +46,21 @@ import {
   type TrackingQualitySliceState,
   type TrackingQualityOptions,
 } from './tracking-quality';
-import { createPersistenceMiddleware } from './persistence-middleware';
+import {
+  createPersistenceMiddleware,
+  slicePrefixOf,
+} from './persistence-middleware';
+
+/**
+ * Slice prefixes the framework always persists, derived from the actual
+ * library / framework action creators (never hand-typed). A rename of the
+ * `gpsData` or `recording` slice therefore propagates here automatically
+ * instead of silently dropping that slice's actions from recordings.
+ */
+const BUILTIN_PERSISTED_PREFIXES: readonly string[] = [
+  slicePrefixOf(setZeroPos.type), // library `gpsData` slice
+  slicePrefixOf(recordWriteFailure.type), // framework `recording` slice
+];
 
 /**
  * Base shape produced by `createSlamAppStore` with no `extraReducers`.
@@ -83,6 +102,15 @@ export interface SlamAppStoreOptions<
    * persistence middleware.
    */
   extraMiddleware?: ReadonlyArray<SlamAppMiddleware>;
+
+  /**
+   * Additional slice prefixes to persist beyond the framework built-ins
+   * (`gpsData`, `recording`). Pass caller-owned slice names derived from
+   * the slice itself — e.g. `slicePrefixOf(addRefPointEntry.type)` or
+   * `refPointsSlice.name` — never a hand-typed literal, so a rename can
+   * never silently drop the slice's actions from recordings.
+   */
+  persistedExtraPrefixes?: readonly string[];
 
   /**
    * Invoked when the persistence middleware fails to durably write an action.
@@ -156,6 +184,7 @@ export function createSlamAppStore<
     storageBackend,
     extraReducers,
     extraMiddleware,
+    persistedExtraPrefixes,
     onWriteFailure,
     enableDevChecks = true,
     licenseKey = COMMUNITY_LICENSE_KEY,
@@ -187,7 +216,14 @@ export function createSlamAppStore<
       })
         .prepend(trackingQualityMiddleware)
         .concat(
-          createPersistenceMiddleware({ storageBackend, onWriteFailure }),
+          createPersistenceMiddleware({
+            storageBackend,
+            onWriteFailure,
+            persistedPrefixes: [
+              ...BUILTIN_PERSISTED_PREFIXES,
+              ...(persistedExtraPrefixes ?? []),
+            ],
+          }),
           ...(extraMiddleware ?? [])
         ),
     devTools: {

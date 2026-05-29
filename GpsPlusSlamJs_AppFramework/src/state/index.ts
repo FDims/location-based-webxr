@@ -107,6 +107,7 @@ export type { ReplayRecordingOptions } from './recording-replayer.js';
 // --- persistence-middleware ---
 export {
   createPersistenceMiddleware,
+  slicePrefixOf,
   type PersistenceMiddlewareOptions,
 } from './persistence-middleware.js';
 

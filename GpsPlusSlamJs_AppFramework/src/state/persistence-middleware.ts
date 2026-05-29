@@ -2,9 +2,12 @@
  * Redux middleware for action persistence during recording sessions.
  *
  * Replaces the inline persistence logic previously embedded in the manual
- * dispatch wrapper. Actions matching gpsData/*, refPoints/* or recording/*
- * (except recording/recordWriteFailure) are written to the StorageBackend
- * when the recording slice is in recording state.
+ * dispatch wrapper. Actions whose slice prefix is whitelisted via
+ * `persistedPrefixes` (e.g. `gpsData/*`, `refPoints/*`, `recording/*`,
+ * except `recording/recordWriteFailure`) are written to the StorageBackend
+ * when the recording slice is in recording state. The whitelist is supplied
+ * by the store factory and derived from the actual slices, never hand-typed
+ * here.
  *
  * @see docs/2026-04-07-architecture-observations-consolidated.md §4
  */
@@ -59,10 +62,66 @@ export interface PersistenceMiddlewareOptions {
   storageBackend: StorageBackend;
 
   /**
+   * Slice names whose actions are persisted to the recording stream
+   * (e.g. `['gpsData', 'recording', 'refPoints']`).
+   *
+   * Callers MUST derive these from the actual slices — pass
+   * `slicePrefixOf(someActionCreator.type)` or a `slice.name`, never a
+   * hand-typed literal. A slice rename then propagates here automatically
+   * instead of silently dropping the renamed slice's actions from every
+   * recording (the 2026-05-28 `refPointsV2/` → `refPoints/` regression).
+   *
+   * `recording/recordWriteFailure` is always excluded regardless of this
+   * list, to prevent recursive persistence.
+   */
+  persistedPrefixes: readonly string[];
+
+  /**
    * Callback invoked when a write operation fails during persistence.
    * User Feedback Issue #1 Part B: Used to show toast notifications.
    */
   onWriteFailure?: (error: Error) => void;
+}
+
+/**
+ * Extract the slice prefix from a namespaced Redux action type.
+ *
+ * `'gpsData/setZeroPos'` → `'gpsData'`. Returns the whole string when there
+ * is no slash (e.g. `'@@INIT'`). This is the single point that turns a
+ * slice-owned action type into the value the persistence whitelist matches
+ * on, so call sites can derive prefixes from real action creators instead of
+ * re-typing literals.
+ */
+export function slicePrefixOf(actionType: string): string {
+  const slashIndex = actionType.indexOf('/');
+  return slashIndex === -1 ? actionType : actionType.slice(0, slashIndex);
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/** Read `state.recording.isRecording`, defaulting to false for any shape. */
+function readIsRecording(state: unknown): boolean {
+  return (
+    (state as { recording?: { isRecording?: boolean } })?.recording
+      ?.isRecording ?? false
+  );
+}
+
+/**
+ * Decide whether the just-reduced action belongs to a session whose actions
+ * must be persisted. True while recording, and also for the `endSession`
+ * action that just flipped `isRecording` to false (Issue 5) so the session's
+ * final action is still captured.
+ */
+function isInPersistableSession(
+  wasRecording: boolean,
+  isRecording: boolean,
+  actionType: string
+): boolean {
+  const isEndSession = actionType === 'recording/endSession';
+  return isRecording || (wasRecording && isEndSession);
 }
 
 // ---------------------------------------------------------------------------
@@ -76,16 +135,25 @@ export interface PersistenceMiddlewareOptions {
  * Persistence rules:
  * - Only persists when `state.recording.isRecording` is true (checked AFTER
  *   the action is reduced, so `startSession` itself is included).
- * - Persists `gpsData/*`, `refPoints/*`, and `recording/*` actions.
+ * - Persists actions whose slice prefix is listed in `persistedPrefixes`.
  * - Excludes `recording/recordWriteFailure` to prevent recursive persistence.
- * - Excludes `routing/*` and any other non-recording actions.
+ * - Excludes `routing/*` and any other non-whitelisted actions.
  * - Uses 1-based indexing for action files (000001.json, 000002.json, …).
  * - Each middleware instance maintains its own action index (Bug 10 fix).
  */
 export function createPersistenceMiddleware(
   options: PersistenceMiddlewareOptions
 ): Middleware {
-  const { storageBackend, onWriteFailure } = options;
+  const { storageBackend, onWriteFailure, persistedPrefixes } = options;
+
+  // Normalize each whitelisted slice name to its `name/` form once, so the
+  // per-action check is a cheap `startsWith`. Deriving the excluded type from
+  // the imported action creator keeps it in lock-step with the recording
+  // slice (no second hand-typed literal to drift).
+  const normalizedPrefixes = persistedPrefixes.map((prefix) =>
+    prefix.endsWith('/') ? prefix : `${prefix}/`
+  );
+  const excludedActionType = recordWriteFailure.type;
 
   // Per-middleware-instance action index (Bug 10: was module-level)
   let actionIndex = 0;
@@ -98,10 +166,7 @@ export function createPersistenceMiddleware(
 
     // Capture recording state BEFORE reducer runs so we can detect
     // endSession (which sets isRecording=false in the reducer).
-    const stateBefore = store.getState() as {
-      recording?: { isRecording: boolean };
-    };
-    const wasRecording = stateBefore.recording?.isRecording ?? false;
+    const wasRecording = readIsRecording(store.getState());
 
     // Let reducers handle the action first
     const result = next(action);
@@ -118,27 +183,19 @@ export function createPersistenceMiddleware(
     // Check recording state AFTER reducers ran (so startSession is included).
     // Special-case endSession: wasRecording was true before the reducer,
     // but isRecording is now false — still needs to be persisted (Issue 5).
-    const stateAfter = store.getState() as {
-      recording?: { isRecording: boolean };
-    };
-    const isRecording = stateAfter.recording?.isRecording ?? false;
-    const isEndSession = actionType === 'recording/endSession';
+    const isRecording = readIsRecording(store.getState());
 
     // Persist if actively recording, or if this is the endSession action
     // that just flipped isRecording to false (Issue 5).
-    const isInPersistableSession =
-      isRecording || (wasRecording && isEndSession);
-    if (!isInPersistableSession) {
+    if (!isInPersistableSession(wasRecording, isRecording, actionType)) {
       return result;
     }
 
-    // Only persist gpsData/, refPoints/, and recording/ actions
-    // (excluding recordWriteFailure)
+    // Persist only actions whose slice prefix is whitelisted, always
+    // excluding recordWriteFailure (would recurse via the error handler).
     const shouldPersistAction =
-      actionType.startsWith('gpsData/') ||
-      actionType.startsWith('refPoints/') ||
-      (actionType.startsWith('recording/') &&
-        actionType !== 'recording/recordWriteFailure');
+      actionType !== excludedActionType &&
+      normalizedPrefixes.some((prefix) => actionType.startsWith(prefix));
 
     if (!shouldPersistAction) {
       return result;
