@@ -974,10 +974,59 @@ export function computeTrackingQualityReport(
 // ===========================================================================
 
 /**
+ * Per-field tolerances for the {@link reportsEqual} dispatch gate.
+ *
+ * Why this exists: `tracking/poseReceived` fires on *every* XR frame
+ * (30–60 fps). The §4.3 compass cross-check consumes the live AR pose
+ * and sensor heading, so `subScores.compassAgreement` and
+ * `diagnostics.headingDeltaDeg` (and, when compass is the minimum,
+ * `confidence`) jitter by imperceptible floating-point amounts on a
+ * held-still device. With a strict `!==` comparison every such frame
+ * produced a fresh `reportUpdated` dispatch → high Redux churn and a
+ * HUD re-render at frame rate. The tolerances below quantise those
+ * sub-perceptual changes so the gate only fires when the user-visible
+ * quality actually moved.
+ *
+ * The gate compares the freshly computed report against the *last
+ * dispatched* report (the stored `prev`), not against the previous
+ * frame, so slow real drift cannot accumulate indefinitely: once it
+ * crosses a tolerance a dispatch fires and re-baselines. Tolerances are
+ * chosen below the smallest user-meaningful step in the HUD:
+ *  - scores/confidence live in 0..1 → 1e-3 (0.1 %).
+ *  - angle diagnostics are shown in whole/tenths of a degree → 0.01°.
+ *  - metre diagnostics are shown in centimetres at best → 1 mm.
+ */
+const REPORT_SCORE_EPSILON = 1e-3;
+const REPORT_ANGLE_EPSILON_DEG = 0.01;
+const REPORT_METRE_EPSILON_M = 1e-3;
+
+/**
+ * Tolerant scalar comparison that treats `null` as a distinct value
+ * (both `null` ⇒ equal; exactly one `null` ⇒ different) and otherwise
+ * compares with an absolute epsilon. Non-finite values are compared by
+ * strict identity so e.g. `NaN`/`Infinity` transitions are never
+ * silently swallowed.
+ */
+function nearlyEqual(
+  a: number | null,
+  b: number | null,
+  eps: number
+): boolean {
+  if (a === null || b === null) return a === b;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return a === b;
+  return Math.abs(a - b) <= eps;
+}
+
+/**
  * Deep-equal that only inspects the public shape of a
  * {@link TrackingQualityReport}. Cheaper than a generic deep-equal
  * because it knows the schema; gates `reportUpdated` dispatches so
  * subscribers wake up exactly when the user-visible quality changes.
+ *
+ * Float fields use the per-field tolerances above
+ * ({@link REPORT_SCORE_EPSILON} et al.) so imperceptible per-frame
+ * compass jitter does not churn the store — see the constants' doc
+ * comment for the rationale.
  */
 function reportsEqual(
   a: TrackingQualityReport | null,
@@ -986,31 +1035,61 @@ function reportsEqual(
   if (a === b) return true;
   if (!a || !b) return false;
   if (a.state !== b.state) return false;
-  if (a.confidence !== b.confidence) return false;
+  if (!nearlyEqual(a.confidence, b.confidence, REPORT_SCORE_EPSILON)) {
+    return false;
+  }
   const sa = a.subScores;
   const sb = b.subScores;
   if (
-    sa.convergence !== sb.convergence ||
-    sa.residualConsensus !== sb.residualConsensus ||
-    sa.compassAgreement !== sb.compassAgreement ||
-    sa.gpsAccuracy !== sb.gpsAccuracy ||
-    sa.coverage !== sb.coverage
+    !nearlyEqual(sa.convergence, sb.convergence, REPORT_SCORE_EPSILON) ||
+    !nearlyEqual(
+      sa.residualConsensus,
+      sb.residualConsensus,
+      REPORT_SCORE_EPSILON
+    ) ||
+    !nearlyEqual(
+      sa.compassAgreement,
+      sb.compassAgreement,
+      REPORT_SCORE_EPSILON
+    ) ||
+    !nearlyEqual(sa.gpsAccuracy, sb.gpsAccuracy, REPORT_SCORE_EPSILON) ||
+    !nearlyEqual(sa.coverage, sb.coverage, REPORT_SCORE_EPSILON)
   ) {
     return false;
   }
   const da = a.diagnostics;
   const db = b.diagnostics;
   return (
-    da.recentSumRotationDeltaDeg === db.recentSumRotationDeltaDeg &&
-    da.recentSumTranslationDeltaM === db.recentSumTranslationDeltaM &&
-    da.medianResidualM === db.medianResidualM &&
-    da.medianRecentGpsAccuracyM === db.medianRecentGpsAccuracyM &&
-    da.walkedDistanceM === db.walkedDistanceM &&
-    da.directionSpreadDeg === db.directionSpreadDeg &&
-    da.headingDeltaDeg === db.headingDeltaDeg &&
     da.compassDriftDetected === db.compassDriftDetected &&
     da.observationsSeen === db.observationsSeen &&
-    da.gpsVsFusedMaxDivergenceM === db.gpsVsFusedMaxDivergenceM
+    nearlyEqual(
+      da.recentSumRotationDeltaDeg,
+      db.recentSumRotationDeltaDeg,
+      REPORT_ANGLE_EPSILON_DEG
+    ) &&
+    nearlyEqual(
+      da.directionSpreadDeg,
+      db.directionSpreadDeg,
+      REPORT_ANGLE_EPSILON_DEG
+    ) &&
+    nearlyEqual(da.headingDeltaDeg, db.headingDeltaDeg, REPORT_ANGLE_EPSILON_DEG) &&
+    nearlyEqual(
+      da.recentSumTranslationDeltaM,
+      db.recentSumTranslationDeltaM,
+      REPORT_METRE_EPSILON_M
+    ) &&
+    nearlyEqual(da.medianResidualM, db.medianResidualM, REPORT_METRE_EPSILON_M) &&
+    nearlyEqual(
+      da.medianRecentGpsAccuracyM,
+      db.medianRecentGpsAccuracyM,
+      REPORT_METRE_EPSILON_M
+    ) &&
+    nearlyEqual(da.walkedDistanceM, db.walkedDistanceM, REPORT_METRE_EPSILON_M) &&
+    nearlyEqual(
+      da.gpsVsFusedMaxDivergenceM,
+      db.gpsVsFusedMaxDivergenceM,
+      REPORT_METRE_EPSILON_M
+    )
   );
 }
 

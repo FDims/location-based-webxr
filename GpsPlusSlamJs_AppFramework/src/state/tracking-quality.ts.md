@@ -77,6 +77,14 @@ receive — copies are taken before sorting or sliding-window operations.
 - Listener middleware uses **shallow change detection** — `reportUpdated` is
   only dispatched when the freshly-computed report differs from the previously
   cached one (using `reportsEqual`).
+- `reportsEqual` compares float fields with **per-field tolerances**, not
+  strict `!==`: scores/confidence `1e-3`, angle diagnostics `0.01°`, metre
+  diagnostics `1 mm`. `tracking/poseReceived` fires every XR frame and the
+  §4.3 compass cross-check reads the live pose/heading, so without tolerances
+  imperceptible per-frame jitter would dispatch `reportUpdated` (and re-render
+  the HUD) at frame rate. The gate compares against the last *dispatched*
+  report, so slow real drift still triggers an update once it crosses a
+  tolerance — it cannot accumulate indefinitely.
 - Reset triggers (`recording/startSession`, `tracking/resetTracking`) clear
   both the matrix buffer, the cached report, and the `degradedConsecutiveCount`.
 - Compass score returns `null` (and is excluded from `min`) when the device

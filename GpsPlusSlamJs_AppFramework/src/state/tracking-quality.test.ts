@@ -966,6 +966,72 @@ describe('createTrackingQualityListenerMiddleware', () => {
     expect(reportUpdatedCount).toBeGreaterThanOrEqual(after1);
     unsub();
   });
+
+  // Why this test matters: `poseReceived` fires on every XR frame. The
+  // compass cross-check (Â§4.3) consumes the live pose + sensor heading,
+  // so sub-perceptual per-frame jitter must NOT churn `reportUpdated` at
+  // frame rate (high Redux dispatch volume + HUD re-renders). This test
+  // reproduces the per-frame jitter scenario and asserts the dispatch
+  // gate suppresses changes below the user-visible threshold.
+  it('does not churn reportUpdated on sub-threshold per-frame pose jitter', () => {
+    const store = makeListenerStore(snapshotGpsAfter(null, [], []));
+
+    // Active tracking + absolute compass so the compass sub-score is live.
+    const absolute: DeviceOrientation = {
+      alpha: 90,
+      beta: 0,
+      gamma: 0,
+      absolute: true,
+    };
+    store.dispatch(
+      poseReceived({ pose: DEFAULT_POSE, sensorOrientation: absolute })
+    );
+
+    // Enough GPS observations + alignment to leave 'warming-up' and to
+    // activate the residual/compass paths.
+    const odom: Vector3[] = [];
+    const gpsPts: GpsPoint[] = [];
+    for (let i = 0; i < 4; i++) {
+      odom.push([i, 0, 0]);
+      gpsPts.push(gps(i, i, 0));
+      store.dispatch({
+        type: 'gpsData/recordGpsEvent',
+        payload: snapshotGpsAfter(IDENTITY, [...gpsPts], [...odom]),
+      });
+    }
+
+    // Count distinct report references the HUD subscriber would observe.
+    let reportRefChanges = 0;
+    let lastSeen = selectTrackingQuality(store.getState());
+    const unsub = store.subscribe(() => {
+      const report = selectTrackingQuality(store.getState());
+      if (report !== lastSeen) {
+        reportRefChanges += 1;
+        lastSeen = report;
+      }
+    });
+
+    // 30 frames of imperceptible orientation jitter (< 0.01Â° about Y) and
+    // sub-millimetre position drift â€” the kind of float noise a held
+    // device emits at 60 fps.
+    for (let frame = 1; frame <= 30; frame++) {
+      const theta = frame * 1e-6; // radians â€” far below 0.001Â°
+      store.dispatch(
+        poseReceived({
+          pose: {
+            position: { x: frame * 1e-7, y: 0, z: 0 },
+            orientation: { x: 0, y: Math.sin(theta / 2), z: 0, w: Math.cos(theta / 2) },
+          },
+          sensorOrientation: absolute,
+        })
+      );
+    }
+    unsub();
+
+    // With the dispatch gate quantising sub-threshold changes, none of
+    // these jitter frames should produce a fresh report reference.
+    expect(reportRefChanges).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
