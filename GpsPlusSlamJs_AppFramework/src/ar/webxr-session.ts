@@ -816,6 +816,14 @@ function subscribeToTrackingPhase(
         onTrackingRestarted?.(payload);
         store.dispatch(clearLastRestartedPayloadAction());
       } else {
+        // A null payload means Case 1 (no origin reset during loss). The
+        // legacy manager had a third branch — origin reset flagged but
+        // `lastValidPose === null` → warn + fire nothing — but that state is
+        // unreachable: `phase` only becomes 'lost' from 'tracking', and
+        // 'tracking' is only entered via `poseReceived`, which always sets a
+        // non-null `lastValidPose`. So LOST ⟹ lastValidPose !== null, and the
+        // only remaining null-payload case is a genuine seamless recovery.
+        // See tracking-slice.ts (defensive branch) and the port plan doc.
         log.info('Tracking recovered (same coordinate frame)');
         onTrackingRecovered?.();
       }
