@@ -920,8 +920,16 @@ export function updatePermissionStatus(result: PermissionCheckResult): void {
       errors.push(result.fileSystem.error);
     }
 
-    // Consolidate denied permission messages for conciseness (consistent with main.ts)
+    // Consolidate denied permission messages for conciseness (consistent with main.ts).
+    // Order mirrors missingMandatory (AR, Location, Camera) so the consolidated
+    // denied message reads consistently with the mandatory hint. WebXR/AR denial
+    // is a real state: requestWebXRWithDepthPermission returns granted === false
+    // on a NotAllowedError, so it must surface the actionable "denied" message
+    // rather than the generic mandatory fallback.
     const denied: string[] = [];
+    if (result.webxr.granted === false) {
+      denied.push('AR');
+    }
     if (result.geolocation.granted === false) {
       denied.push('Location');
     }

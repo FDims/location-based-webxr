@@ -2409,6 +2409,24 @@ describe('updatePermissionStatus — Grant Permissions button visibility', () =>
     expect(btn.classList.contains('hidden')).toBe(false);
   });
 
+  // Why: When WebXR is explicitly denied (granted === false) the user gets
+  // the actionable "access denied. Please enable in browser settings."
+  // message — not the vague generic "mandatory" hint. WebXR denial is a real
+  // state (requestWebXRWithDepthPermission returns granted:false on a
+  // NotAllowedError), so AR must be in the consolidated denied list.
+  it('shows specific AR-denied message (not mandatory hint) when WebXR is denied', () => {
+    setupPermissionDOM();
+    initUI(createMockCallbacks());
+
+    updatePermissionStatus(makeResult({ webxr: false }));
+
+    const err = document.getElementById('permission-error')!;
+    expect(err.classList.contains('hidden')).toBe(false);
+    expect(err.textContent).toMatch(/AR/);
+    expect(err.textContent).toMatch(/access denied/i);
+    expect(err.textContent).not.toMatch(/mandatory/i);
+  });
+
   // Why: While WebXR is still pending (granted === null) the mandatory hint
   // must list AR so the user understands the AR permission is required.
   it('lists AR in the mandatory hint while WebXR is pending', () => {
