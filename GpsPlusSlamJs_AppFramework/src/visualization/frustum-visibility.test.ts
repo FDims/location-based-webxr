@@ -169,4 +169,21 @@ describe('isObjectInCameraFrustum', () => {
     mesh.updateMatrixWorld();
     expect(isObjectInCameraFrustum(camera, mesh, frustum)).toBe(true);
   });
+
+  // Why this test matters: GpsAnchor passes its `object3D` directly, which is
+  // frequently a plain `THREE.Group` container with no `geometry`. Three.js's
+  // `Frustum.intersectsObject` does NOT treat such objects as "in frustum" —
+  // it unconditionally reads `object.geometry.boundingSphere`, which throws a
+  // TypeError for a Group. This test pins the safe default (treat geometry-less
+  // objects as visible) and guards against a regression to the crashing path.
+  it('treats a geometry-less object (Group) as in-frustum without throwing', () => {
+    const camera = makeCamera();
+    const group = new THREE.Group();
+    // Position is irrelevant: a geometry-less object has no bounding sphere to
+    // test, so the safe default applies regardless of where it sits.
+    group.position.set(1000, 0, -5);
+    group.updateMatrixWorld();
+    expect(() => isObjectInCameraFrustum(camera, group)).not.toThrow();
+    expect(isObjectInCameraFrustum(camera, group)).toBe(true);
+  });
 });

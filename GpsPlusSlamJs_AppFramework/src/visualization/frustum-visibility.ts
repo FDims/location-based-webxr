@@ -76,10 +76,13 @@ const objectScratchSphere = new THREE.Sphere();
 /**
  * Check whether an `Object3D` is currently (at least partially) inside the
  * camera frustum. Computes the object's world bounding sphere by taking the
- * geometry's local bounding sphere and applying `matrixWorld`. Falls back to
- * `Three.intersectsObject` for objects whose geometry/bounding sphere is not
- * available (e.g. plain `Group`s — those are treated as "in frustum" by
- * Three.js's default `intersectsObject`).
+ * geometry's local bounding sphere and applying `matrixWorld`. For objects
+ * without geometry (e.g. plain `Group`s used as anchor containers) there is no
+ * bounding sphere to test, so they are treated as "in frustum" (`true`). This
+ * is the conservative default for visibility gating and deliberately avoids
+ * `Frustum.intersectsObject`, which unconditionally dereferences
+ * `object.geometry.boundingSphere` and therefore throws for geometry-less
+ * objects.
  *
  * Callers should ensure `object.updateMatrixWorld()` has already run this
  * frame (it normally has, via `renderer.render`).
@@ -103,5 +106,7 @@ export function isObjectInCameraFrustum(
       return f.intersectsSphere(objectScratchSphere);
     }
   }
-  return f.intersectsObject(object);
+  // Geometry-less object (e.g. Group): no bounding sphere to test. Treat as
+  // visible rather than calling Frustum.intersectsObject, which would throw.
+  return true;
 }

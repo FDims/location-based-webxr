@@ -21,8 +21,12 @@ a new local pose while the anchored object is outside the frustum.
   partial-overlap check; uses `Frustum.intersectsSphere`.
 - `isObjectInCameraFrustum(camera, object, frustum?) → boolean` —
   partial-overlap check using the object's world bounding sphere
-  (geometry's local bounding sphere × `matrixWorld`). Falls back to
-  `Frustum.intersectsObject` for objects without geometry.
+  (geometry's local bounding sphere × `matrixWorld`). Objects without
+  geometry (e.g. plain `Group` anchor containers) have no bounding sphere
+  to test and are treated as visible (`true`). It deliberately does NOT
+  call `Frustum.intersectsObject`, which unconditionally dereferences
+  `object.geometry.boundingSphere` and therefore throws a `TypeError` for
+  geometry-less objects.
 
 ## Invariants & assumptions
 
@@ -61,4 +65,6 @@ for (const anchor of anchors) {
 - [frustum-visibility.test.ts](frustum-visibility.test.ts) — covers all
   three predicates, the inside/outside boundary, the
   injected-frustum-is-reused path (mutates camera, asserts stale frustum
-  is honoured), and the parent-transform case for `isObjectInCameraFrustum`.
+  is honoured), the parent-transform case for `isObjectInCameraFrustum`,
+  and the geometry-less `Group` case (asserts it does not throw and is
+  treated as in-frustum).
