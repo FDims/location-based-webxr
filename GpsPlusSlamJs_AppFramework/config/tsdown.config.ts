@@ -111,6 +111,7 @@ const entryFiles = [
 
 export default defineConfig({
   entry: entryFiles.map((p) => resolve(projectRoot, p)),
+  tsconfig: resolve(projectRoot, 'tsconfig.app.json'),
   format: ['esm'],
   dts: true,
   outDir: resolve(projectRoot, 'dist'),

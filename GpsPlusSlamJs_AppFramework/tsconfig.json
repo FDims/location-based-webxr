@@ -1,29 +1,20 @@
 {
-  "compilerOptions": {
-    "composite": true,
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "esnext.disposable"],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noEmit": true,
-    "allowJs": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "declaration": true,
-    "sourceMap": true
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": [
-    "dist",
-    "coverage",
-    "node_modules",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.property.test.ts",
-    "src/test-utils/**",
-    "src/test-setup.ts"
+  // Solution-style root config. It owns no files itself (`files: []`) and only
+  // wires up the real projects via `references`. This exists so the VS Code /
+  // tsserver language service assigns every opened file to a project that has
+  // the correct compiler options and `types`:
+  //   - production sources -> tsconfig.app.json
+  //   - tests / test-utils -> tsconfig.vitest.json (adds `node` + vitest globals)
+  // Without this, files excluded from the app config (e.g. *.test.ts) landed in
+  // an inferred project that could not resolve `node:fs` etc., producing false
+  // "Cannot find name 'node:fs'" diagnostics in the editor only.
+  //
+  // Build/CI scripts target the concrete configs directly
+  // (`tsc -p tsconfig.app.json`, `tsc -p tsconfig.vitest.json`), so this file
+  // does not affect them.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.vitest.json" }
   ]
 }

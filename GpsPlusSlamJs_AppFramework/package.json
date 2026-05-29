@@ -40,7 +40,7 @@
     "verify:community-key-lifetime": "node scripts/verify-community-key-lifetime.mjs",
     "prepublishOnly": "pnpm run build && pnpm run verify:pack && pnpm run verify:community-key-lifetime",
     "test:unit": "vitest run --coverage --config config/vitest.config.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.vitest.json --noEmit",
     "lint": "eslint . --config config/eslint.config.mjs",
     "test:watch": "vitest --config config/vitest.config.ts",
