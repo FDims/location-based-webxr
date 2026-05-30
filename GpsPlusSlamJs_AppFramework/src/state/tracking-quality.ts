@@ -461,11 +461,12 @@ export function computeResidualConsensus(
   if (n < 2) return { score: 0, medianResidualM: 0, count: 0 };
 
   const start = Math.max(0, n - options.residualWindowSize);
-  const glMat = mat4.fromValues(
-    ...(alignmentMatrix as unknown as number[] as Parameters<
-      typeof mat4.fromValues
-    >)
-  );
+  // `alignmentMatrix` is a length-16 (row/column-major) tuple and only read
+  // from here, so pass it straight to gl-matrix as ReadonlyMat4 instead of
+  // spreading into `mat4.fromValues` — that spread allocates a fresh
+  // Float32Array (and 16 stack args) on every call and truncates to float32.
+  // Same kernel pattern as `matrixDelta`.
+  const glMat = alignmentMatrix as unknown as ReadonlyMat4;
   const tmp = vec3.create();
 
   const normalised: number[] = [];
@@ -746,11 +747,10 @@ export function computeGpsVsFusedDivergence(
   const n = Math.min(gpsPositions.length, odometryPositions.length);
   if (n < 2) return 0;
   const start = Math.max(0, n - windowSize);
-  const glMat = mat4.fromValues(
-    ...(alignmentMatrix as unknown as number[] as Parameters<
-      typeof mat4.fromValues
-    >)
-  );
+  // Read-only use — cast straight to ReadonlyMat4 to avoid the
+  // `mat4.fromValues` spread allocation (see `computeResidualConsensus` /
+  // `matrixDelta` for the rationale).
+  const glMat = alignmentMatrix as unknown as ReadonlyMat4;
   const tmp = vec3.create();
   let maxDiv = 0;
   for (let i = start; i < n; i++) {
