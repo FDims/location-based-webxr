@@ -182,16 +182,44 @@ function injectRefPointsActions(actions: RecordedAction[]): RecordedAction[] {
         ? payload['timestamp']
         : rawGpsPoint['timestamp'];
 
+    // Forward the raw WebXR AR pose + display name so the post-load action
+    // stream is uniform across eras: every `addRefPointEntry` carries the
+    // pose the investigation harness recomputes alignment from, and a
+    // human-readable label when the legacy mark had one. Pose/name are
+    // optional — when a legacy payload lacks them they are simply omitted
+    // (harness falls back to id, treats pose-absence as "not a live mark").
+    // See 2026-05-29-investigation-harness-refpoint-source-migration-plan.md
+    // §E.3.
+    const position = payload['position'];
+    const rotation = payload['rotation'];
+    const name = payload['name'];
+
     out.push({
       type: 'refPoints/addRefPointEntry',
       payload: {
         id,
         timestamp: typeof timestamp === 'number' ? timestamp : 0,
         rawGpsPoint,
+        ...(isFiniteVec(position, 3) ? { position } : {}),
+        ...(isFiniteVec(rotation, 4) ? { rotation } : {}),
+        ...(typeof name === 'string' ? { name } : {}),
       },
     });
   }
   return out;
+}
+
+/**
+ * True when `value` is an array of exactly `len` finite numbers. Used to
+ * forward only well-formed AR-pose vectors into the synthesized
+ * `refPoints/addRefPointEntry` payload (defensive boundary validation).
+ */
+function isFiniteVec(value: unknown, len: number): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length === len &&
+    value.every((n) => typeof n === 'number' && Number.isFinite(n))
+  );
 }
 
 // ---------------------------------------------------------------------------

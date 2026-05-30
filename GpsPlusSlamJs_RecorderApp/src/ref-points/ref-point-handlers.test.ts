@@ -276,6 +276,8 @@ interface V2EntryPayload {
     longitude: number;
     altitude?: number;
   };
+  position?: Vector3;
+  rotation?: Quaternion;
   gpsPoint?: {
     latitude: number;
     longitude: number;
@@ -597,6 +599,30 @@ describe('handleMarkRefPoint — picker integration', () => {
     const payload = getLastV2Payload(store);
     expect(payload).toBeDefined();
     expect(payload!.id).toMatch(/^[0-9a-f]{15}$/);
+  });
+
+  // Why: The raw WebXR AR pose (odomPosition/odomRotation) is the
+  // load-bearing input the investigation harness recomputes alignment
+  // from. The dispatch site previously discarded it (underscore-prefixed
+  // params); this asserts it now reaches the addRefPointEntry payload
+  // verbatim in the raw WebXR frame (NOT webxrToNUE-converted). See
+  // 2026-05-29-investigation-harness-refpoint-source-migration-plan.md §E.
+  it('should carry the raw WebXR AR pose on the dispatched payload', async () => {
+    const handle = createMockScenarioHandle();
+    mockGetCurrentScenarioHandle.mockReturnValue(handle);
+    mockExtractOdomPosition.mockReturnValue([1.5, -2.25, 3.75] as Vector3);
+    mockExtractOdomRotation.mockReturnValue([0.1, 0.2, 0.3, 0.9] as Quaternion);
+
+    seedImportedRefPoints([
+      { id: 'Bank', name: 'Bank', lat: 49.0, lon: 8.0, sourceZipName: 'p.zip' },
+    ]);
+
+    await handlers.handleMarkRefPoint();
+
+    const payload = getLastV2Payload(store);
+    expect(payload).toBeDefined();
+    expect(payload!.position).toEqual([1.5, -2.25, 3.75]);
+    expect(payload!.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
   });
 
   // Why: Re-observation should use the imported ref point's display name (not H3 index)

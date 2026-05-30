@@ -145,8 +145,8 @@ export function createRefPointHandlers(
   function dispatchRefPointAction(
     refPointId: string,
     refPointName: string,
-    _odomPosition: Vector3,
-    _odomRotation: Quaternion,
+    odomPosition: Vector3,
+    odomRotation: Quaternion,
     gpsPoint: GpsPoint,
     timestamp: number,
     _alignmentMatrix: Matrix4 | null | undefined,
@@ -179,12 +179,19 @@ export function createRefPointHandlers(
           altitude: fusedGpsPoint.altitude ?? rawGpsPoint.altitude,
         }
       : undefined;
+    // The raw WebXR AR pose (`odomPosition`/`odomRotation`) is the
+    // load-bearing input the investigation harness needs to recompute
+    // alignment from scratch for parameter sweeps. Without it, every new
+    // recording is silently useless for sweeps. See
+    // 2026-05-29-investigation-harness-refpoint-source-migration-plan.md §E.
     deps.getStore().dispatch(
       addRefPointEntry({
         id: refPointId,
         timestamp,
         name: refPointName,
         rawGpsPoint,
+        position: odomPosition,
+        rotation: odomRotation,
         ...(fusedRaw ? { gpsPoint: fusedRaw } : {}),
       })
     );

@@ -1026,10 +1026,82 @@ describe('recording-migration', () => {
 
       /**
        * Why this test matters:
-       * Idempotency — when a recording already carries refPoints actions
-       * (future post-Step-5.7 era), the translator must be a no-op to avoid
-       * doubling every entry on replay.
+       * The investigation harness recomputes alignment from the raw WebXR
+       * AR pose, which survives only on the legacy `markReferencePoint`
+       * payload. §E.3 forwards `position`/`rotation` (and the display
+       * `name`) into the synthesized `addRefPointEntry` so the post-load
+       * stream is uniform across eras and the harness extractor handles
+       * one action type. See
+       * 2026-05-29-investigation-harness-refpoint-source-migration-plan.md §E.3.
        */
+      it('forwards position/rotation/name into the injected entry', () => {
+        const actions: RecordedAction[] = [
+          {
+            type: 'gpsData/markReferencePoint',
+            payload: {
+              id: '8b1fa0a3168efff',
+              name: 'Town Hall',
+              position: [1.5, -2.25, 3.75],
+              rotation: [0.1, 0.2, 0.3, 0.9],
+              rawGpsPoint: {
+                id: 'gps-1',
+                latitude: 49,
+                longitude: 8,
+                timestamp: 1500,
+              },
+              timestamp: 2000,
+            },
+          },
+        ];
+
+        const result = migrateActionsIfNeeded(actions, {
+          odomCoordVersion: 5,
+        });
+
+        const v2 = result[1].payload as Record<string, unknown>;
+        expect(v2['position']).toEqual([1.5, -2.25, 3.75]);
+        expect(v2['rotation']).toEqual([0.1, 0.2, 0.3, 0.9]);
+        expect(v2['name']).toBe('Town Hall');
+      });
+
+      /**
+       * Why this test matters:
+       * Pose/name are optional. A legacy mark that lacks them (or carries a
+       * malformed pose) must still synthesise a valid entry — pose/name are
+       * simply omitted so the harness falls back to id and treats the entry
+       * as "not a live mark", rather than persisting a NaN-laden vector.
+       */
+      it('omits pose/name when absent or malformed on the legacy mark', () => {
+        const actions: RecordedAction[] = [
+          {
+            type: 'gpsData/markReferencePoint',
+            payload: {
+              id: '8b1fa0a3168efff',
+              position: [1, 2], // wrong length → omitted
+              rotation: 'nope', // wrong type → omitted
+              rawGpsPoint: {
+                id: 'gps-1',
+                latitude: 49,
+                longitude: 8,
+                timestamp: 1500,
+              },
+              timestamp: 2000,
+            },
+          },
+        ];
+
+        const result = migrateActionsIfNeeded(actions, {
+          odomCoordVersion: 5,
+        });
+
+        const v2 = result[1].payload as Record<string, unknown>;
+        expect(v2['position']).toBeUndefined();
+        expect(v2['rotation']).toBeUndefined();
+        expect(v2['name']).toBeUndefined();
+        // The valid GPS entry is still synthesized.
+        expect(v2['id']).toBe('8b1fa0a3168efff');
+      });
+
       it('is a no-op when stream already contains refPoints actions', () => {
         const actions: RecordedAction[] = [
           {

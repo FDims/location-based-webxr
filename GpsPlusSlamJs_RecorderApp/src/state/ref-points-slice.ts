@@ -20,6 +20,7 @@
 import type { PayloadAction } from '@reduxjs/toolkit';
 import { createSelector, createSlice } from '@reduxjs/toolkit';
 import type { RawGpsPoint } from './recorder-store';
+import type { Vector3, Quaternion } from 'gps-plus-slam-app-framework/core';
 import { type KnownGeoAnchor } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,20 @@ export interface RefPointEntry {
   name?: string;
   /** Raw GPS sample at mark-time. Always present. */
   rawGpsPoint: RawGpsPoint;
+  /**
+   * Raw WebXR AR pose (odometry position) captured at mark-time. Optional
+   * because imported sidecar entries and legacy recordings made before
+   * this field landed carry no pose. Stored in the **raw WebXR** frame
+   * (the action-stream convention); the recorder reducer / downstream
+   * consumers apply `webxrToNUE` when they need NUE. The investigation
+   * harness recomputes alignment from this pose, so for live marks it is
+   * a load-bearing input (see
+   * 2026-05-29-investigation-harness-refpoint-source-migration-plan.md §E).
+   */
+  position?: Vector3;
+  /** Raw WebXR AR pose orientation captured at mark-time. Optional for the
+   * same reasons as `position`. */
+  rotation?: Quaternion;
   /**
    * Fused GPS snapshot derived at mark-time from the alignment matrix in
    * effect at that moment — a `RawGpsPoint`-shape with `latitude`,
@@ -65,10 +80,14 @@ const refPointsSlice = createSlice({
   initialState,
   reducers: {
     addRefPointEntry(state, action: PayloadAction<RefPointEntry>) {
-      state.entries.push(action.payload);
+      // The pose fields are readonly tuples (`Vector3`/`Quaternion`), which
+      // Immer's `Draft` widens to mutable tuples; assert to the draft's
+      // element type to bridge that variance without pulling in `immer`
+      // (not a direct dependency here).
+      state.entries.push(action.payload as (typeof state.entries)[number]);
     },
     setImportedRefPointEntries(state, action: PayloadAction<RefPointEntry[]>) {
-      state.entries = action.payload;
+      state.entries = action.payload as typeof state.entries;
     },
     resetRefPoints() {
       return initialState;
