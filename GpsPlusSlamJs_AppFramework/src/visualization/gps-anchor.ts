@@ -152,6 +152,10 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   const scratchCurrTrans = new THREE.Vector3();
   const scratchPrevQuat = new THREE.Quaternion();
   const scratchCurrQuat = new THREE.Quaternion();
+  // Alignment + its inverse, used to map the GPS-world NUE target into the
+  // AR-local frame of `arWorldGroup` (see `maybeCommitSteadyState`).
+  const scratchAlignment = new THREE.Matrix4();
+  const scratchInverse = new THREE.Matrix4();
 
   let phase: GpsAnchorPhase =
     options.skipBootstrap === true ? 'anchored' : 'bootstrap';
@@ -215,11 +219,24 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   };
 
   /**
-   * Steady-state: compute the NUE target from the stored `gpsPoint`
-   * and the current `zeroRef`, and commit it to `object3D.position`
-   * iff the position delta exceeds the distance-scaled threshold AND
-   * the mode gate (with optional large-jump bypass) allows it.
-   * Returns silently on missing inputs.
+   * Steady-state: compute the GPS-world NUE target from the stored
+   * `gpsPoint` and the current `zeroRef`, map it into `arWorldGroup`'s
+   * AR-local frame via the inverse alignment matrix, and commit it to
+   * `object3D.position` iff the (AR-local) position delta exceeds the
+   * distance-scaled threshold AND the mode gate (with optional large-jump
+   * bypass) allows it.
+   *
+   * Frame note: `arWorldGroup.matrix` IS the alignment matrix, which maps
+   * **AR-odometry NUE → GPS-world NUE**. `object3D.position` is a *local*
+   * transform in that AR-odometry frame. To make the object's *world*
+   * position equal the GPS-world `nue`, the local target must be
+   * `alignment⁻¹ · nue` — writing raw `nue` would double-apply the
+   * alignment (world = `alignment · nue`). See
+   * `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md`.
+   *
+   * Returns silently on missing inputs (no `zeroRef`, or no alignment
+   * matrix yet — an AR-local object cannot be placed without knowing the
+   * AR↔NUE transform).
    */
   const maybeCommitSteadyState = (): void => {
     const zero = options.getGpsZeroRef();
@@ -234,12 +251,22 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     // recent matrix the anchor actually saw.
     prevAlignmentMatrix = currentAlignment;
 
+    // Without an alignment matrix we cannot map the GPS-world NUE target
+    // into `arWorldGroup`'s AR-local frame. Skip the commit and leave the
+    // object at its last local pose until an alignment exists. (Previously
+    // this path committed raw NUE, which placed the object in the wrong
+    // frame — see the alignment-frame bug doc referenced above.)
+    if (currentAlignment === null || currentAlignment === undefined) return;
+
     const targetAlt =
       'altitude' in gpsPoint && typeof gpsPoint.altitude === 'number'
         ? gpsPoint.altitude
         : 0;
     const nue = calcRelativeCoordsInMeters(zero, gpsPoint, targetAlt, 0);
-    scratchTarget.set(nue[0], nue[1], nue[2]);
+    // GPS-world NUE → AR-local: pre-multiply by the inverse alignment.
+    scratchAlignment.fromArray(currentAlignment);
+    scratchInverse.copy(scratchAlignment).invert();
+    scratchTarget.set(nue[0], nue[1], nue[2]).applyMatrix4(scratchInverse);
 
     // Distance-scaled threshold: `scale = 1 + 10 × distanceFromCamera/100`.
     options.camera.getWorldPosition(scratchCamWorld);

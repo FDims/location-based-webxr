@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createGpsAnchor, type GpsAnchorSamplePoint } from './gps-anchor.js';
 import { clearFrameUpdates } from '../ar/frame-loop.js';
+import { makeNonTrivialAlignment } from '../test-utils/non-trivial-alignment.js';
 
 function makeAnchorEnv() {
   const arWorldGroup = new THREE.Group();
@@ -587,8 +588,15 @@ describe('createGpsAnchor — steady state (snap-when-offscreen)', () => {
     // Tick 1: establishes baseline alignment. Object is on-screen → no commit.
     anchor.__tickForTests(1, 1);
     expect(env.object3D.position.x).toBeCloseTo(0, 4);
-    // Tick 2: alignment matrix jumps by 10 m translation (> 4 m large-jump threshold).
-    matrix = translationMatrix16(10, 0, 0);
+    // Tick 2: alignment matrix jumps by 50 m on the EAST (Z) axis (> 4 m
+    // large-jump threshold). The jump axis is deliberately decoupled from the
+    // NORTH (X) GPS target so the committed AR-local target — `alignment⁻¹ ·
+    // nue` — keeps its X≈10 m component (the inverse only subtracts the Z
+    // translation), making "a commit happened" unambiguous on the X axis.
+    // (World-placement correctness under a coupled alignment is covered by the
+    // dedicated alignment-frame tests + property test; here arWorldGroup stays
+    // identity so the bypass DECISION is exercised in isolation.)
+    matrix = translationMatrix16(0, 0, 50);
     anchor.__tickForTests(1, 2);
     expect(env.object3D.position.x).toBeGreaterThan(8); // committed despite on-screen
     anchor.dispose();
@@ -789,6 +797,141 @@ describe('createGpsAnchor — re-bootstrap on external move', () => {
     anchor.__tickForTests(1, 3);
     // No bypass + on-screen mode gate → no commit despite the big "first" matrix.
     expect(env.object3D.position.x).toBeCloseTo(0, 4);
+    anchor.dispose();
+  });
+});
+
+/**
+ * Alignment-frame correctness (regression for the bug documented in
+ * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
+ *
+ * Why this test matters: `object3D` is parented to `arWorldGroup`, whose
+ * `matrix` IS the alignment matrix mapping **AR-odometry NUE → GPS-world
+ * NUE**. To make the object's *world* position equal the GPS-world target
+ * `nue`, its *local* position must be `alignment⁻¹ · nue`. The original
+ * implementation wrote raw `nue` as the local position, so the world
+ * position became `alignment · nue` (the alignment was applied twice). That
+ * defect was invisible to every earlier test because they used an
+ * **identity** alignment matrix (`I⁻¹ · nue == nue`) and asserted on the
+ * *local* position.
+ *
+ * These tests close the gap by (a) using a deliberately non-trivial
+ * alignment matrix via `makeNonTrivialAlignment`, (b) applying it to a real
+ * `arWorldGroup`, and (c) asserting on `getWorldPosition` — the frame that
+ * actually encodes the requirement.
+ */
+function applyAlignmentToGroup(
+  group: THREE.Object3D,
+  matrix16: readonly number[]
+): void {
+  group.matrix.fromArray(matrix16);
+  group.matrixAutoUpdate = false;
+  group.updateMatrixWorld(true);
+}
+
+describe('createGpsAnchor — alignment-frame correctness', () => {
+  it('places the object at the GPS-world target in WORLD space under a non-trivial alignment', async () => {
+    const env = makeAnchorEnv();
+    const alignment = makeNonTrivialAlignment(42);
+    applyAlignmentToGroup(env.arWorldGroup, alignment);
+    const zero = { lat: 48.0, lon: 11.0 };
+    const target = { lat: 48.001, lon: 11.0005 }; // ~111 m N, ~37 m E
+    const anchor = createGpsAnchor({
+      ...env,
+      gpsPoint: target,
+      skipBootstrap: true,
+      mode: 'snap-every-tick',
+      getAlignmentMatrix: () => alignment,
+      getGpsZeroRef: () => zero,
+      getCurrentGpsPoint: () => null,
+    });
+    anchor.__tickForTests(1, 1);
+    const { calcRelativeCoordsInMeters } = await import('../core/index.js');
+    const nue = calcRelativeCoordsInMeters(zero, target);
+    const world = env.object3D.getWorldPosition(new THREE.Vector3());
+    // World position MUST equal the GPS-world NUE target, independent of the
+    // alignment matrix. Pre-fix this failed (object landed at alignment·nue).
+    expect(world.x).toBeCloseTo(nue[0], 3);
+    expect(world.y).toBeCloseTo(nue[1], 3);
+    expect(world.z).toBeCloseTo(nue[2], 3);
+    anchor.dispose();
+  });
+
+  it('keeps the WORLD position fixed at the GPS target as the alignment matrix changes', async () => {
+    const env = makeAnchorEnv();
+    let alignment = makeNonTrivialAlignment(1);
+    applyAlignmentToGroup(env.arWorldGroup, alignment);
+    const zero = { lat: 48.0, lon: 11.0 };
+    const target = { lat: 48.0009, lon: 10.9994 };
+    const anchor = createGpsAnchor({
+      ...env,
+      gpsPoint: target,
+      skipBootstrap: true,
+      mode: 'snap-every-tick',
+      getAlignmentMatrix: () => alignment,
+      getGpsZeroRef: () => zero,
+      getCurrentGpsPoint: () => null,
+    });
+    const { calcRelativeCoordsInMeters } = await import('../core/index.js');
+    const nue = calcRelativeCoordsInMeters(zero, target);
+    for (const seed of [1, 7, 13, 99]) {
+      alignment = makeNonTrivialAlignment(seed);
+      applyAlignmentToGroup(env.arWorldGroup, alignment);
+      anchor.__tickForTests(1, seed + 1);
+      const world = env.object3D.getWorldPosition(new THREE.Vector3());
+      expect(world.x).toBeCloseTo(nue[0], 2);
+      expect(world.y).toBeCloseTo(nue[1], 2);
+      expect(world.z).toBeCloseTo(nue[2], 2);
+    }
+    anchor.dispose();
+  });
+
+  it('skips the commit (leaves the local pose untouched) when the alignment matrix is null', () => {
+    const env = makeAnchorEnv();
+    // arWorldGroup left at identity; the anchor cannot place an AR-local
+    // object without knowing AR↔NUE, so it must leave the pose as-is.
+    env.object3D.position.set(3, 4, 5);
+    const zero = { lat: 48.0, lon: 11.0 };
+    const anchor = createGpsAnchor({
+      ...env,
+      gpsPoint: { lat: 48.001, lon: 11.0 },
+      skipBootstrap: true,
+      mode: 'snap-every-tick',
+      getAlignmentMatrix: () => null,
+      getGpsZeroRef: () => zero,
+      getCurrentGpsPoint: () => null,
+    });
+    anchor.__tickForTests(1, 1);
+    expect(env.object3D.position.x).toBe(3);
+    expect(env.object3D.position.y).toBe(4);
+    expect(env.object3D.position.z).toBe(5);
+    anchor.dispose();
+  });
+
+  it('preserves the metre threshold under a rigid alignment (sub-threshold delta still does not commit)', () => {
+    // The threshold gate compares AR-local distances. A rigid (rotation +
+    // translation, unit-scale) alignment preserves Euclidean distance, so a
+    // sub-threshold NUE delta must remain sub-threshold in AR-local space and
+    // NOT commit — confirming the 2 m gate keeps its meaning across the frame.
+    const env = makeAnchorEnv();
+    const alignment = makeNonTrivialAlignment(5);
+    applyAlignmentToGroup(env.arWorldGroup, alignment);
+    const zero = { lat: 48.0, lon: 11.0 };
+    const anchor = createGpsAnchor({
+      ...env,
+      gpsPoint: zero, // target == zero → world (0,0,0)
+      skipBootstrap: true,
+      mode: 'snap-every-tick',
+      getAlignmentMatrix: () => alignment,
+      getGpsZeroRef: () => zero,
+      getCurrentGpsPoint: () => null,
+    });
+    anchor.__tickForTests(1, 1); // commits the zero target
+    const committed = env.object3D.position.clone();
+    // Move target 1 m north — below the default 2 m threshold.
+    anchor.setGpsPoint({ lat: zero.lat + 1 / 111319, lon: zero.lon });
+    anchor.__tickForTests(1, 2);
+    expect(env.object3D.position.distanceTo(committed)).toBeLessThan(1e-6);
     anchor.dispose();
   });
 });
