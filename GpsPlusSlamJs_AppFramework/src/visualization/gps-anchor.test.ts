@@ -935,3 +935,70 @@ describe('createGpsAnchor — alignment-frame correctness', () => {
     anchor.dispose();
   });
 });
+
+/**
+ * Cross-consumer convention consistency (Action item 3 of the alignment-frame
+ * bug doc). All GPS-world consumers must land the same GPS point at the same
+ * WORLD position under the same alignment, so the placement convention can't
+ * silently diverge between modules.
+ *
+ * The two scene-root consumers —
+ * `GpsPlusSlamJs_RecorderApp/src/visualization/sync-gps-anchored-meshes.ts`
+ * and the *raw GPS markers* of `./gps-event-markers.ts` — both write **raw
+ * NUE** as a *local* position on an object parented to the **scene root**
+ * (root = GPS-world NUE, so local == world). `createGpsAnchor` instead
+ * parents to `arWorldGroup` (AR-odometry frame) and must pre-multiply by
+ * `alignment⁻¹` to reach the *same* world position. This test reconstructs
+ * the real scene hierarchy (scene → arWorldGroup[alignment] → anchor object)
+ * plus a scene-root mesh placed with raw NUE, and asserts both land at the
+ * identical world position. It is kept in-package (rather than importing the
+ * RecorderApp reconciler across the package boundary) by reproducing that
+ * module's documented scene-root + raw-NUE convention directly.
+ */
+describe('createGpsAnchor — cross-consumer convention consistency', () => {
+  it('lands the same GPS point at the same WORLD position as a scene-root raw-NUE consumer', async () => {
+    const zero = { lat: 48.0, lon: 11.0 };
+    const target = { lat: 48.0008, lon: 11.0006 };
+    const alignment = makeNonTrivialAlignment(17);
+
+    // Real hierarchy: scene root (NUE world) → arWorldGroup (alignment) → object.
+    const scene = new THREE.Scene();
+    const arWorldGroup = new THREE.Group();
+    scene.add(arWorldGroup);
+    applyAlignmentToGroup(arWorldGroup, alignment);
+    const anchorObject = new THREE.Object3D();
+    arWorldGroup.add(anchorObject);
+    const camera = new THREE.PerspectiveCamera();
+
+    // Scene-root consumer (sync-gps-anchored-meshes / raw GPS markers):
+    // raw NUE written as a LOCAL position on a root-parented object.
+    const { calcRelativeCoordsInMeters } = await import('../core/index.js');
+    const nue = calcRelativeCoordsInMeters(zero, target);
+    const rootMesh = new THREE.Object3D();
+    rootMesh.position.set(nue[0], nue[1], nue[2]);
+    scene.add(rootMesh);
+    scene.updateMatrixWorld(true);
+
+    const anchor = createGpsAnchor({
+      arWorldGroup,
+      object3D: anchorObject,
+      camera,
+      gpsPoint: target,
+      skipBootstrap: true,
+      mode: 'snap-every-tick',
+      distanceThreshold: 0, // force the commit so we compare placement only
+      getAlignmentMatrix: () => alignment,
+      getGpsZeroRef: () => zero,
+      getCurrentGpsPoint: () => null,
+    });
+    anchor.__tickForTests(1, 1);
+    scene.updateMatrixWorld(true);
+
+    const anchorWorld = anchorObject.getWorldPosition(new THREE.Vector3());
+    const rootWorld = rootMesh.getWorldPosition(new THREE.Vector3());
+    anchor.dispose();
+
+    // Both consumers must agree to within 1 mm.
+    expect(anchorWorld.distanceTo(rootWorld)).toBeLessThan(1e-3);
+  });
+});
