@@ -4,9 +4,17 @@
 
 `createGpsAnchor` is the GPS-anchored placement primitive for a single
 `THREE.Object3D`. It owns the object's local transform inside an
-`arWorldGroup`, computes the target world pose from a stored GPS
-coordinate × the current alignment matrix, and decides when to commit
-the new pose using a configurable mode flag.
+`arWorldGroup`. The target is a GPS-world **NUE** point derived from the
+stored GPS coordinate and the GPS zero reference. Because the managed
+object is parented to `arWorldGroup` — whose local matrix **is** the
+alignment matrix (AR-odometry NUE → GPS-world NUE) — the GPS-world target
+must be expressed in the group's local frame by pre-multiplying with
+`alignment⁻¹`. The component then decides when to commit the new pose
+using a configurable mode flag.
+
+See the alignment-frame bug doc for why the inverse is required and how
+the regression was found:
+[2026-05-31-gps-anchor-alignment-frame-bug.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
 
 This is the JS port of the C# `GpsAnchor` / `GpsAnchorForNonEcsGos`
 sibling pair, merged into one component because in the JS scene-graph
@@ -138,6 +146,24 @@ See [gps-anchor.test.ts](gps-anchor.test.ts). Coverage:
   - Large-jump baseline is cleared on `markMovedExternally` so the
     first steady-state tick after re-bootstrap doesn't spuriously
     trigger the bypass.
+
+- Alignment-frame correctness (bug doc):
+  - Object reaches the correct **world** position under a non-trivial
+    (rotated + translated) alignment — the `alignment⁻¹` mapping is
+    applied, not skipped or doubled.
+  - World position stays fixed as the alignment changes between ticks.
+  - `null`/`undefined` alignment skips the commit (no NaN write).
+  - The metre-scale distance threshold is preserved under a rigid
+    alignment.
+- Cross-consumer convention consistency (bug doc, Action item 3):
+  - `createGpsAnchor` lands a GPS point at the same world position as a
+    scene-root raw-NUE consumer (`sync-gps-anchored-meshes` /
+    `gps-event-markers` raw GPS markers).
+- Property-based (see
+  [`gps-anchor.property.test.ts`](gps-anchor.property.test.ts)):
+  - Anchored object world position is invariant under any rigid
+    alignment matrix.
+  - `inverse(M) ∘ M ≈ identity` for any generated rigid alignment.
 
 ## Related docs
 

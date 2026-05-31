@@ -550,8 +550,18 @@ export async function isWebXRSupported(): Promise<boolean> {
  * basisChangeNode is a static scene-graph node that holds the WEBXR_TO_NUE
  * basis-change matrix permanently (matrixAutoUpdate=false). Moving it here
  * instead of composing it in applyAlignmentMatrix() keeps arWorldGroup's
- * local space as NUE: objects added directly to arWorldGroup can be placed
- * at [1,0,0]=North, [0,0,1]=East without any WebXR↔NUE conversion.
+ * local space in the **NUE axis convention** (X=North, Y=Up, Z=East), so no
+ * WebXR↔NUE swizzle is needed for children.
+ *
+ * CAUTION — two NUE frames: arWorldGroup's local space is the *AR-odometry*
+ * NUE frame, i.e. the **domain** of the alignment matrix, NOT the GPS-world
+ * NUE frame of the scene root. Only content authored in AR-odometry
+ * coordinates (e.g. the camera subtree) may be placed with raw local values.
+ * GPS-world content (a lat/lon → NUE point) is expressed in the scene-root
+ * frame and must be pre-multiplied by alignment⁻¹ before being used as a
+ * local position under arWorldGroup — see createGpsAnchor and the
+ * alignment-frame bug doc
+ * (GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
  *
  * - Recording: arpose stays at identity; WebXRManager writes to camera.
  * - Replay: arpose receives recorded odomPosition/odomRotation;

@@ -292,11 +292,11 @@ describe('createGpsAnchor — bootstrap', () => {
 /**
  * Sub-step 3 of the GpsAnchor port plan: steady-state in
  * `'snap-every-tick'` mode. The anchor MUST
- * - on each tick after bootstrap, compute the target local position
- *   from `calcRelativeCoordsInMeters(zeroRef, gpsPoint)` and write it
- *   to `object3D.position` (relying on its parent — `arWorldGroup`
- *   whose matrix IS the alignment matrix — to absorb the NUE→AR
- *   transform),
+ * - on each tick after bootstrap, compute the GPS-world NUE target
+ *   from `calcRelativeCoordsInMeters(zeroRef, gpsPoint)`, map it into
+ *   the AR-local frame by pre-multiplying with `alignment⁻¹` (the
+ *   inverse of `arWorldGroup`'s matrix), and write the result to
+ *   `object3D.position` so the object reaches the correct WORLD pose,
  * - skip the commit when the delta is below the (distance-scaled)
  *   threshold so on-screen pops are avoided,
  * - re-commit when `setGpsPoint` changes the target,
