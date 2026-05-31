@@ -13,8 +13,8 @@
  * corollary that needs only an explicit degenerate-case test.
  *
  * The produced matrix is a **rigid** transform (rotation + translation,
- * unit scale) to mirror the real alignment matrix, whose RANSAC/Kabsch
- * solver yields scale ≈ 1. Unit scale keeps Euclidean distances preserved,
+ * unit scale) to mirror the real alignment matrix, whose alignment solver
+ * yields scale ≈ 1. Unit scale keeps Euclidean distances preserved,
  * so threshold-gate semantics (which compare metre distances) survive the
  * change of frame — the matrix can be inverted and round-tripped exactly.
  *

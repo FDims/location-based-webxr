@@ -27,7 +27,7 @@ afterEach(() => {
 
 // ---------------------------------------------------------------------------
 // Arbitraries — random RIGID alignment matrices (rotation + translation, unit
-// scale), mirroring the real Kabsch/RANSAC alignment whose scale ≈ 1. Unit
+// scale), mirroring the real alignment matrix whose scale ≈ 1. Unit
 // scale keeps the transform exactly invertible and distance-preserving.
 // ---------------------------------------------------------------------------
 

@@ -20,7 +20,7 @@ missing or doubled transform.
 ## Invariants & assumptions
 
 - The matrix is **rigid**: rotation + translation, **scale = 1**. This
-  mirrors the production alignment matrix (Kabsch/RANSAC scale ≈ 1) and
+  mirrors the production alignment matrix (alignment-solver scale ≈ 1) and
   guarantees Euclidean distances are preserved, so threshold-gate tests
   that compare metre distances stay meaningful across the frame change.
 - Rotation is about a **tilted, non-axis** direction with a substantial
