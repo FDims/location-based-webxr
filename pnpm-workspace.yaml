@@ -2,3 +2,4 @@ packages:
   - GpsPlusSlamJs_AppFramework
   - GpsPlusSlamJs_RecorderApp
   - GpsPlusSlamJs_MinimalExample
+  - GpsPlusSlamJs_AnchorStarter

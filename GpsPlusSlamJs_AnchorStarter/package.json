@@ -1,0 +1,30 @@
+{
+  "name": "gps-plus-slam-anchor-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Starter example consuming gps-plus-slam-app-framework: place a single GPS anchor, persist it to localStorage, reload, re-localise and re-display it at the exact physical spot. The 'meaningful minimal' rung between the trivial minimal example and the full recorder app.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "test": "pnpm run typecheck && pnpm run test:unit",
+    "test:unit": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "gps-plus-slam-app-framework": "workspace:*",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "@types/three": "^0.184.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0"
+}

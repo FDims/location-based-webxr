@@ -116,6 +116,11 @@ export {
   type TrackingQualityOptions,
   type TrackingQualitySliceState,
   type AlignmentSnapshot,
+  // onboarding-guidance (coaching seam over tracking-quality)
+  computeOnboardingGuidance,
+  selectOnboardingGuidance,
+  type OnboardingPhase,
+  type OnboardingGuidance,
 } from './state/index.js';
 
 // Storage: omit names that conflict with state (SessionMetadata)

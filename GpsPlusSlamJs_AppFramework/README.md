@@ -108,7 +108,7 @@ startGpsWatch(
 );
 ```
 
-See [`GpsPlusSlamJs_MinimalExample`](../GpsPlusSlamJs_MinimalExample/) for a complete, runnable smallest-possible consumer (Three.js scene + status panel, no AR, no recording).
+See [`GpsPlusSlamJs_MinimalExample`](../GpsPlusSlamJs_MinimalExample/) for a complete, runnable smallest-possible consumer (Three.js scene + status panel, no AR, no recording). For the next rung up — a readable AR + GPS + persistence demo (a single GPS anchor that survives a page reload) — see [`GpsPlusSlamJs_AnchorStarter`](../GpsPlusSlamJs_AnchorStarter/). The example ladder is **trivial** (MinimalExample) → **starter** (AnchorStarter) → **full** (RecorderApp).
 
 > **Imports.** Prefer subpath imports (`gps-plus-slam-app-framework/ar`, `…/state`, `…/sensors`, `…/storage`, `…/geo`, `…/visualization`, `…/utils`, `…/types`, `…/licensing`). The root barrel re-exports conflict-free names for convenience.
 
@@ -359,5 +359,6 @@ This framework is licensed under **Apache 2.0** — see [LICENSE](LICENSE).
 ## See Also
 
 - [gps-plus-slam-js](https://www.npmjs.com/package/gps-plus-slam-js) — Core alignment algorithms (closed-source)
-- [`GpsPlusSlamJs_MinimalExample`](../GpsPlusSlamJs_MinimalExample/) — Smallest possible consumer of this framework
+- [`GpsPlusSlamJs_MinimalExample`](../GpsPlusSlamJs_MinimalExample/) — Smallest possible consumer of this framework (trivial rung)
+- [`GpsPlusSlamJs_AnchorStarter`](../GpsPlusSlamJs_AnchorStarter/) — Meaningful-minimal starter: a persistent GPS anchor across reload (starter rung)
 - [`GpsPlusSlamJs_RecorderApp`](../GpsPlusSlamJs_RecorderApp/) — Full-featured recording app built on this framework

@@ -183,3 +183,10 @@ export {
   type TrackingQualitySliceState,
   type AlignmentSnapshot,
 } from './tracking-quality.js';
+
+export {
+  computeOnboardingGuidance,
+  selectOnboardingGuidance,
+  type OnboardingPhase,
+  type OnboardingGuidance,
+} from './onboarding-guidance.js';

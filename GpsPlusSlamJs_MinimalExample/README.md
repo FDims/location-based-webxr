@@ -11,7 +11,10 @@ the store.
 1. **Onboarding scaffold.** The full
    [recorder app](../GpsPlusSlamJs_RecorderApp/) is too big to read as
    a "hello world". This example is intentionally trivial so the wiring
-   is obvious.
+   is obvious. For the next step up — a readable AR + GPS + persistence
+   demo — see the
+   [`GpsPlusSlamJs_AnchorStarter`](../GpsPlusSlamJs_AnchorStarter/)
+   starter (trivial → **starter** → full).
 2. **Anonymous-install proof.** The package declares only
    `gps-plus-slam-app-framework: workspace:*` for the sibling package - A clean `pnpm install` at the public-repo root that
    successfully resolves the framework.
