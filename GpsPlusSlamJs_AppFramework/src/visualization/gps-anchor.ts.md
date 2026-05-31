@@ -9,8 +9,9 @@ stored GPS coordinate and the GPS zero reference. Because the managed
 object is parented to `arWorldGroup` — whose local matrix **is** the
 alignment matrix (AR-odometry NUE → GPS-world NUE) — the GPS-world target
 must be expressed in the group's local frame by pre-multiplying with
-`alignment⁻¹`. The component then decides when to commit the new pose
-using a configurable mode flag.
+`alignment⁻¹`. This conversion is delegated to the
+[`nueToArLocal`](frame-conversions.ts) helper. The component then decides
+when to commit the new pose using a configurable mode flag.
 
 See the alignment-frame bug doc for why the inverse is required and how
 the regression was found:

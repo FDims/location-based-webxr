@@ -36,6 +36,9 @@ export {
   isSphereInCameraFrustum,
 } from './frustum-visibility.js';
 
+// --- frame-conversions ---
+export { nueToArLocal } from './frame-conversions.js';
+
 // --- gps-anchor ---
 export {
   type GpsAnchor,

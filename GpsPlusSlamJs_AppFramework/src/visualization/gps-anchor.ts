@@ -18,6 +18,7 @@ import {
 } from '../core/index.js';
 import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { isObjectInCameraFrustum } from './frustum-visibility.js';
+import { nueToArLocal } from './frame-conversions.js';
 
 export type GpsAnchorMode = 'snap-when-offscreen' | 'snap-every-tick';
 export type GpsAnchorPhase = 'bootstrap' | 'anchored';
@@ -152,10 +153,6 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   const scratchCurrTrans = new THREE.Vector3();
   const scratchPrevQuat = new THREE.Quaternion();
   const scratchCurrQuat = new THREE.Quaternion();
-  // Alignment + its inverse, used to map the GPS-world NUE target into the
-  // AR-local frame of `arWorldGroup` (see `maybeCommitSteadyState`).
-  const scratchAlignment = new THREE.Matrix4();
-  const scratchInverse = new THREE.Matrix4();
 
   let phase: GpsAnchorPhase =
     options.skipBootstrap === true ? 'anchored' : 'bootstrap';
@@ -263,10 +260,11 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
         ? gpsPoint.altitude
         : 0;
     const nue = calcRelativeCoordsInMeters(zero, gpsPoint, targetAlt, 0);
-    // GPS-world NUE → AR-local: pre-multiply by the inverse alignment.
-    scratchAlignment.fromArray(currentAlignment);
-    scratchInverse.copy(scratchAlignment).invert();
-    scratchTarget.set(nue[0], nue[1], nue[2]).applyMatrix4(scratchInverse);
+    // GPS-world NUE → AR-local: `alignment⁻¹ · nue`. Centralised in
+    // `nueToArLocal` so the frame conversion has one tested home (see its
+    // sidecar). Writes into the reused `scratchTarget` to avoid per-tick
+    // allocation.
+    nueToArLocal(currentAlignment, [nue[0], nue[1], nue[2]], scratchTarget);
 
     // Distance-scaled threshold: `scale = 1 + 10 × distanceFromCamera/100`.
     options.camera.getWorldPosition(scratchCamWorld);
