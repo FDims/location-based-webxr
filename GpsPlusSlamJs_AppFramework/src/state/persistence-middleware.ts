@@ -14,7 +14,7 @@
 
 import type { Middleware, UnknownAction } from '@reduxjs/toolkit';
 import type { StorageBackend } from '../storage/storage-backend';
-import { recordWriteFailure } from './recording-slice';
+import { endSession, recordWriteFailure, startSession } from './recording-slice';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('PersistenceMiddleware');
@@ -114,13 +114,18 @@ function readIsRecording(state: unknown): boolean {
  * must be persisted. True while recording, and also for the `endSession`
  * action that just flipped `isRecording` to false (Issue 5) so the session's
  * final action is still captured.
+ *
+ * The endSession type is derived from the imported action creator
+ * (`endSession.type`) rather than a hand-typed literal, so a rename of the
+ * recording slice or its actions propagates here automatically instead of
+ * silently breaking final-action persistence.
  */
 function isInPersistableSession(
   wasRecording: boolean,
   isRecording: boolean,
   actionType: string
 ): boolean {
-  const isEndSession = actionType === 'recording/endSession';
+  const isEndSession = actionType === endSession.type;
   return isRecording || (wasRecording && isEndSession);
 }
 
@@ -175,8 +180,10 @@ export function createPersistenceMiddleware(
       return result;
     }
 
-    // Reset action index when a new session starts (Issue 4)
-    if (actionType === 'recording/startSession') {
+    // Reset action index when a new session starts (Issue 4). The type is
+    // derived from the imported action creator (`startSession.type`) so a
+    // slice/action rename can't silently disable the per-session reset.
+    if (actionType === startSession.type) {
       actionIndex = 0;
     }
 
