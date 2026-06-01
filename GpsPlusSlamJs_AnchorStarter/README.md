@@ -14,7 +14,8 @@ It is the middle rung of the example ladder:
 - **trivial:** [`GpsPlusSlamJs_MinimalExample`](../GpsPlusSlamJs_MinimalExample/README.md)
   — resolve-and-run proof (no AR, no GPS, no persistence).
 - **starter (this app):** one persistent GPS anchor, AR + GPS + onboarding
-  coaching + `localStorage` persistence.
+  coaching + **URL-encoded** persistence (the anchor lives in the `?show=`
+  query param, so the link is _shareable_).
 - **full:** [`GpsPlusSlamJs_RecorderApp`](../GpsPlusSlamJs_RecorderApp/README.md)
   — the complete product (routing, scenarios, ref-points, replay, recording).
 
@@ -23,9 +24,11 @@ It is the middle rung of the example ladder:
 1. Go outside with an AR-capable phone. The app coaches you to **move around**
    until alignment is good enough (a "N% ready" meter).
 2. Place a **GPS anchor** (a marker) in the real world. Its coordinates are
-   saved to `localStorage`.
-3. **Reload the page.** Move around again to re-localise; the saved marker
-   reappears at the exact same physical spot — proving cross-session
+   encoded into the page **URL** (the `?show=` query param) — the address bar
+   updates in place and the link becomes shareable.
+3. **Reload the page** _or_ **share the link** to another person / second
+   device. Move around again to re-localise; the saved marker reappears at the
+   exact same physical spot — proving cross-session _and_ cross-device
    persistence.
 
 ## Run it
@@ -53,9 +56,11 @@ content (replace)**:
   - [`setup-state-machine.ts`](src/setup-state-machine.ts.md) — the
     pedagogical core: an explicit FSM for the sequential setup
     (cache-miss → place/save; cache-hit → relocalise/show).
-  - [`anchor-storage.ts`](src/anchor-storage.ts.md) — inline `localStorage`
-    persistence (round-trip + validate-and-clamp; bad JSON → "no cached
-    anchor", never throws).
+  - [`url-anchor-state.ts`](src/url-anchor-state.ts.md) — inline `?show=`
+    URL-state codec: encodes/decodes a minimal, **multi-anchor-ready**
+    `{ a: [ { lat, lon, alt, n?, ui?, s?, r? } ] }` envelope (round-trip +
+    validate-and-clamp; bad/empty/out-of-range param → "no anchor", never
+    throws). The single source of truth for the placed anchor.
   - [`guidance-view.ts`](src/guidance-view.ts.md) /
     [`placement-view.ts`](src/placement-view.ts.md) — pure view-models that
     map the framework metric + FSM to render-ready strings (the async-UX
@@ -69,8 +74,12 @@ content (replace)**:
 
 ## Design decisions
 
-- **D2 — inline persistence:** `localStorage` lives in this app, not the
-  framework (kept maximally copyable).
+- **D2 — URL-encoded persistence (supersedes the original `localStorage`
+  decision):** the anchor state lives in the page URL (`?show=` param), making
+  it _shareable_ across devices/people. The codec is inline in this app (not a
+  framework helper), kept maximally copyable. The envelope is multi-anchor-ready
+  (`{ a: [ … ] }`) and each anchor carries an optional visualization style
+  (`ui`), scale (`s`) and north-relative rotation (`r`).
 - **D3 — reusable guidance seam:** the coaching metric uses the framework's
   `computeOnboardingGuidance`, so wording/thresholds stay consistent with the
   recorder HUD.
