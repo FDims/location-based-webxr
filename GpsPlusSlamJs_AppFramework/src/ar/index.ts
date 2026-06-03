@@ -10,6 +10,14 @@ export {
   CameraBlitCapture,
 } from './camera-blit-capture.js';
 
+// --- capability-checker ---
+export {
+  type CapabilitySupport,
+  type CapabilityMessageOptions,
+  isFullySupported,
+  capabilityMessage,
+} from './capability-checker.js';
+
 // --- chromium-camera-access-workaround ---
 export {
   type ChromiumProjectionLayerWorkaroundResult,
