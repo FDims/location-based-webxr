@@ -46,6 +46,7 @@ function findClaStep(workflow) {
 
 describe('CLA configuration consistency', () => {
   let workflow;
+  let workflowText;
   let claStep;
   let withParams;
   let claMd;
@@ -53,7 +54,7 @@ describe('CLA configuration consistency', () => {
   let prTemplate;
 
   beforeAll(() => {
-    const workflowText = readFile('.github/workflows/cla.yml');
+    workflowText = readFile('.github/workflows/cla.yml');
     workflow = parseYaml(workflowText);
     claStep = findClaStep(workflow);
     withParams = claStep.with ?? {};
@@ -67,8 +68,23 @@ describe('CLA configuration consistency', () => {
     expect(claMd.trim().length).toBeGreaterThan(0);
   });
 
-  it('cla.yml pins contributor-assistant/github-action to an exact version (not a moving tag)', () => {
-    expect(claStep.uses).toMatch(/^contributor-assistant\/github-action@v\d+\.\d+\.\d+$/);
+  it('cla.yml pins contributor-assistant/github-action to an immutable ref (not a moving tag)', () => {
+    // Accept either a semver tag (@vX.Y.Z) or — preferably — a full 40-char
+    // commit SHA pin, which GitHub's security-hardening guide recommends as the
+    // most immutable form. A bare @main / @v2 moving tag is rejected by both.
+    const semverPin = /^contributor-assistant\/github-action@v\d+\.\d+\.\d+$/;
+    const shaPin = /^contributor-assistant\/github-action@[0-9a-f]{40}$/;
+    expect(claStep.uses).toSatisfy(
+      (uses) => semverPin.test(uses) || shaPin.test(uses),
+    );
+
+    // When pinned by SHA, require a human-readable version comment on the same
+    // line so reviewers can tell which release the opaque SHA corresponds to.
+    if (shaPin.test(claStep.uses)) {
+      expect(workflowText).toMatch(
+        /uses:\s*contributor-assistant\/github-action@[0-9a-f]{40}\s*#\s*v\d+\.\d+\.\d+/,
+      );
+    }
   });
 
   it('the workflow sign-off sentence is quoted verbatim somewhere in CONTRIBUTING.md', () => {
