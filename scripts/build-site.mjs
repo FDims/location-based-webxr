@@ -3,15 +3,17 @@
 /**
  * build-site.mjs — orchestrates the multi-app subpath deployment.
  *
- * Builds the framework once, then builds the RecorderApp under base `/recorder/`
- * and the AnchorStarter under base `/starter/` into a single combined output
- * directory (`dist-site/`), and copies the static landing page to the root.
- * The resulting tree is what Cloudflare serves from `gps.csutil.com`:
+ * Builds the framework once, then builds the RecorderApp under base `/recorder/`,
+ * the AnchorStarter under base `/starter/`, and the MinimalExample under base
+ * `/minimal/` into a single combined output directory (`dist-site/`), and copies
+ * the static landing page to the root. The resulting tree is what Cloudflare
+ * serves from `gps.csutil.com`:
  *
  *   dist-site/
  *     index.html        ← landing page (root)
  *     recorder/         ← RecorderApp, base=/recorder/
  *     starter/          ← AnchorStarter, base=/starter/
+ *     minimal/          ← MinimalExample, base=/minimal/
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -105,6 +107,7 @@ function assertSiteTree() {
     'recorder/index.html',
     'recorder/ar-hittest-test.html',
     'starter/index.html',
+    'minimal/index.html',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {
@@ -152,6 +155,21 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'starter'), '/starter/');
+
+console.log('• Building MinimalExample (base=/minimal/)');
+run('pnpm', ['--filter', 'gps-plus-slam-minimal-example', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-minimal-example',
+  'exec',
+  'vite',
+  'build',
+  '--base=/minimal/',
+  '--outDir',
+  join(distSite, 'minimal'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'minimal'), '/minimal/');
 
 console.log('• Copying landing page to dist-site/index.html');
 cpSync(

@@ -3,9 +3,9 @@ compatibility_date = "2026-04-28"
 
 # Static-site deploy. Cloudflare's Git integration runs the build first
 # (`pnpm run build:site`), which writes the combined multi-app output to
-# ./dist-site (landing page at /, recorder at /recorder/, starter at /starter/),
-# then this config tells `wrangler versions upload` where to find the assets.
-# No Worker script is involved.
+# ./dist-site (landing page at /, recorder at /recorder/, starter at /starter/,
+# minimal example at /minimal/), then this config tells `wrangler versions
+# upload` where to find the assets. No Worker script is involved.
 [assets]
 directory = "./dist-site"
 

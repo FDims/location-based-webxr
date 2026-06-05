@@ -4,11 +4,12 @@
 
 The static landing page served at the **root** (`/`) of `gps.csutil.com`. It
 gives a one-paragraph pitch of the GPS+SLAM location-based-WebXR framework and
-routes visitors to the two deployed apps that share the origin:
+routes visitors to the three deployed apps that share the origin, each labelled
+by name:
 
-- **"Open Demo"** → `/starter/` (the `GpsPlusSlamJs_AnchorStarter` app).
-- **"Open Example app to evaluate the tracking accuracy"** → `/recorder/`
-  (the `GpsPlusSlamJs_RecorderApp`).
+- **"Anchor Starter Demo"** → `/starter/` (the `GpsPlusSlamJs_AnchorStarter` app).
+- **"Minimal Example"** → `/minimal/` (the `GpsPlusSlamJs_MinimalExample` app).
+- **"Recorder"** → `/recorder/` (the `GpsPlusSlamJs_RecorderApp`).
 
 It is the third surface of the multi-app subpath deployment described in
 [2026-06-01-multi-app-subpath-deployment-plan.md](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-01-multi-app-subpath-deployment-plan.md)
@@ -23,10 +24,10 @@ orchestration (`scripts/build-site.mjs`, Step 5) copies this file verbatim to
 
 ## Invariants & assumptions
 
-- **Absolute subpath links.** The two buttons link to `/starter/` and
-  `/recorder/` (root-absolute, with trailing slash). These are deployment URLs
-  on the shared origin, not Vite-processed paths, so they are written literally
-  and are **not** rewritten by any base-path logic.
+- **Absolute subpath links.** The three buttons link to `/starter/`,
+  `/minimal/`, and `/recorder/` (root-absolute, with trailing slash). These are
+  deployment URLs on the shared origin, not Vite-processed paths, so they are
+  written literally and are **not** rewritten by any base-path logic.
 - **Zero dependencies / no bundler.** Keeping the page pure static HTML+CSS is a
   deliberate decision (plan Q3) so the framework pitch is trivial to keep up to
   date and loads instantly.
@@ -37,7 +38,8 @@ orchestration (`scripts/build-site.mjs`, Step 5) copies this file verbatim to
 ## Examples
 
 Open the file directly in a browser to preview; the buttons will 404 locally
-unless the sibling apps are also served under `/starter/` and `/recorder/`.
+unless the sibling apps are also served under `/starter/`, `/minimal/`, and
+`/recorder/`.
 End-to-end it is exercised by serving the combined `dist-site/` output and
 clicking through landing → starter → recorder (plan Step 5 verification).
 
