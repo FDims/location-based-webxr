@@ -185,6 +185,13 @@ function getUserAgent(): string {
  * camera-texture access. Re-supplying the last-seen `baseLayer` keeps it
  * alive.
  *
+ * The last-seen `baseLayer` is tracked **per `XRSession` instance** via a
+ * `WeakMap` keyed on the call's `this`. A single shared variable would leak a
+ * previous session's `baseLayer` into a later session: an `XRWebGLLayer` is
+ * bound to the session it was created for, so re-supplying a stale layer to a
+ * different session throws `InvalidStateError`. Keying per session also lets
+ * the entries be garbage-collected with their sessions.
+ *
  * Idempotent: a marker on the wrapper prevents double-wrapping.
  *
  * @returns true if the prototype was wrapped on this call.
@@ -202,18 +209,26 @@ function patchUpdateRenderStateForBaseLayerPersistence(): boolean {
     return false; // already patched
   }
 
-  let lastBaseLayer: unknown;
+  const lastBaseLayerBySession = new WeakMap<object, unknown>();
   const patched: UpdateRenderStateFn = function (
     this: unknown,
     init: { baseLayer?: unknown } = {}
   ) {
-    if (init.baseLayer !== undefined) {
-      lastBaseLayer = init.baseLayer;
+    // The browser always invokes this as a method on an XRSession instance, so
+    // `this` is an object we can key on. If called without a session context
+    // (abnormal), pass the init through untouched rather than risk keying a
+    // non-object into the WeakMap.
+    if (typeof this !== 'object' || this === null) {
+      return original.call(this, init);
     }
-    return original.call(this, {
-      baseLayer: lastBaseLayer,
-      ...init,
-    });
+    if (init.baseLayer !== undefined) {
+      lastBaseLayerBySession.set(this, init.baseLayer);
+    }
+    const remembered = lastBaseLayerBySession.get(this);
+    return original.call(
+      this,
+      remembered !== undefined ? { baseLayer: remembered, ...init } : init
+    );
   };
   (patched as unknown as Record<string, unknown>)[BASE_LAYER_PATCH_MARKER] =
     true;

@@ -268,14 +268,51 @@ describe('applyChromiumProjectionLayerWorkaround — baseLayer persistence', () 
     expect(result.patchedUpdateRenderState).toBe(true);
 
     const update = g.XRSession.prototype.updateRenderState!;
+    // The browser invokes updateRenderState as a method on the session, so the
+    // wrapper keys its persisted baseLayer on `this`. Bind a session instance
+    // to model that calling convention.
+    const session = { name: 'session' };
     const baseLayer = { id: 'base' };
-    update({ baseLayer });
+    update.call(session, { baseLayer });
     // Second call without baseLayer (three.js depth update) must still carry
     // the previously-seen baseLayer through to the original implementation.
-    update({});
+    update.call(session, {});
 
     expect(calls[0].baseLayer).toBe(baseLayer);
     expect(calls[1].baseLayer).toBe(baseLayer);
+  });
+
+  it('isolates baseLayer state per XRSession instance (no shared-closure leak)', () => {
+    // Why this matters: a single shared closure variable would leak the first
+    // session's baseLayer into a later session. In a real browser an
+    // XRWebGLLayer is bound to the session it was created for, so re-supplying
+    // a stale layer to a different session throws InvalidStateError. Keying the
+    // persisted layer on `this` (a WeakMap) keeps sessions isolated.
+    const calls: Array<{ baseLayer?: unknown }> = [];
+    g.XRSession = {
+      prototype: {
+        updateRenderState(init?: { baseLayer?: unknown }) {
+          calls.push({ ...init });
+          return undefined;
+        },
+      },
+    };
+
+    applyChromiumProjectionLayerWorkaround({ userAgent: UA_AFFECTED_148 });
+
+    const update = g.XRSession.prototype.updateRenderState!;
+    const sessionA = { name: 'A' };
+    const sessionB = { name: 'B' };
+    const layerA = { id: 'layer-A' };
+
+    // sessionA records its baseLayer.
+    update.call(sessionA, { baseLayer: layerA });
+    // sessionB issues a depth-only update before ever setting its own
+    // baseLayer. The previous session's layer must NOT leak in.
+    update.call(sessionB, {});
+
+    expect(calls[0].baseLayer).toBe(layerA);
+    expect(calls[1].baseLayer).toBeUndefined();
   });
 
   it('does not wrap updateRenderState on Chrome 150 (above the window)', () => {

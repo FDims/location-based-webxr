@@ -44,6 +44,11 @@ bootstrap, before any `requestSession()`.
   and which patches ran (key for confirming fresh framework code on-device).
 - Idempotent — safe to call repeatedly. The `updateRenderState` wrap is marked
   with `__gpsBaseLayerPersistencePatch` so it is applied at most once.
+- The persisted `baseLayer` is tracked **per `XRSession` instance** via a
+  `WeakMap` keyed on the call's `this`, not a single shared closure variable.
+  This prevents a previous session's `baseLayer` from leaking into a later
+  session (a stale `XRWebGLLayer` re-supplied to a different session throws
+  `InvalidStateError`), and lets entries be collected with their sessions.
 - Safe where the prototypes don't exist (desktop, jsdom): the corresponding
   result flags stay `false`.
 - Must run before three.js reads the prototype members (i.e. before session
@@ -72,4 +77,4 @@ console.log(result.detectedChromeVersion, result.patchedUpdateRenderState);
   non-Chromium);
 - baseLayer persistence wraps `updateRenderState` and carries `baseLayer`
   through on Chrome 148, but not on Chrome 150 or unknown UAs; wrap is
-  idempotent.
+  idempotent; persisted `baseLayer` is isolated per `XRSession` instance.
