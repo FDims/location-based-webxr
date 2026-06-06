@@ -91,9 +91,6 @@ transitional ordering, idempotency (running + still-starting), unsubscribe
 hygiene, and listener isolation (a throwing subscriber does not abort dispatch
 or the controller's own flow).
 
-Watch-lifecycle: `does not start sensor watches when initAR rejects` proves the
-watches are gated behind a resolved `initAR` (no leak / no retry duplication).
-
 ## Related
 
 - Plan: `GpsPlusSlamJs_Docs/docs/2026-06-03-threejs-arbutton-minimal-ar-example-user-feedback.md`
