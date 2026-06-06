@@ -89,4 +89,48 @@ test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
     // And it too reverts to the idle affordance afterwards.
     await expect(copyButton).toHaveText("Copy link");
   });
+
+  test("persists the placed altitude into ?show= and re-applies it on reload", async ({
+    page,
+  }) => {
+    // Why this test matters: a shared anchor must be positioned on the vertical
+    // (up/down) axis too, not just lat/lon. This pins the altitude round-trip
+    // end-to-end — the placed `altitude` is encoded into `?show=` (so the copied
+    // link carries it) and, when that link is loaded on the cache-hit path, the
+    // anchor is re-created with the same altitude (so it applies on load). See
+    // GpsPlusSlamJs_Docs/docs/2026-06-06-anchor-starter-cachehit-jump-investigation.md.
+    await installAnchorStarterFakes(page);
+    await placeAndSave(page); // SAMPLE_FIX.altitude = 171
+
+    // (1) The copied link carries the altitude. `?show=` encodes the committed
+    // reference as a JSON envelope; its required `alt` field must equal the
+    // placed altitude.
+    const search = await page.evaluate(() => location.search);
+    const showParam = new URLSearchParams(search).get("show");
+    expect(showParam).not.toBeNull();
+    const envelope = JSON.parse(showParam);
+    expect(envelope.a[0].alt).toBe(SAMPLE_FIX.altitude);
+
+    // (2) Loading that link re-applies the altitude. Reload to the share URL
+    // (reuse the raw query string verbatim; a fresh navigation re-runs the init
+    // script, resetting `anchorCalls`), boot, and assert the cache-hit anchor
+    // was created with the persisted altitude on the `skipBootstrap` path.
+    await page.goto(`/${search}`);
+    await page.getByTestId("start-button").click();
+    await expect(page.getByTestId("guidance")).toBeVisible();
+
+    const cacheHit = await page.evaluate(() => {
+      const calls = window.__anchorStarterTest.anchorCalls;
+      const last = calls[calls.length - 1];
+      return last
+        ? {
+            altitude: last.gpsPoint?.altitude,
+            skipBootstrap: last.skipBootstrap,
+          }
+        : null;
+    });
+    expect(cacheHit).not.toBeNull();
+    expect(cacheHit.skipBootstrap).toBe(true);
+    expect(cacheHit.altitude).toBe(SAMPLE_FIX.altitude);
+  });
 });

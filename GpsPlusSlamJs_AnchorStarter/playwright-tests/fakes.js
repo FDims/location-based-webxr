@@ -64,6 +64,14 @@ export async function installAnchorStarterFakes(page, options = {}) {
       /** Arguments captured on every `createAnchorMarker` call. */
       markerCalls: [],
       /**
+       * `{ gpsPoint, skipBootstrap }` captured on every successful
+       * `createGpsAnchor` call. Lets a spec assert the GPS reference (including
+       * altitude) the anchor was created with — e.g. that a `?show=` reload
+       * re-applies the persisted altitude on the cache-hit (`skipBootstrap`)
+       * path. `addInitScript` re-runs per navigation, so this resets on reload.
+       */
+      anchorCalls: [],
+      /**
        * Markers currently attached to the faked AR world group. spawnAnchor
        * adds a marker before creating the GpsAnchor and must remove it again
        * on any failure; specs assert this stays empty after a failed placement
@@ -146,6 +154,13 @@ export async function installAnchorStarterFakes(page, options = {}) {
         if (control.failCreateAnchor) {
           throw new Error("forced anchor failure (e2e)");
         }
+        // Record the GPS reference (lat/lon/altitude) + phase the anchor was
+        // created with so specs can assert the persisted altitude is re-applied
+        // on a `?show=` reload (cache-hit `skipBootstrap` path).
+        control.anchorCalls.push({
+          gpsPoint: opts?.gpsPoint,
+          skipBootstrap: opts?.skipBootstrap === true,
+        });
         // Mirror the framework: a cache-miss anchor (no skipBootstrap) commits
         // its bootstrap median and fires onBootstrapComplete. The fake has no
         // real median, so it reports the seed gpsPoint as the committed
