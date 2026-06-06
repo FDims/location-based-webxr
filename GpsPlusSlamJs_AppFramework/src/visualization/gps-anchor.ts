@@ -334,7 +334,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     }
   };
 
-  const tick = (dt: number, elapsed: number): void => {
+  const tick = (_dt: number, elapsed: number): void => {
     if (phase === 'anchored') {
       maybeCommitSteadyState();
       return;
