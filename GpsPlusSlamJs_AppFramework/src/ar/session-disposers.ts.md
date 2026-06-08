@@ -25,7 +25,7 @@
     parallels `clearFrameUpdates`).
 
 - **Invariants & assumptions:**
-  - **Run-once / clear-on-run:** the set is cleared *before* the disposers run,
+  - **Run-once / clear-on-run:** the set is cleared _before_ the disposers run,
     so a double flush is a no-op and a disposer that re-registers cannot loop.
   - **Isolation:** one throwing disposer is logged and does not abort the rest
     (mirrors `runFrameUpdates`).
