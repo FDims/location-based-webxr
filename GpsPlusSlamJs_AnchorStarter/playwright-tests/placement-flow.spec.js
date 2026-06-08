@@ -322,4 +322,44 @@ test.describe("Anchor starter — boot rollback", () => {
     await expect(page.getByTestId("guidance")).toBeHidden();
     await expect(page.getByTestId("placement")).toBeHidden();
   });
+
+  /**
+   * Why this test matters: when `failStart` fires after `initAR` has already
+   * created the renderer + WebXR session, it must call `endARSession()` to
+   * return the framework to a clean, re-initialisable state. Without that call
+   * `renderer`/`xrSession` stay non-null and `initAR()` throws on the retry
+   * ("AR session already initialized"), permanently wedging the app. The faked
+   * seams don't reproduce the real re-entry guard (the fake `initAR` is a
+   * no-op), but we can assert the call happened and that the retry boots
+   * cleanly.
+   */
+  test("calls endARSession on post-initAR failure and retry boots cleanly", async ({
+    page,
+  }) => {
+    await installAnchorStarterFakes(page, { failOrientationPermission: true });
+    await page.goto("/");
+
+    await page.getByTestId("start-button").click();
+
+    // Wait for the rollback to complete.
+    await expect(page.getByTestId("start-screen")).toBeVisible();
+    await expect(page.getByTestId("start-button")).toBeEnabled();
+
+    // endARSession must have been called during failStart.
+    const calls = await page.evaluate(
+      () => window.__anchorStarterTest.endARSessionCalls,
+    );
+    expect(calls).toBe(1);
+
+    // Clear the fault so the retry succeeds.
+    await page.evaluate(() => {
+      window.__anchorStarterTest.failOrientationPermission = false;
+      window.__anchorStarterTest.endARSessionCalls = 0;
+    });
+
+    // Retry: the app should boot fully now that the framework is clean.
+    await page.getByTestId("start-button").click();
+    await expect(page.getByTestId("guidance")).toBeVisible();
+    await expect(page.getByTestId("placement")).toBeVisible();
+  });
 });

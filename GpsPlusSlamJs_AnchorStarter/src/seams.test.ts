@@ -28,6 +28,7 @@ vi.mock("gps-plus-slam-app-framework/state", () => ({
 }));
 vi.mock("gps-plus-slam-app-framework/ar/webxr-session", () => ({
   initAR: () => Promise.resolve(),
+  endARSession: () => Promise.resolve(),
   getArWorldGroup: () => null,
   getCamera: () => null,
   setTrackingStore: () => undefined,

@@ -8,7 +8,7 @@
 - **Public API:**
   - `interface AnchorStarterSeams` — the set of framework/marker functions a fake
     may override (`checkWebXRSupport`, `checkGeolocationPermission`, `initAR`,
-    `getArWorldGroup`, `getCamera`, `setTrackingStore`, `setTrackingCallbacks`,
+    `getArWorldGroup`, `endARSession`, `getCamera`, `setTrackingStore`, `setTrackingCallbacks`,
     `startGpsWatch`, `startOrientationWatch`,
     `requestDeviceOrientationPermission`, `createGpsAnchor`,
     `enableArWorldGroupAlignment`, `selectTrackingQuality`,

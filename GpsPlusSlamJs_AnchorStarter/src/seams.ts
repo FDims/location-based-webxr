@@ -23,6 +23,7 @@ import { selectTrackingQuality } from "gps-plus-slam-app-framework/state";
 import { selectAlignmentMatrix } from "gps-plus-slam-app-framework/state";
 import {
   initAR,
+  endARSession,
   getArWorldGroup,
   getCamera,
   setTrackingStore,
@@ -50,6 +51,7 @@ export interface AnchorStarterSeams {
   checkWebXRSupport: typeof checkWebXRSupport;
   checkGeolocationPermission: typeof checkGeolocationPermission;
   initAR: typeof initAR;
+  endARSession: typeof endARSession;
   getArWorldGroup: typeof getArWorldGroup;
   getCamera: typeof getCamera;
   /**
@@ -85,6 +87,7 @@ export const realSeams: AnchorStarterSeams = {
   checkWebXRSupport,
   checkGeolocationPermission,
   initAR,
+  endARSession,
   getArWorldGroup,
   getCamera,
   setTrackingStore,

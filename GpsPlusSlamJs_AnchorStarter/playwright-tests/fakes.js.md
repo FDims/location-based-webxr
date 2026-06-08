@@ -20,6 +20,9 @@ copy-link) without real WebXR or GPS. See the plan
     lazily on every render, so `phase` is fully controllable.
   - `options.failClipboard` — override `navigator.clipboard.writeText` to
     reject, exercising the copy-link failure path.
+  - `options.failOrientationPermission` — make the faked
+    `requestDeviceOrientationPermission` reject, exercising the post-`initAR`
+    boot rollback (`failStart`) path. Also mutable via the control surface.
 - `bootAnchorStarter(page)` — `goto('/')`, click Start, wait until the
   guidance + placement panels are visible.
 - `pushGpsFix(page, fix)` — drive one GPS fix through the stashed watch
@@ -42,6 +45,11 @@ copy-link) without real WebXR or GPS. See the plan
   guidance to "AR tracking lost" (regression guard).
 - `failCreateAnchor` — set true to make the faked `createGpsAnchor` throw
   (placement-failure revert path).
+- `failOrientationPermission` — mutable; when true the faked
+  `requestDeviceOrientationPermission` rejects, triggering the `failStart`
+  boot-rollback path.
+- `endARSessionCalls` — counter incremented on each `endARSession` call;
+  lets a spec assert the rollback path tears down the framework session.
 - `pushGps(fix)` — invoke the stashed GPS callback with a well-formed
   `GpsPosition`.
 

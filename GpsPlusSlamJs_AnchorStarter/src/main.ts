@@ -444,12 +444,26 @@ function placeAnchor(): void {
  * Unwind a failed AR boot so the app never lingers half-started. Any of the
  * post-`initAR` steps in `startAr` (the awaited orientation-permission prompt,
  * the GPS/orientation watch starts, the cache-hit `spawnAnchor`) can throw or
- * reject; this rolls back every side effect they may have left behind — stop
- * the sensor watches, drop a partially created anchor, and restore the start
- * screen — then surfaces the reason so the user can retry. Each cleanup call is
- * idempotent, so the helper is safe even when only some steps had run.
+ * reject; this rolls back every side effect they may have left behind — tear
+ * down the framework session, stop the sensor watches, drop a partially created
+ * anchor, and restore the start screen — then surfaces the reason so the user
+ * can retry. Each cleanup call is idempotent, so the helper is safe even when
+ * only some steps had run.
  */
-function failStart(err: unknown, fallbackMessage: string): void {
+async function failStart(err: unknown, fallbackMessage: string): Promise<void> {
+  // Tear down the framework session (renderer, xrSession, session-disposer
+  // registry) so `initAR()` can succeed on a retry. Without this, the
+  // re-entry guard ("AR session already initialized") permanently wedges the
+  // app after a post-initAR failure. Safe to call even when initAR itself
+  // failed (the session is only partly up or not at all).
+  try {
+    await getSeams().endARSession();
+  } catch {
+    // endARSession wraps XRSession.end() in try/finally and always runs
+    // resetWebXRState(); a throw here means the native session was already
+    // ended or never started — either way the framework is back to clean.
+  }
+
   stopGpsWatch();
   stopOrientationWatch();
   anchor?.dispose();
@@ -509,7 +523,7 @@ async function startAr(): Promise<void> {
       { requestHitTest: true },
     );
   } catch (err) {
-    failStart(err, "Failed to start the AR session.");
+    await failStart(err, "Failed to start the AR session.");
     return;
   }
 
@@ -596,7 +610,7 @@ async function startAr(): Promise<void> {
     dispatchSetup({ type: "BOOTED", hasCachedAnchor: cached !== null });
     render();
   } catch (err) {
-    failStart(err, "Failed to start the AR session.");
+    await failStart(err, "Failed to start the AR session.");
   }
 }
 

@@ -104,6 +104,10 @@ export async function installAnchorStarterFakes(page, options = {}) {
       reticleWorldPosition: { x: 1, y: 0, z: -2 },
       /** Set true once the faked reticle handle is disposed. */
       reticleDisposed: false,
+      /** Whether `requestDeviceOrientationPermission` should reject. */
+      failOrientationPermission: cfg.failOrientationPermission,
+      /** Counts how many times `endARSession` was called (rollback proof). */
+      endARSessionCalls: 0,
       /**
        * Current GPS alignment the faked `selectAlignmentMatrix` returns.
        * Non-null by default (a desktop browser never computes a real one), so
@@ -137,6 +141,10 @@ export async function installAnchorStarterFakes(page, options = {}) {
       checkGeolocationPermission: () =>
         Promise.resolve({ supported: true, granted: true }),
       initAR: () => Promise.resolve(),
+      endARSession: () => {
+        control.endARSessionCalls++;
+        return Promise.resolve();
+      },
       getArWorldGroup: () => ({
         add(child) {
           control.worldGroupChildren.push(child);
@@ -162,7 +170,7 @@ export async function installAnchorStarterFakes(page, options = {}) {
       },
       startOrientationWatch: () => {},
       requestDeviceOrientationPermission: () =>
-        cfg.failOrientationPermission
+        control.failOrientationPermission
           ? Promise.reject(
               new Error("forced orientation-permission failure (e2e)"),
             )

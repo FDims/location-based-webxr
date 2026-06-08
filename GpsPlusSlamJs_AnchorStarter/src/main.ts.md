@@ -9,7 +9,7 @@
   marked `--- your content here ---` banner.
 - **Test seam:** every framework call site (`initAR`, `getArWorldGroup`,
   `getCamera`, `startGpsWatch`, `startOrientationWatch`,
-  `requestDeviceOrientationPermission`, `createGpsAnchor`,
+  `requestDeviceOrientationPermission`, `endARSession`, `createGpsAnchor`,
   `enableArWorldGroupAlignment`, `selectTrackingQuality`,
   `selectAlignmentMatrix`, `startReticleHitTest`,
   `checkWebXRSupport`, `checkGeolocationPermission`, `createAnchorMarker`) is
@@ -73,7 +73,14 @@
     framework `dispose()` only unregisters the frame-loop tick — see
     [gps-anchor](../../GpsPlusSlamJs_AppFramework/src/visualization/gps-anchor.ts.md)).
     This makes `anchor.dispose()` a complete teardown for every caller
-    (placement retry, `failStart` boot rollback, `beforeunload`). Its optional
+    (placement retry, `failStart` boot rollback, `beforeunload`).
+  - `failStart()` (async): unwinds a failed AR boot — calls
+    `endARSession()` (via seam) to flush the framework session
+    (`renderer`/`xrSession`/session-disposer registry) so `initAR()` can
+    succeed on a retry, then stops sensor watches, drops partially created
+    anchors/reticle, and restores the start screen. Without the
+    `endARSession()` call, the `initAR()` re-entry guard permanently wedges
+    the app after a post-`initAR` failure. Its optional
     `{ hideUntilAligned }` flag (used by the `?show=` cache-hit) keeps the marker
     hidden until the first non-null alignment arrives, then reveals it at its
     computed pose — so a `skipBootstrap` reload never flashes the marker at the
