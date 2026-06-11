@@ -50,6 +50,12 @@ export {
 // --- depth-unprojection ---
 export { unprojectDepthPoint } from './depth-unprojection.js';
 
+// --- bresenham3d ---
+export { bresenham3d, type GridCell } from './bresenham3d.js';
+
+// --- occupancy-grid ---
+export { OccupancyGrid, type OccupancyGridOptions } from './occupancy-grid.js';
+
 // --- frame-loop ---
 export { type FrameUpdate, registerFrameUpdate } from './frame-loop.js';
 

@@ -1,0 +1,208 @@
+/**
+ * Occupancy Grid Tests.
+ *
+ * Why this test matters:
+ * OccupancyGrid is the TS port of the Unity PointCloudData voxel grid —
+ * the persisted depth-sample stream is folded into occupied 15 cm cells
+ * with free-space carving. These tests pin the port's deliberate
+ * deviations from Unity: per-cell observation counts (instead of render
+ * buffer indices), skipping carving when camera and point share a cell
+ * (instead of Unity's carve-then-re-add), and the round-consistent
+ * getCellCenter formula (NOT Unity's +half-cell offset).
+ */
+
+import { describe, it, expect } from 'vitest';
+import { mat4 } from 'gl-matrix';
+import type { Matrix4, Vector3 } from 'gps-plus-slam-js';
+import type { DepthSample } from '../types/ar-types';
+import { OccupancyGrid } from './occupancy-grid';
+
+const PROJECTION: Matrix4 = Array.from(
+  mat4.perspective(mat4.create(), Math.PI / 3, 16 / 9, 0.1, 1000)
+) as unknown as Matrix4;
+
+/**
+ * Build a DepthSample with an identity-rotation camera, so a center-screen
+ * point at depth d unprojects to cameraPos + (0, 0, -d).
+ */
+function makeSample(
+  cameraPos: Vector3,
+  depths: number[],
+  options?: { withMatrix?: boolean }
+): DepthSample {
+  const withMatrix = options?.withMatrix ?? true;
+  return {
+    timestamp: 0,
+    cameraPos,
+    cameraRot: [0, 0, 0, 1],
+    points: depths.map((depthM) => ({ screenX: 0.5, screenY: 0.5, depthM })),
+    ...(withMatrix ? { projectionMatrix: PROJECTION } : {}),
+  };
+}
+
+describe('OccupancyGrid', () => {
+  describe('construction', () => {
+    it('defaults to 15 cm cells and carve stop distance 2 (Unity parity)', () => {
+      const grid = new OccupancyGrid();
+      expect(grid.cellSizeM).toBeCloseTo(0.15);
+      expect(grid.carveStopCells).toBe(2);
+      expect(grid.size).toBe(0);
+    });
+
+    it('rejects invalid configuration', () => {
+      expect(() => new OccupancyGrid({ cellSizeM: 0 })).toThrow(RangeError);
+      expect(() => new OccupancyGrid({ cellSizeM: NaN })).toThrow(RangeError);
+      expect(() => new OccupancyGrid({ carveStopCells: -1 })).toThrow(
+        RangeError
+      );
+      expect(() => new OccupancyGrid({ carveStopCells: 1.5 })).toThrow(
+        RangeError
+      );
+    });
+  });
+
+  describe('addSample', () => {
+    it('adds an occupied cell per unprojected point and returns the count', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      // Two points on DIVERGING rays (different screen positions) — points
+      // on the same ray would legitimately carve each other.
+      const sample: DepthSample = {
+        timestamp: 0,
+        cameraPos: [0, 0, 0],
+        cameraRot: [0, 0, 0, 1],
+        points: [
+          { screenX: 0.5, screenY: 0.5, depthM: 5 },
+          { screenX: 0.9, screenY: 0.5, depthM: 8 },
+        ],
+        projectionMatrix: PROJECTION,
+      };
+      const added = grid.addSample(sample);
+      expect(added).toBe(2);
+      expect(grid.size).toBe(2);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -5]);
+    });
+
+    it('skips all points of samples without a projectionMatrix (old recordings)', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      const added = grid.addSample(
+        makeSample([0, 0, 0], [5], { withMatrix: false })
+      );
+      expect(added).toBe(0);
+      expect(grid.size).toBe(0);
+    });
+
+    it('skips invalid depth points (zero, negative, non-finite)', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      const added = grid.addSample(makeSample([0, 0, 0], [0, -2, NaN, 4]));
+      expect(added).toBe(1);
+      expect(grid.getOccupiedCells()).toEqual([[0, 0, -4]]);
+    });
+
+    it('skips samples with a non-finite camera position', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      const added = grid.addSample(makeSample([NaN, 0, 0], [5]));
+      expect(added).toBe(0);
+      expect(grid.size).toBe(0);
+    });
+
+    it('counts repeated observations of the same cell', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      expect(grid.size).toBe(1);
+      expect(grid.getOccupiedCells(2)).toEqual([[0, 0, -5]]);
+    });
+
+    it('does not carve the observed cell on re-observation (carve stop distance)', () => {
+      // Unity parity: the carve ray stops carveStopCells dominant-axis
+      // steps before the endpoint, so the endpoint's count accumulates
+      // instead of being reset by carve-then-re-add.
+      const grid = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 2 });
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      expect(grid.getOccupiedCells(2)).toHaveLength(1);
+    });
+
+    it('keeps the cell when camera and point share it (deliberate Unity deviation)', () => {
+      // Unity would carve the shared cell and immediately re-add it,
+      // resetting per-cell state; the TS port skips carving instead (§2
+      // edge case in the port plan).
+      const grid = new OccupancyGrid({ cellSizeM: 10 });
+      grid.addSample(makeSample([0, 0, 0], [2]));
+      grid.addSample(makeSample([0, 0, 0], [2]));
+      expect(grid.size).toBe(1);
+      expect(grid.getOccupiedCells(2)).toHaveLength(1);
+    });
+
+    it('carves a previously observed cell when the scene is later seen through', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 2 });
+      // Surface at 5 m, then the surface disappears and a wall at 10 m
+      // becomes visible along the same ray: the 5 m cell must be carved.
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -5]);
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+  });
+
+  describe('getOccupiedCells / getCellCenter', () => {
+    it('filters by minimum observation count', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      // Second cell from a sideways-shifted camera (separate ray)
+      grid.addSample(makeSample([10, 0, 0], [8]));
+      expect(grid.getOccupiedCells()).toHaveLength(2);
+      expect(grid.getOccupiedCells(2)).toEqual([[0, 0, -5]]);
+    });
+
+    it('returns the round-consistent cell center (cell · cellSizeM)', () => {
+      // Deliberately NOT Unity's CellToWorldPos (+cellSize/2), which is
+      // off by half a cell under round-quantization (§2 of the port plan).
+      const grid = new OccupancyGrid({ cellSizeM: 0.5 });
+      expect(grid.getCellCenter([2, -4, 0])).toEqual([1, -2, 0]);
+    });
+  });
+
+  describe('raycast', () => {
+    // A large carve stop keeps carving out of the way: these tests need
+    // two occupied cells on one straight test ray, which depth samples on
+    // that same ray would otherwise carve away.
+    function gridWithCellsAt5And8(): OccupancyGrid {
+      const grid = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 10 });
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [8]));
+      return grid;
+    }
+
+    it('returns the center of the first occupied cell along the ray', () => {
+      const hit = gridWithCellsAt5And8().raycast([0, 0, 0], [0, 0, -20]);
+      expect(hit).toEqual([0, 0, -5]);
+    });
+
+    it('returns null when no occupied cell is on the ray', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      expect(grid.raycast([10, 10, 10], [10, 10, -20])).toBeNull();
+      expect(grid.raycast([0, 0, 0], [NaN, 0, -20])).toBeNull();
+    });
+
+    it('respects a minimum observation count', () => {
+      const grid = gridWithCellsAt5And8();
+      grid.addSample(makeSample([0, 0, 0], [8]));
+      expect(grid.raycast([0, 0, 0], [0, 0, -20], 2)).toEqual([0, 0, -8]);
+    });
+  });
+
+  describe('clear', () => {
+    it('empties the grid', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1 });
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      expect(grid.size).toBe(1);
+      grid.clear();
+      expect(grid.size).toBe(0);
+      expect(grid.getOccupiedCells()).toEqual([]);
+    });
+  });
+});
