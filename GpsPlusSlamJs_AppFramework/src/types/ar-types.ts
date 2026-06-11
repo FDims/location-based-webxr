@@ -78,8 +78,10 @@ export interface DepthSample {
   readonly timestamp: number;
   /**
    * Camera position in **raw WebXR** convention [x=East, y=Up, z=South].
-   * NOT in NUE — the recordDepthSample reducer is a no-op, so no
-   * webxrToNUE conversion is applied. Consumers must convert if needed.
+   * NOT in NUE — the recordDepthSample reducer is conversion-free (it only
+   * stores the latest sample for subscribers), so no webxrToNUE conversion
+   * is ever applied. Consumers needing NUE must convert themselves; the
+   * occupancy-grid pipeline works directly in this raw frame.
    */
   readonly cameraPos: Vector3;
   /**
