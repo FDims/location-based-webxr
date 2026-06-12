@@ -76,6 +76,15 @@ export class OccupancyGrid {
    * cell as occupied. Points that cannot be unprojected (no
    * projectionMatrix on old recordings, invalid depth/coords) are skipped.
    *
+   * Carving and incrementing run as two separate passes over the sample's
+   * points: all rays are carved first, then every endpoint is incremented.
+   * A single interleaved pass would be order-dependent — a deeper point's
+   * carve could erase the endpoint a nearer point added earlier in the same
+   * sample. Splitting the passes makes the result deterministic and lets an
+   * endpoint observed within a sample survive other rays in that same
+   * sample. (Deeper-carves-nearer still applies ACROSS samples: a later
+   * sample's ray carves an earlier sample's endpoint as before.)
+   *
    * @returns the number of points actually added.
    */
   addSample(sample: DepthSample): number {
@@ -83,7 +92,8 @@ export class OccupancyGrid {
       return 0;
     }
     const cameraCell = this.cellForPosition(sample.cameraPos);
-    let added = 0;
+    // Pass 1: carve free space along every ray, collecting endpoint cells.
+    const endpointCells: GridCell[] = [];
     for (const point of sample.points) {
       const world = unprojectDepthPoint(
         point,
@@ -98,10 +108,13 @@ export class OccupancyGrid {
       if (!cellsEqual(cameraCell, cell)) {
         this.carve(cameraCell, cell);
       }
-      this.increment(cell);
-      added++;
+      endpointCells.push(cell);
     }
-    return added;
+    // Pass 2: count endpoints occupied, after all carving for this sample.
+    for (const cell of endpointCells) {
+      this.increment(cell);
+    }
+    return endpointCells.length;
   }
 
   /** Occupied cells observed at least `minObservations` times (default 1). */

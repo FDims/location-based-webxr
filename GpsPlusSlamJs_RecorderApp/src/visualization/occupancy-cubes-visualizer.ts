@@ -26,8 +26,10 @@
  */
 
 import * as THREE from 'three';
-import type { GridCell } from 'gps-plus-slam-app-framework/ar';
-import { WEBXR_TO_NUE } from 'gps-plus-slam-app-framework/ar/webxr-nue-basis';
+// WEBXR_TO_NUE comes from the /ar barrel: the deep `ar/webxr-nue-basis`
+// subpath has no dist entry (tsdown builds an explicit entry list), so it
+// resolves in vitest but breaks the browser build.
+import { WEBXR_TO_NUE, type GridCell } from 'gps-plus-slam-app-framework/ar';
 
 /** The read surface of the framework's `OccupancyGrid` this class draws. */
 export interface OccupancyGridSource {

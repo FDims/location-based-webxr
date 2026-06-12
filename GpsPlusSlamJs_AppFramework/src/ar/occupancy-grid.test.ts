@@ -64,8 +64,9 @@ describe('OccupancyGrid', () => {
   describe('addSample', () => {
     it('adds an occupied cell per unprojected point and returns the count', () => {
       const grid = new OccupancyGrid({ cellSizeM: 1 });
-      // Two points on DIVERGING rays (different screen positions) — points
-      // on the same ray would legitimately carve each other.
+      // Two points on diverging rays (different screen positions), landing
+      // in two distinct cells. (Same-ray points within a sample no longer
+      // carve each other — see the point-order-independence test below.)
       const sample: DepthSample = {
         timestamp: 0,
         cameraPos: [0, 0, 0],
@@ -143,6 +144,29 @@ describe('OccupancyGrid', () => {
       grid.addSample(makeSample([0, 0, 0], [10]));
       expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
       expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+
+    it('is independent of point order within a sample (endpoints survive same-sample carving)', () => {
+      // Two points on the SAME center-screen ray at 5 and 10 cells, in one
+      // sample. With a single carve+increment pass the outcome depends on
+      // iteration order: if the near point is incremented before the far
+      // point's ray is carved, the far ray erases the near endpoint.
+      // Carving runs as a first pass so neither order can erase the other's
+      // endpoint — both survive. (Deeper-carves-nearer still applies ACROSS
+      // samples, see the test above.)
+      const near: Vector3 = [0, 0, -5];
+      const far: Vector3 = [0, 0, -10];
+
+      const nearFirst = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 2 });
+      nearFirst.addSample(makeSample([0, 0, 0], [5, 10]));
+
+      const farFirst = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 2 });
+      farFirst.addSample(makeSample([0, 0, 0], [10, 5]));
+
+      for (const grid of [nearFirst, farFirst]) {
+        expect(grid.getOccupiedCells()).toContainEqual(near);
+        expect(grid.getOccupiedCells()).toContainEqual(far);
+      }
     });
   });
 
