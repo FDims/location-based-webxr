@@ -141,7 +141,7 @@ describe('AR Types', () => {
     it('depth-sampler DepthSample.points matches canonical DepthPoint structure', async () => {
       const { DepthSampler } = await import('../ar/depth-sampler');
 
-      const capturedSamples: Array<{ points: DepthPoint[] }> = [];
+      const capturedSamples: Array<{ points: readonly DepthPoint[] }> = [];
       const sampler = new DepthSampler({
         onSampleCaptured: (sample) => capturedSamples.push(sample),
         getCurrentPose: () => ({

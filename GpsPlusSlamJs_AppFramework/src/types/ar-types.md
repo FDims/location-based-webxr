@@ -83,7 +83,7 @@ interface DepthSample {
   timestamp: number; // Milliseconds
   cameraPos: Vector3; // Camera position [x, y, z] (readonly tuple)
   cameraRot: Quaternion; // Camera rotation quaternion [x, y, z, w] (readonly tuple)
-  points: DepthPoint[]; // Grid of depth points
+  points: readonly DepthPoint[]; // Grid of depth points
   projectionMatrix?: Matrix4; // Capturing XRView intrinsics (additive, 2026-06)
 }
 ```

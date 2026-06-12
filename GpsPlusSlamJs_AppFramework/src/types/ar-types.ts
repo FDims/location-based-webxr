@@ -104,7 +104,7 @@ export interface DepthSample {
    */
   readonly cameraRot: Quaternion;
   /** Grid of depth points */
-  readonly points: DepthPoint[];
+  readonly points: readonly DepthPoint[];
   /**
    * Projection matrix of the capturing XRView (16 floats, column-major,
    * serializable tuple — not a THREE.Matrix4). Camera intrinsics needed to
