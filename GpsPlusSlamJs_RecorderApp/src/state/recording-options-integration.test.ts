@@ -62,7 +62,7 @@ describe('Recording Options Integration', () => {
 
     it('should include custom options in session metadata', () => {
       const customOptions: RecordingOptions = {
-        depth: { enabled: false, intervalMs: 2000, gridSize: 5 },
+        depth: { enabled: false, intervalMs: 2000, gridSize: 5, rgb: true },
         images: {
           enabled: true,
           intervalMs: 3000,
@@ -87,7 +87,7 @@ describe('Recording Options Integration', () => {
 
     it('should preserve exact option values in metadata', () => {
       const options: RecordingOptions = {
-        depth: { enabled: true, intervalMs: 1500, gridSize: 7 },
+        depth: { enabled: true, intervalMs: 1500, gridSize: 7, rgb: true },
         images: {
           enabled: false,
           intervalMs: 5000,
@@ -298,7 +298,7 @@ describe('Recording Options Integration', () => {
     it('should respect both options independently', () => {
       // Depth on, images off
       const options: RecordingOptions = {
-        depth: { enabled: true, intervalMs: 1000, gridSize: 3 },
+        depth: { enabled: true, intervalMs: 1000, gridSize: 3, rgb: true },
         images: {
           enabled: false,
           intervalMs: 2000,
@@ -354,7 +354,7 @@ describe('Recording Options Integration', () => {
 
     it('should allow both when both enabled', () => {
       const options: RecordingOptions = {
-        depth: { enabled: true, intervalMs: 1000, gridSize: 3 },
+        depth: { enabled: true, intervalMs: 1000, gridSize: 3, rgb: true },
         images: {
           enabled: true,
           intervalMs: 2000,
@@ -409,7 +409,7 @@ describe('Recording Options Integration', () => {
 
     it('should block both when both disabled', () => {
       const options: RecordingOptions = {
-        depth: { enabled: false, intervalMs: 1000, gridSize: 3 },
+        depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
         images: {
           enabled: false,
           intervalMs: 2000,

@@ -101,7 +101,9 @@ test.describe('Settings Modal', () => {
 
     test('depth grid slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-grid-value');
-      await expect(valueDisplay).toHaveText('3×3');
+      // Default raised 3→16 with the occupancy-grid port (denser grid populates
+      // the AR-space occupancy grid fast enough for on-device verification).
+      await expect(valueDisplay).toHaveText('16×16');
     });
 
     test('images interval slider shows default value', async ({ page }) => {

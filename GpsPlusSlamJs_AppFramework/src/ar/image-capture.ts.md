@@ -6,17 +6,17 @@ Captures periodic JPEG screenshots from the WebGL canvas during AR recording. Us
 
 ## Public API
 
-| Export                   | Type                 | Description                                                                            |
-| ------------------------ | -------------------- | -------------------------------------------------------------------------------------- |
-| `MIN_VALID_IMAGE_BYTES`  | `number` (5000)      | Blob size threshold for suspicious image detection                                     |
-| `ARPose`                 | interface            | Camera position + orientation (duplicated from webxr-session to avoid cycles)          |
-| `ImageCaptureConfig`     | interface            | Configuration: `intervalMs`, `quality`, `captureTimeoutMs`                             |
-| `DEFAULT_CAPTURE_CONFIG` | `ImageCaptureConfig` | Defaults: 2000ms interval, 0.7 quality, 5000ms timeout                                 |
-| `CapturedImage`          | interface            | Blob + timestamp + frameIndex + position + rotation + screenRotation                   |
-| `ImageCaptureCallbacks`  | interface            | Hooks for pose, rotation, onCaptured, onCaptureFailed, onSuspiciousImage, captureFrame |
-| `ImageCaptureManager`    | class                | Manages periodic capture lifecycle                                                     |
-| `startImageCapture(…)`   | function             | Convenience factory: creates + starts an `ImageCaptureManager`                         |
-| `stopImageCapture()`     | function             | Stops the active manager                                                               |
+| Export                   | Type                 | Description                                                                                                                                                                    |
+| ------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MIN_VALID_IMAGE_BYTES`  | `number` (5000)      | Blob size threshold for suspicious image detection                                                                                                                             |
+| `ARPose`                 | interface            | Camera position + orientation (duplicated from webxr-session to avoid cycles)                                                                                                  |
+| `ImageCaptureConfig`     | interface            | Configuration: `intervalMs`, `quality`, `captureTimeoutMs`, `resolutionDivisor`                                                                                                |
+| `DEFAULT_CAPTURE_CONFIG` | `ImageCaptureConfig` | Defaults: 2000ms interval, 0.7 quality, 5000ms timeout, 1× resolution                                                                                                          |
+| `CapturedImage`          | interface            | Blob + timestamp + frameIndex + position + rotation + screenRotation (every persistable field is forwarded by RecorderApp `handleImageCaptured`; thread new fields through it) |
+| `ImageCaptureCallbacks`  | interface            | Hooks for pose, rotation, onCaptured, onCaptureFailed, onSuspiciousImage, captureFrame                                                                                         |
+| `ImageCaptureManager`    | class                | Manages periodic capture lifecycle                                                                                                                                             |
+| `startImageCapture(…)`   | function             | Convenience factory: creates + starts an `ImageCaptureManager`                                                                                                                 |
+| `stopImageCapture()`     | function             | Stops the active manager                                                                                                                                                       |
 
 ### ImageCaptureManager key methods
 

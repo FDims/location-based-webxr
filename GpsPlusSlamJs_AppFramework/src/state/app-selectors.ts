@@ -107,6 +107,32 @@ export const selectZeroReference = createSelector(
 const selectOdometryPathPoints = (state: CombinedRootState) =>
   state.gpsData?.odometryPath?.points;
 
+/**
+ * The `ArImageCapture` fields the projection below consciously handles:
+ * `position`/`rotation` are coordinate-converted (NUE → WebXR), the rest pass
+ * through unchanged. Kept as an explicit union so the guard underneath can
+ * compare it against the live `keyof ArImageCapture`.
+ */
+type ProjectedFrameTileKey =
+  | 'imageFile'
+  | 'position'
+  | 'rotation'
+  | 'screenRotation'
+  | 'capturedAt';
+
+/**
+ * Compile-time guard (field-drop audit F4): if `ArImageCapture` (a library
+ * type) gains a field, `keyof ArImageCapture` stops being assignable to
+ * `ProjectedFrameTileKey` and this line fails to compile — forcing a conscious
+ * decision in `selectFrameTilesInWebXR` (convert it, or extend the union to
+ * pass it through) instead of silently dropping a new per-frame field from the
+ * frame-tile visualizer. This is the single gateway between persisted frame
+ * records and the AR-space visualizers.
+ */
+type AssertFrameTileProjectionExhaustive =
+  keyof ArImageCapture extends ProjectedFrameTileKey ? true : never;
+const _frameTileProjectionIsExhaustive: AssertFrameTileProjectionExhaustive = true;
+
 export const selectFrameTilesInWebXR = createSelector(
   [selectOdometryPathPoints],
   (points): readonly ArImageCapture[] => {

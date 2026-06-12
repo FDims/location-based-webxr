@@ -135,7 +135,7 @@ scene (GPS world frame — NUE: X=North, Y=Up, Z=East)
 2. Extract position/orientation via `extractPoseFromViewer()`
 3. Store in `latestArPose` for `getCurrentArPose()`
 4. If `camera-access` is granted, acquire camera texture via `acquireCameraTexture()` (wraps `renderer.xr.getCameraTexture()`) and store with native dimensions for blit capture
-5. Trigger image capture / depth sampling if active
+5. Trigger image capture / depth sampling if active. The depth sampler is created with an `acquireRgbLookup` callback (Iter 8 RGB voxel coloring): when a sample is actually emitted (and the `rgb` option is on), a dedicated small 256×192 `CameraBlitCapture` (`depthRgbBlit`, lazily created, disposed by `resetWebXRState()`) blits `latestCameraTexture` and `createRgbLookup` maps each point's view coordinates to a color — at most one GPU readback per ~1 Hz sample, never per frame
 6. Render scene
 
 Per-frame dispatch order: after the dimensionless `runFrameUpdates(dt, elapsed)`

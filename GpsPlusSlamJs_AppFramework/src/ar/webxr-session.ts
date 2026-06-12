@@ -54,11 +54,14 @@ export interface TrackingSubscribableStore {
 }
 import {
   DepthSampler,
+  wrapXRDepthInfo,
   type DepthSamplerCallbacks,
+  type DepthSamplerConfig,
   type DepthSample,
   type DepthInfo,
 } from './depth-sampler';
 import { CameraBlitCapture, computeCaptureSize } from './camera-blit-capture';
+import { createRgbLookup, type RgbLookup } from './depth-rgb-lookup';
 import { acquireCameraTexture } from './xr-camera-texture';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
 import { runSessionDisposers } from './session-disposers';
@@ -219,6 +222,10 @@ export function resetWebXRState(): void {
   depthSampler = null;
   onDepthCaptured = null;
   onDepthUnavailable = null;
+  if (depthRgbBlit) {
+    depthRgbBlit.dispose();
+    depthRgbBlit = null;
+  }
   onFrameCallback = null;
   if (css3dManager) {
     css3dManager.dispose();
@@ -355,6 +362,20 @@ let css3dManager: Css3dRendererManager | null = null;
 let blitCapture: CameraBlitCapture | null = null;
 
 /**
+ * Dedicated small blit target for per-depth-sample RGB lookups
+ * (occupancy-grid port plan Iter 8). Separate from `blitCapture`: the JPEG
+ * path resizes to (camera resolution ÷ divisor) while this one stays tiny —
+ * only ≤ gridSize² positions are ever read from it, so 256×192 suffices and
+ * keeps the 1 Hz readback stall negligible. Created lazily on the first
+ * sample that needs it (no GPU allocation when the rgb option is off),
+ * disposed by resetWebXRState().
+ */
+let depthRgbBlit: CameraBlitCapture | null = null;
+
+/** Readback size for the depth-RGB blit (plan §5: "e.g. 256×192 suffices"). */
+const DEPTH_RGB_BLIT_CONFIG = { width: 256, height: 192 };
+
+/**
  * Latest WebXR camera texture, updated each frame when camera-access is enabled.
  * Acquired via Three.js's renderer.xr.getCameraTexture() API (ExternalTexture).
  * @see xr-camera-texture.ts
@@ -394,6 +415,24 @@ function cleanupBlitResources(): void {
     blitCapture = null;
   }
   latestCameraTexture = null;
+}
+
+/**
+ * Acquire a camera-color lookup for the current XR frame (passed to the
+ * DepthSampler as `acquireRgbLookup`; called at most once per emitted
+ * sample). Returns null — color-less points — when camera access or the
+ * readback is unavailable; the blit instance lazily (re)creates itself so
+ * a disposal elsewhere is self-healing.
+ */
+function acquireDepthRgbLookup(): RgbLookup | null {
+  if (!renderer || !latestCameraTexture) {
+    return null;
+  }
+  depthRgbBlit ??= new CameraBlitCapture(DEPTH_RGB_BLIT_CONFIG);
+  const readback = depthRgbBlit.captureToPixels(renderer, latestCameraTexture);
+  return readback
+    ? createRgbLookup(readback.pixels, readback.width, readback.height)
+    : null;
 }
 
 /**
@@ -792,6 +831,9 @@ export async function initAR(
     const depthCallbacks: DepthSamplerCallbacks = {
       onSampleCaptured: onDepthCaptured,
       getCurrentPose: getCurrentArPose,
+      // Iter 8: per-sample camera color for the occupancy-grid voxels.
+      // Gated inside the sampler by its `rgb` config (recording option).
+      acquireRgbLookup: acquireDepthRgbLookup,
       // Field Test Readiness Issue #8: Notify user if depth is unavailable
       onDepthUnavailable: onDepthUnavailable ?? undefined,
     };
@@ -1051,14 +1093,19 @@ function getDepthInfoFromFrame(
   frame: XRFrame,
   pose: XRViewerPose | null
 ): DepthInfo | null {
-  if (!pose || !pose.views[0]) {
+  const view = pose?.views[0];
+  if (!view) {
     return null;
   }
 
   // XRFrame may have getDepthInformation method if depth-sensing feature is enabled
   // TypeScript doesn't have full types for this yet
   const xrFrame = frame as XRFrame & {
-    getDepthInformation?: (view: XRView) => DepthInfo | null;
+    getDepthInformation?: (view: XRView) => {
+      width: number;
+      height: number;
+      getDepthInMeters: (x: number, y: number) => number;
+    } | null;
   };
 
   if (typeof xrFrame.getDepthInformation !== 'function') {
@@ -1066,8 +1113,14 @@ function getDepthInfoFromFrame(
   }
 
   try {
-    const result = xrFrame.getDepthInformation(pose.views[0]);
-    return result ?? null;
+    const result = xrFrame.getDepthInformation(view);
+    if (!result) {
+      return null;
+    }
+    // Wrap instead of passing the raw browser object through: this binds
+    // getDepthInMeters and attaches the capturing view's projection matrix,
+    // which each DepthSample needs for later unprojection (occupancy grid).
+    return wrapXRDepthInfo(result, view.projectionMatrix);
   } catch {
     // Depth sensing may fail on some devices
     return null;
@@ -1282,13 +1335,14 @@ export function setImageCaptureCallback(
 /**
  * Start capturing images during recording.
  * Must call setImageCaptureCallback first.
- * @param config - Optional capture configuration (intervalMs, quality)
- * @param resolutionDivisor - Resolution divisor: 1 = full, 2 = half, 4 = quarter (default: 1)
+ *
+ * @param config - Optional capture configuration. Accepts the whole user
+ *   image-options section (`intervalMs`, `quality`, `resolutionDivisor`; any
+ *   extra keys such as `enabled` are ignored). Passing the section as one
+ *   object means a newly-added option flows through without editing this seam
+ *   — see `2026-06-12-payload-rebuild-field-drop-audit.md` (F3).
  */
-export function startImageCapture(
-  config?: Partial<ImageCaptureConfig>,
-  resolutionDivisor = 1
-): void {
+export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
   if (!renderer) {
     log.warn('Cannot start image capture - renderer not initialized');
     return;
@@ -1318,12 +1372,19 @@ export function startImageCapture(
     onSuspiciousImage: onSuspiciousImage ?? undefined,
   };
 
+  // Merge provided config with defaults up front so the blit pipeline and
+  // the capture manager read from the same resolved configuration.
+  const mergedConfig: ImageCaptureConfig = {
+    ...DEFAULT_CAPTURE_CONFIG,
+    ...config,
+  };
+
   // Set up blit capture for WebXR opaque camera textures.
   // This creates a GPU pipeline that converts the opaque texture to readable pixels.
   // Falls back to canvas.toBlob() when camera-access is not available or blit fails.
   blitCapture = new CameraBlitCapture();
   const currentRenderer = renderer;
-  const divisor = resolutionDivisor;
+  const divisor = mergedConfig.resolutionDivisor;
   callbacks.captureFrame = async (quality: number): Promise<Blob | null> => {
     if (!blitCapture || !latestCameraTexture) {
       // camera-access not available or no texture yet — fall back to canvas.toBlob
@@ -1353,12 +1414,6 @@ export function startImageCapture(
     );
   };
   log.info(`Blit capture pipeline initialized (resolutionDivisor=${divisor})`);
-
-  // Merge provided config with defaults
-  const mergedConfig: ImageCaptureConfig = {
-    ...DEFAULT_CAPTURE_CONFIG,
-    ...config,
-  };
 
   imageCaptureManager = new ImageCaptureManager(
     renderer.domElement,
@@ -1465,14 +1520,25 @@ export function setDepthCaptureCallback(
 /**
  * Start depth sampling during recording.
  * Must call setDepthCaptureCallback before initAR.
+ *
+ * @param config - optional sampler overrides (typically the user's
+ *   `depth.intervalMs`/`depth.gridSize` recording options); applied via
+ *   `DepthSampler.updateConfig` before sampling starts. Without this the
+ *   sampler's own defaults apply — the settings knobs were dead before
+ *   this parameter existed (occupancy-grid port plan, Iter 6).
  */
-export function startDepthCapture(): void {
+export function startDepthCapture(config?: Partial<DepthSamplerConfig>): void {
   if (!depthSampler) {
     log.warn('Cannot start depth capture - sampler not initialized');
     return;
   }
+  if (config) {
+    depthSampler.updateConfig(config);
+  }
   depthSampler.start();
-  log.info('Depth capture started');
+  log.info(
+    `Depth capture started (interval: ${depthSampler.getConfig().intervalMs}ms, grid: ${depthSampler.getConfig().gridSize}×${depthSampler.getConfig().gridSize})`
+  );
 }
 
 /**

@@ -20,26 +20,27 @@ UI component for the settings modal dialog. Allows users to configure recording 
 
 ### UI Elements Expected
 
-| Element ID                        | Type     | Purpose                                      |
-| --------------------------------- | -------- | -------------------------------------------- |
-| `settings-modal`                  | div      | Modal container (should have `hidden` class) |
-| `btn-settings`                    | button   | Opens settings modal                         |
-| `btn-settings-close`              | button   | Closes modal without saving                  |
-| `btn-settings-save`               | button   | Saves and closes modal                       |
-| `btn-settings-reset`              | button   | Resets to defaults                           |
-| `depth-enabled`                   | checkbox | Toggle depth sampling                        |
-| `depth-interval`                  | range    | Depth sample interval slider                 |
-| `depth-interval-value`            | span     | Display for interval value                   |
-| `depth-grid`                      | range    | Grid size slider                             |
-| `depth-grid-value`                | span     | Display for grid value                       |
-| `images-enabled`                  | checkbox | Toggle image capture                         |
-| `images-interval`                 | range    | Image capture interval slider                |
-| `images-interval-value`           | span     | Display for interval value                   |
-| `images-quality`                  | range    | JPEG quality slider                          |
-| `images-quality-value`            | span     | Display for quality value                    |
-| `images-resolution-divisor`       | range    | Resolution divisor slider (1=full … 8)       |
-| `images-resolution-divisor-value` | span     | Display: "1× (full)", "÷2 (half)", etc       |
-| `build-version-label`             | span/div | One-line build label for bug reports         |
+| Element ID                        | Type     | Purpose                                        |
+| --------------------------------- | -------- | ---------------------------------------------- |
+| `settings-modal`                  | div      | Modal container (should have `hidden` class)   |
+| `btn-settings`                    | button   | Opens settings modal                           |
+| `btn-settings-close`              | button   | Closes modal without saving                    |
+| `btn-settings-save`               | button   | Saves and closes modal                         |
+| `btn-settings-reset`              | button   | Resets to defaults                             |
+| `depth-enabled`                   | checkbox | Toggle depth sampling                          |
+| `depth-interval`                  | range    | Depth sample interval slider                   |
+| `depth-interval-value`            | span     | Display for interval value                     |
+| `depth-grid`                      | range    | Grid size slider                               |
+| `depth-grid-value`                | span     | Display for grid value                         |
+| `depth-rgb`                       | checkbox | Toggle RGB voxel coloring (Iter 8, default on) |
+| `images-enabled`                  | checkbox | Toggle image capture                           |
+| `images-interval`                 | range    | Image capture interval slider                  |
+| `images-interval-value`           | span     | Display for interval value                     |
+| `images-quality`                  | range    | JPEG quality slider                            |
+| `images-quality-value`            | span     | Display for quality value                      |
+| `images-resolution-divisor`       | range    | Resolution divisor slider (1=full … 8)         |
+| `images-resolution-divisor-value` | span     | Display: "1× (full)", "÷2 (half)", etc         |
+| `build-version-label`             | span/div | One-line build label for bug reports           |
 
 ## Invariants & Assumptions
 
@@ -69,7 +70,6 @@ document
 
 ## Tests
 
-- `settings-modal.test.ts` — 33 unit tests
 - `settings-modal.test.ts` — 40 unit tests
   - Production HTML validation: modal and button markup from `index.html`
   - Modal visibility: show/hide behavior

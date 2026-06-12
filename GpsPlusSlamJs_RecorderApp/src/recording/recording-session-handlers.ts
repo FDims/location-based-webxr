@@ -363,27 +363,28 @@ export function createRecordingSessionHandlers(
     // Start orientation watch
     startOrientationWatch(updateDeviceOrientation);
 
-    // Start periodic image capture (if enabled)
+    // Start periodic image/depth capture (if enabled). Forward the *whole*
+    // validated options section (minus the recorder-only `enabled` gate) as a
+    // single config object, so a newly-added tunable reaches the sampler
+    // without editing this seam. Re-listing fields here is the field-drop
+    // hazard that left `resolutionDivisor` bolted on and the depth knobs dead
+    // (see 2026-06-12-payload-rebuild-field-drop-audit.md F3).
     if (recordingOptions.images.enabled) {
-      startImageCapture(
-        {
-          intervalMs: recordingOptions.images.intervalMs,
-          quality: recordingOptions.images.quality,
-        },
-        recordingOptions.images.resolutionDivisor
-      );
+      const { enabled: _imagesEnabled, ...imageConfig } =
+        recordingOptions.images;
+      startImageCapture(imageConfig);
       log.info(
-        `Image capture started (interval: ${recordingOptions.images.intervalMs}ms, quality: ${recordingOptions.images.quality}, resolutionDivisor: ${recordingOptions.images.resolutionDivisor})`
+        `Image capture started (interval: ${imageConfig.intervalMs}ms, quality: ${imageConfig.quality}, resolutionDivisor: ${imageConfig.resolutionDivisor})`
       );
     } else {
       log.info('Image capture disabled by user settings');
     }
 
-    // Start depth sampling (if enabled)
     if (recordingOptions.depth.enabled) {
-      startDepthCapture();
+      const { enabled: _depthEnabled, ...depthConfig } = recordingOptions.depth;
+      startDepthCapture(depthConfig);
       log.info(
-        `Depth sampling started (interval: ${recordingOptions.depth.intervalMs}ms)`
+        `Depth sampling started (interval: ${depthConfig.intervalMs}ms, grid: ${depthConfig.gridSize}×${depthConfig.gridSize})`
       );
     } else {
       log.info('Depth sampling disabled by user settings');

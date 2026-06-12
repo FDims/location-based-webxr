@@ -46,17 +46,19 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ```typescript
 {
-  depth: { enabled: true, intervalMs: 1000, gridSize: 3 },
+  depth: { enabled: true, intervalMs: 1000, gridSize: 16, rgb: true },
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1 }
 }
 ```
+
+`depth.gridSize` default is 16 (16×16 = 256 points per sample) so the AR-space occupancy grid populates fast enough for on-device verification (2026-06-11 port plan §1). The depth options reach the sampler via `startDepthCapture(config)` → `DepthSampler.updateConfig` — before that plumbing existed they were dead knobs. `depth.rgb` (default **true**) toggles the Iter-8 RGB voxel coloring (one small per-sample camera-color blit+readback); non-boolean persisted values fall back to the default, so pre-Iter-8 stored options keep the feature on.
 
 ## Validation Constraints
 
 | Setting                    | Min  | Max   |
 | -------------------------- | ---- | ----- |
 | `depth.intervalMs`         | 500  | 5000  |
-| `depth.gridSize`           | 2    | 10    |
+| `depth.gridSize`           | 2    | 32    |
 | `images.intervalMs`        | 1000 | 10000 |
 | `images.quality`           | 0.3  | 1.0   |
 | `images.resolutionDivisor` | 1    | 8     |

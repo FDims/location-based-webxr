@@ -39,6 +39,7 @@ let depthIntervalSlider: HTMLInputElement | null = null;
 let depthIntervalValue: HTMLElement | null = null;
 let depthGridSlider: HTMLInputElement | null = null;
 let depthGridValue: HTMLElement | null = null;
+let depthRgbCheckbox: HTMLInputElement | null = null;
 let imagesEnabledCheckbox: HTMLInputElement | null = null;
 let imagesIntervalSlider: HTMLInputElement | null = null;
 let imagesIntervalValue: HTMLElement | null = null;
@@ -95,6 +96,7 @@ export function initSettingsModal(
   depthIntervalValue = document.getElementById('depth-interval-value');
   depthGridSlider = document.getElementById('depth-grid') as HTMLInputElement;
   depthGridValue = document.getElementById('depth-grid-value');
+  depthRgbCheckbox = document.getElementById('depth-rgb') as HTMLInputElement;
 
   imagesEnabledCheckbox = document.getElementById(
     'images-enabled'
@@ -199,6 +201,12 @@ export function initSettingsModal(
     if (workingOptions && depthEnabledCheckbox) {
       workingOptions.depth.enabled = depthEnabledCheckbox.checked;
       updateDepthControlsState();
+    }
+  });
+
+  depthRgbCheckbox?.addEventListener('change', () => {
+    if (workingOptions && depthRgbCheckbox) {
+      workingOptions.depth.rgb = depthRgbCheckbox.checked;
     }
   });
 
@@ -355,6 +363,9 @@ function populateForm(options: RecordingOptions): void {
   if (depthGridValue) {
     depthGridValue.textContent = `${options.depth.gridSize}×${options.depth.gridSize}`;
   }
+  if (depthRgbCheckbox) {
+    depthRgbCheckbox.checked = options.depth.rgb;
+  }
 
   // Image options
   if (imagesEnabledCheckbox) {
@@ -435,6 +446,9 @@ function updateDepthControlsState(): void {
   }
   if (depthGridSlider) {
     depthGridSlider.disabled = !enabled;
+  }
+  if (depthRgbCheckbox) {
+    depthRgbCheckbox.disabled = !enabled;
   }
 }
 

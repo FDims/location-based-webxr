@@ -165,8 +165,40 @@ export class CameraBlitCapture {
     cameraTexture: THREE.Texture,
     quality: number
   ): Promise<Blob | null> {
+    // --- STEPS A+B: BLIT + READ PIXELS (shared with captureToPixels) ---
+    if (!this.captureToPixels(renderer, cameraTexture)) {
+      return null;
+    }
+    try {
+      // --- STEP C: ENCODE TO JPEG ---
+      return await this.pixelsToJpegBlob(quality);
+    } catch (error) {
+      log.error('Blit capture failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Run the blit + readback (steps A+B of {@link captureToBlob}) and return
+   * the raw RGBA pixel buffer without JPEG encoding — the cheap path for
+   * per-point color sampling (occupancy-grid port plan Iter 8).
+   *
+   * IMPORTANT: Must be called within the XR animation frame callback, while
+   * the camera texture is valid. The returned `pixels` is the INTERNAL
+   * buffer — valid only until the next capture or `resizeIfNeeded`; consume
+   * it synchronously (e.g. via `createRgbLookup`) or copy it.
+   *
+   * Note: the buffer is in WebGL readback order (bottom-row-first / RGBA);
+   * `createRgbLookup` handles the y-flip.
+   *
+   * @returns the buffer with its dimensions, or null on failure/dispose.
+   */
+  captureToPixels(
+    renderer: THREE.WebGLRenderer,
+    cameraTexture: THREE.Texture
+  ): { pixels: Uint8Array; width: number; height: number } | null {
     if (this.disposed) {
-      log.warn('captureToBlob called after dispose');
+      log.warn('captureToPixels called after dispose');
       return null;
     }
 
@@ -204,8 +236,11 @@ export class CameraBlitCapture {
       // Clear texture reference to avoid holding onto opaque texture
       this.blitMaterial.uniforms.tDiffuse!.value = null;
 
-      // --- STEP C: ENCODE TO JPEG ---
-      return await this.pixelsToJpegBlob(quality);
+      return {
+        pixels: this.pixelBuffer,
+        width: this.width,
+        height: this.height,
+      };
     } catch (error) {
       log.error('Blit capture failed:', error);
       return null;

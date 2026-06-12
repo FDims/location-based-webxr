@@ -146,6 +146,9 @@ import { FrameTileVisualizer } from './visualization/frame-tile-visualizer';
 import { decodeFrameTexture } from './visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from './visualization/wire-frame-tile-subscribers';
 import { FrameBlobCache } from './visualization/frame-blob-cache';
+import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import { OccupancyCubesVisualizer } from './visualization/occupancy-cubes-visualizer';
+import { wireOccupancyGridSubscribers } from './visualization/wire-occupancy-grid-subscribers';
 
 import {
   initReplayUI,
@@ -232,6 +235,14 @@ const liveFrameBlobs = new FrameBlobCache({
 });
 let frameTileVisualizer: FrameTileVisualizer | null = null;
 let unsubscribeFrameTiles: (() => void) | null = null;
+
+// Occupancy-grid cubes (2026-06-11 depth occupancy-grid port plan): the
+// grid is derived state fed from `recordDepthSample` actions via
+// `wireOccupancyGridSubscribers`; the instanced-cube visualizer paints it
+// in the live AR scene at ~1 Hz.
+let occupancyGrid: OccupancyGrid | null = null;
+let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
+let unsubscribeOccupancyGrid: (() => void) | null = null;
 
 // HUD tracking-quality subscription. `subscribeHudToTrackingQuality` returns a
 // dispose function that detaches both the per-store subscription and the
@@ -397,6 +408,17 @@ export function resetMainState(): void {
     frameTileVisualizer.dispose();
     frameTileVisualizer = null;
   }
+  // Occupancy-grid teardown — stop feeding the grid and release the
+  // instanced mesh once the AR session ends.
+  if (unsubscribeOccupancyGrid) {
+    unsubscribeOccupancyGrid();
+    unsubscribeOccupancyGrid = null;
+  }
+  if (occupancyCubesVisualizer) {
+    occupancyCubesVisualizer.dispose();
+    occupancyCubesVisualizer = null;
+  }
+  occupancyGrid = null;
   liveFrameBlobs.clear();
   recordingSessionHandlers.reset();
   refPointHandlers.reset();
@@ -970,6 +992,16 @@ async function handleEnterAR(): Promise<void> {
       // the same listener+visualizer stack as replay. Best-effort: failures
       // must not break the AR session.
       try {
+        // Dispose any frame-tile wiring left over from a prior enter-AR
+        // cycle (handleEnterAR runs again on back-to-setup → Enter AR).
+        // Without this the old storeRef subscriber stays attached and the
+        // previous visualizer's GPU textures are orphaned — same leak class
+        // as the tracking-quality subscription disposed below.
+        unsubscribeFrameTiles?.();
+        unsubscribeFrameTiles = null;
+        frameTileVisualizer?.dispose();
+        frameTileVisualizer = null;
+
         frameTileVisualizer = new FrameTileVisualizer(arScene);
         unsubscribeFrameTiles = wireFrameTileSubscribers({
           storeRef,
@@ -984,6 +1016,41 @@ async function handleEnterAR(): Promise<void> {
       } catch (err) {
         log.warn(
           'Frame tile visualizer wiring skipped; recording continues without frame tiles',
+          err
+        );
+      }
+
+      // Occupancy-grid cubes — voxelized depth geometry in the live AR
+      // scene (port plan Iter 5). The cells are raw-WebXR coordinates, so
+      // the visualizer hangs off arWorldGroup (NOT the scene root) and
+      // rides the alignment like the camera does (Iter 7 reparenting fix).
+      // Best-effort: failures must not break the AR session.
+      try {
+        // Dispose any occupancy-grid wiring left over from a prior enter-AR
+        // cycle (handleEnterAR runs again on back-to-setup → Enter AR).
+        // Without this the old storeRef swap-listener stays attached forever
+        // and the previous visualizer's instanced-mesh GPU resources are
+        // orphaned — same leak class as the tracking-quality subscription
+        // disposed below. The grid is a plain data structure (no dispose).
+        unsubscribeOccupancyGrid?.();
+        unsubscribeOccupancyGrid = null;
+        occupancyCubesVisualizer?.dispose();
+        occupancyCubesVisualizer = null;
+        occupancyGrid = null;
+
+        occupancyGrid = new OccupancyGrid();
+        occupancyCubesVisualizer = new OccupancyCubesVisualizer(arWorldGroup);
+        unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
+          storeRef,
+          grid: occupancyGrid,
+          visualizer: occupancyCubesVisualizer,
+          onError: (err) => {
+            log.warn('Occupancy grid update failed', err);
+          },
+        });
+      } catch (err) {
+        log.warn(
+          'Occupancy grid wiring skipped; recording continues without depth cubes',
           err
         );
       }
@@ -1134,14 +1201,11 @@ function handleImageCaptured(image: CapturedImage): void {
  * This enables integration tests to process depth data during replay.
  */
 function handleDepthSampleCaptured(sample: DepthSample): void {
-  store.dispatch(
-    recordDepthSample({
-      timestamp: sample.timestamp,
-      cameraPos: sample.cameraPos,
-      cameraRot: sample.cameraRot,
-      points: sample.points,
-    })
-  );
+  // Dispatch the sampler's payload AS-IS. Re-building it field-by-field
+  // silently dropped the optional projectionMatrix when it was added (see
+  // 2026-06-12-payload-rebuild-field-drop-audit.md F1) — without it the
+  // occupancy grid cannot unproject the sample's points.
+  store.dispatch(recordDepthSample(sample));
   log.info(`Recorded depth sample with ${sample.points.length} points`);
 }
 

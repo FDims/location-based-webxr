@@ -6,7 +6,7 @@
  * between webxr-session.ts and depth-sampler.ts.
  */
 
-import type { Vector3, Quaternion } from 'gps-plus-slam-js';
+import type { Vector3, Quaternion, Matrix4 } from 'gps-plus-slam-js';
 
 /**
  * Tuple-form AR pose for storage/serialization.
@@ -55,6 +55,12 @@ export interface ARPose {
 }
 
 /**
+ * An sRGB color triple, 0–255 integers per channel. Kept as plain ints so
+ * persisted JSON stays compact (~3 bytes/point in practice).
+ */
+export type RgbTuple = readonly [number, number, number];
+
+/**
  * A single depth point sample from WebXR Depth API.
  * Used for 3D reconstruction and validating AR tracking accuracy.
  */
@@ -65,6 +71,14 @@ export interface DepthPoint {
   readonly screenY: number;
   /** Depth value in meters */
   readonly depthM: number;
+  /**
+   * Camera color at (screenX, screenY), sampled from the same XR frame as
+   * the depth read (occupancy-grid port plan Iter 8). Optional + additive:
+   * recordings made before 2026-06 (or with the RGB recording option off)
+   * carry no color; consumers must fall back (e.g. height-based cube
+   * coloring).
+   */
+  readonly rgb?: RgbTuple;
 }
 
 /**
@@ -78,8 +92,10 @@ export interface DepthSample {
   readonly timestamp: number;
   /**
    * Camera position in **raw WebXR** convention [x=East, y=Up, z=South].
-   * NOT in NUE — the recordDepthSample reducer is a no-op, so no
-   * webxrToNUE conversion is applied. Consumers must convert if needed.
+   * NOT in NUE — the recordDepthSample reducer is conversion-free (it only
+   * stores the latest sample for subscribers), so no webxrToNUE conversion
+   * is ever applied. Consumers needing NUE must convert themselves; the
+   * occupancy-grid pipeline works directly in this raw frame.
    */
   readonly cameraPos: Vector3;
   /**
@@ -88,5 +104,13 @@ export interface DepthSample {
    */
   readonly cameraRot: Quaternion;
   /** Grid of depth points */
-  readonly points: DepthPoint[];
+  readonly points: readonly DepthPoint[];
+  /**
+   * Projection matrix of the capturing XRView (16 floats, column-major,
+   * serializable tuple — not a THREE.Matrix4). Camera intrinsics needed to
+   * unproject (screenX, screenY, depthM) back into a 3D AR-space point.
+   * Optional: recordings made before 2026-06 do not carry it; consumers
+   * must skip unprojection for such samples.
+   */
+  readonly projectionMatrix?: Matrix4;
 }

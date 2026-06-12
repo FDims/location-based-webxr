@@ -234,6 +234,86 @@ describe('Action Schema Validation', () => {
       expect(depthAction.payload.points[0]).toHaveProperty('depthM');
     });
 
+    /**
+     * Why this test matters:
+     * New recordings carry the capturing view's projectionMatrix (camera
+     * intrinsics for unprojection into the AR-space occupancy grid). The
+     * field is optional/additive — the previous test (no matrix) proves old
+     * payload shapes still persist unchanged; this one proves the matrix
+     * survives persistence as a plain 16-number array.
+     */
+    it('should persist the optional projectionMatrix on new recordings', async () => {
+      store.dispatch(
+        startSession({
+          scenarioName: 'Test',
+          sessionName: 'test',
+          startTime: Date.now(),
+        })
+      );
+
+      const projectionMatrix = [
+        0.97, 0, 0, 0, 0, 1.73, 0, 0, 0, 0, -1.0004, -1, 0, 0, -0.02, 0,
+      ] as const;
+      store.dispatch(
+        recordDepthSample({
+          timestamp: Date.now(),
+          cameraPos: [0, 0, 0],
+          cameraRot: [0, 0, 0, 1],
+          points: [{ screenX: 0.5, screenY: 0.5, depthM: 2.0 }],
+          projectionMatrix,
+        })
+      );
+      await flushWrites();
+
+      const depthAction = writtenActions.find(
+        (a) => (a as RecordedAction).type === 'recording/recordDepthSample'
+      ) as { type: string; payload: DepthSample };
+
+      expect(depthAction.payload.projectionMatrix).toHaveLength(16);
+      const json = JSON.stringify(depthAction);
+      const parsed = JSON.parse(json) as typeof depthAction;
+      expect(parsed.payload.projectionMatrix).toEqual([...projectionMatrix]);
+    });
+
+    /**
+     * Why this test matters (occupancy-grid port plan Iter 8):
+     * Per-point `rgb` is an additive persisted field — a colored point must
+     * survive persistence + JSON round-trip with its 0–255 triple intact,
+     * and a color-less point in the same sample must stay WITHOUT the key
+     * (old-format byte-compatibility).
+     */
+    it('should persist the optional per-point rgb (and omit it when absent)', async () => {
+      store.dispatch(
+        startSession({
+          scenarioName: 'Test',
+          sessionName: 'test',
+          startTime: Date.now(),
+        })
+      );
+
+      store.dispatch(
+        recordDepthSample({
+          timestamp: Date.now(),
+          cameraPos: [0, 0, 0],
+          cameraRot: [0, 0, 0, 1],
+          points: [
+            { screenX: 0.25, screenY: 0.5, depthM: 2.0, rgb: [120, 45, 200] },
+            { screenX: 0.75, screenY: 0.5, depthM: 3.0 },
+          ],
+        })
+      );
+      await flushWrites();
+
+      const depthAction = writtenActions.find(
+        (a) => (a as RecordedAction).type === 'recording/recordDepthSample'
+      ) as { type: string; payload: DepthSample };
+
+      const json = JSON.stringify(depthAction);
+      const parsed = JSON.parse(json) as typeof depthAction;
+      expect(parsed.payload.points[0]?.rgb).toEqual([120, 45, 200]);
+      expect(parsed.payload.points[1]).not.toHaveProperty('rgb');
+    });
+
     it('should be JSON-serializable for replay', async () => {
       store.dispatch(
         startSession({

@@ -44,7 +44,21 @@ export {
   type DepthSamplerCallbacks,
   type DepthInfo,
   DepthSampler,
+  wrapXRDepthInfo,
 } from './depth-sampler.js';
+
+// --- depth-unprojection ---
+export {
+  unprojectDepthPoint,
+  createDepthUnprojector,
+  type DepthUnprojector,
+} from './depth-unprojection.js';
+
+// --- bresenham3d ---
+export { bresenham3d, type GridCell } from './bresenham3d.js';
+
+// --- occupancy-grid ---
+export { OccupancyGrid, type OccupancyGridOptions } from './occupancy-grid.js';
 
 // --- frame-loop ---
 export { type FrameUpdate, registerFrameUpdate } from './frame-loop.js';

@@ -76,12 +76,28 @@ describe('recording-options', () => {
         enabled: false,
         intervalMs: 2000,
         gridSize: 5,
+        rgb: false,
       });
       expect(result).toEqual({
         enabled: false,
         intervalMs: 2000,
         gridSize: 5,
+        rgb: false,
       });
+    });
+
+    /**
+     * Why this test matters (occupancy-grid port plan Iter 8): the RGB
+     * voxel-coloring option must default ON, and persisted options from
+     * before the option existed (no `rgb` key) or corrupted values must
+     * fall back to the default rather than silently disabling the feature.
+     */
+    it('defaults rgb to true and rejects non-boolean values', () => {
+      expect(validateDepthOptions({}).rgb).toBe(true);
+      expect(
+        validateDepthOptions({ rgb: 'on' as unknown as boolean }).rgb
+      ).toBe(true);
+      expect(validateDepthOptions({ rgb: false }).rgb).toBe(false);
     });
 
     it('clamps intervalMs below minimum to minimum', () => {
@@ -100,7 +116,7 @@ describe('recording-options', () => {
     });
 
     it('clamps gridSize above maximum to maximum', () => {
-      const result = validateDepthOptions({ gridSize: 20 });
+      const result = validateDepthOptions({ gridSize: 100 });
       expect(result.gridSize).toBe(DEPTH_CONSTRAINTS.gridSize.max);
     });
 
@@ -252,7 +268,7 @@ describe('recording-options', () => {
 
     it('loads and validates stored options', () => {
       const stored: RecordingOptions = {
-        depth: { enabled: false, intervalMs: 2000, gridSize: 4 },
+        depth: { enabled: false, intervalMs: 2000, gridSize: 4, rgb: true },
         images: {
           enabled: true,
           intervalMs: 3000,
@@ -333,7 +349,7 @@ describe('recording-options', () => {
   describe('saveRecordingOptions', () => {
     it('saves validated options to localStorage', () => {
       const options: RecordingOptions = {
-        depth: { enabled: false, intervalMs: 1500, gridSize: 5 },
+        depth: { enabled: false, intervalMs: 1500, gridSize: 5, rgb: true },
         images: {
           enabled: true,
           intervalMs: 4000,
@@ -353,7 +369,7 @@ describe('recording-options', () => {
 
     it('clamps invalid values before saving', () => {
       const options: RecordingOptions = {
-        depth: { enabled: true, intervalMs: 50, gridSize: 100 }, // invalid
+        depth: { enabled: true, intervalMs: 50, gridSize: 100, rgb: true }, // invalid
         images: {
           enabled: true,
           intervalMs: 500,
@@ -543,7 +559,7 @@ describe('recording-options', () => {
   describe('integration: round-trip persistence', () => {
     it('options survive save → load cycle with exact values', () => {
       const customOptions: RecordingOptions = {
-        depth: { enabled: false, intervalMs: 2500, gridSize: 7 },
+        depth: { enabled: false, intervalMs: 2500, gridSize: 7, rgb: true },
         images: {
           enabled: true,
           intervalMs: 5000,
@@ -561,7 +577,7 @@ describe('recording-options', () => {
 
     it('multiple save/load cycles maintain consistency', () => {
       const options1: RecordingOptions = {
-        depth: { enabled: true, intervalMs: 1000, gridSize: 3 },
+        depth: { enabled: true, intervalMs: 1000, gridSize: 3, rgb: true },
         images: {
           enabled: false,
           intervalMs: 2000,
@@ -588,7 +604,7 @@ describe('recording-options', () => {
     it('reset → load returns exact defaults', () => {
       // First save custom options
       saveRecordingOptions({
-        depth: { enabled: false, intervalMs: 5000, gridSize: 10 },
+        depth: { enabled: false, intervalMs: 5000, gridSize: 10, rgb: true },
         images: {
           enabled: false,
           intervalMs: 10000,
@@ -643,7 +659,7 @@ describe('recording-options', () => {
 
     it('loadRecordingOptions reads from custom key', () => {
       const custom: RecordingOptions = {
-        depth: { enabled: false, intervalMs: 2000, gridSize: 5 },
+        depth: { enabled: false, intervalMs: 2000, gridSize: 5, rgb: true },
         images: {
           enabled: false,
           intervalMs: 3000,

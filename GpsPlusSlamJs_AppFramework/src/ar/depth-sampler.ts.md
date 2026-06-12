@@ -14,22 +14,29 @@ Samples sparse depth points from the WebXR depth sensing API at a configurable i
 - **`isRunning(): boolean`** — returns whether sampling is active.
 - **`getSampleCount(): number`** — number of samples captured since last `start()`.
 - **`getConfig(): DepthSamplerConfig`** — returns a copy of the current config.
+- **`updateConfig(config: Partial<DepthSamplerConfig>): void`** — applies partial overrides (the plumbing seam for the user's `depth.*` recording options, called by `startDepthCapture(config)`). Invalid values (non-finite, non-positive, fractional `gridSize`) are ignored defensively.
 - **`onFrame(timestamp: number, depthInfo: DepthInfo | null): void`** — call once per XR frame. Throttles sampling to `intervalMs`.
+
+### `wrapXRDepthInfo(raw, projectionMatrix)` (function)
+
+Wraps a raw browser `XRDepthInformation` object into a `DepthInfo`: copies `width`/`height`, binds `getDepthInMeters` to the source object (browser implementations are this-sensitive), and defensively copies the capturing view's projection matrix (`XRView.projectionMatrix`) into a plain serializable 16-tuple. Invalid matrix input (missing, wrong length, non-finite entries) yields a `DepthInfo` without a matrix — never an error. Called by `webxr-session.ts` in the frame loop.
 
 ### Interfaces
 
-- **`DepthSamplerConfig`** — `{ intervalMs, gridSize, unavailabilityThresholdMs }`
-- **`DepthSamplerCallbacks`** — `{ onSampleCaptured, getCurrentPose, onDepthUnavailable? }`
-- **`DepthInfo`** — subset of `XRDepthInformation`: `{ width, height, getDepthInMeters }`
+- **`DepthSamplerConfig`** — `{ intervalMs, gridSize, unavailabilityThresholdMs, rgb }`; `rgb` (default **true**) gates the Iter-8 per-point color enrichment and accepts boolean overrides via `updateConfig`.
+- **`DepthSamplerCallbacks`** — `{ onSampleCaptured, getCurrentPose, onDepthUnavailable?, acquireRgbLookup? }`; `acquireRgbLookup` lazily provides a camera-color lookup for the CURRENT frame — invoked at most once per **emitted** sample (never per frame/point; acquisition is a GPU-stall blit+readback) and only while `config.rgb` is true. Null/throwing acquisition degrades to color-less points (occupancy-grid port plan Iter 8).
+- **`DepthInfo`** — subset of `XRDepthInformation`: `{ width, height, getDepthInMeters, projectionMatrix? }`
 
 ## Invariants & Assumptions
 
-1. **NUE coordinate convention** — `cameraPos` in each `DepthSample` is converted from WebXR (X=East, Y=Up, Z=South) to NUE (X=North, Y=Up, Z=East) via `extractOdomPosition()`.
+1. **Raw WebXR coordinate convention** — `cameraPos` in each `DepthSample` is the raw WebXR local-floor position (X=East, Y=Up, Z=South); `extractOdomPosition()` performs no conversion. Consumers (e.g. the occupancy grid) work directly in this frame; anything needing NUE must convert itself.
 2. **Epoch-ms timestamps** — `timestamp` in `DepthSample` is `performance.timeOrigin + xrFrameTime`, matching all other persisted action timestamps (GPS events, images, reference points).
 3. **Camera rotation is raw WebXR** — `cameraRot` quaternion `[x, y, z, w]` is taken directly from `ARPose.orientation` (no NUE conversion for rotations).
 4. **Interval gating** — successive samples require at least `intervalMs` between them; intervening frames are skipped.
 5. **Pose required** — if `getCurrentPose()` returns null the frame is silently skipped.
 6. **Unavailability detection** — if no depth data arrives within `unavailabilityThresholdMs` of `start()`, `onDepthUnavailable` fires once.
+7. **Intrinsics travel with the sample** — when the `DepthInfo` carries a `projectionMatrix`, it is copied into the emitted `DepthSample` (additive persisted-format field). Samples without it (old recordings) stay byte-identical to the previous format; consumers must skip unprojection for them.
+8. **Per-point `rgb` is additive and absent when unavailable** (Iter 8) — when `config.rgb` is on and `acquireRgbLookup` yields a lookup, each point gains `rgb: [r, g, b]` (0–255); otherwise the field is ABSENT (not `undefined`) so persisted JSON stays identical to the pre-Iter-8 format. Every failure path (no callback, null acquisition, throw, per-point null) degrades to color-less points.
 
 ## Examples
 
@@ -45,11 +52,14 @@ sampler.onFrame(xrFrame.predictedDisplayTime, depthInfo);
 
 ## Tests
 
-- `depth-sampler.test.ts` — 30 tests covering:
+- `depth-sampler.test.ts` — covers:
   - Lifecycle (start/stop/isRunning)
   - Interval throttling
-  - Grid sampling at various sizes
+  - Grid sampling at various sizes (default 16×16)
   - Pose unavailability handling
   - Depth unavailability detection and callback
-  - NUE coordinate conversion for cameraPos
+  - Raw-WebXR cameraPos convention
   - Epoch-ms timestamp conversion
+  - projectionMatrix copy into samples + back-compat absence path
+  - RGB enrichment (Iter 8): once-per-sample acquisition, `rgb: false` gating, back-compat absent field, null/throwing acquisition, per-point null fallback
+  - `wrapXRDepthInfo` binding, tuple copy, and defensive matrix validation

@@ -113,6 +113,7 @@ describe('settings-modal', () => {
       expect(html).toContain('id="depth-enabled"');
       expect(html).toContain('id="depth-interval"');
       expect(html).toContain('id="depth-grid"');
+      expect(html).toContain('id="depth-rgb"');
       expect(html).toContain('id="images-enabled"');
       expect(html).toContain('id="images-interval"');
       expect(html).toContain('id="images-quality"');
@@ -414,6 +415,46 @@ describe('settings-modal', () => {
       // Load and verify
       const saved = loadRecordingOptions();
       expect(saved.depth.enabled).toBe(false);
+    });
+
+    /**
+     * Why this test matters (occupancy-grid port plan Iter 8): the RGB
+     * voxel-coloring toggle is on by default; turning it off must persist
+     * and round-trip through validation (a dead checkbox would silently
+     * keep burning the per-sample GPU readback — the Iter-6 dead-knob
+     * lesson in reverse).
+     */
+    it('persists the depth rgb voxel-coloring flag (default on)', () => {
+      initSettingsModal();
+      showSettingsModal();
+
+      const depthRgb = document.getElementById('depth-rgb') as HTMLInputElement;
+      expect(depthRgb.checked).toBe(true); // default on
+
+      depthRgb.checked = false;
+      depthRgb.dispatchEvent(new Event('change'));
+
+      document.getElementById('btn-settings-save')?.click();
+
+      expect(loadRecordingOptions().depth.rgb).toBe(false);
+    });
+
+    it('disables the rgb checkbox while depth sampling is off', () => {
+      initSettingsModal();
+      showSettingsModal();
+
+      const depthEnabled = document.getElementById(
+        'depth-enabled'
+      ) as HTMLInputElement;
+      const depthRgb = document.getElementById('depth-rgb') as HTMLInputElement;
+
+      depthEnabled.checked = false;
+      depthEnabled.dispatchEvent(new Event('change'));
+      expect(depthRgb.disabled).toBe(true);
+
+      depthEnabled.checked = true;
+      depthEnabled.dispatchEvent(new Event('change'));
+      expect(depthRgb.disabled).toBe(false);
     });
 
     it('persists the CSS3D crash-isolation flag', () => {

@@ -360,7 +360,7 @@ const defaultOptions: RecordingOptions = {
     quality: 0.8,
     resolutionDivisor: 1,
   },
-  depth: { enabled: false, intervalMs: 1000, gridSize: 3 },
+  depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
   arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
 };
 
@@ -620,8 +620,11 @@ describe('handleStartRecording', () => {
     );
   });
 
-  it('should start image capture when enabled in options', async () => {
-    // Why: Image capture is controlled by user settings
+  it('should start image capture with the whole options section (no dropped knobs)', async () => {
+    // Why: Image capture is controlled by user settings, and every tunable —
+    // including resolutionDivisor, which used to be a bolted-on separate
+    // parameter (field-drop audit F3) — must reach the framework as one config
+    // object. The recorder-only `enabled` gate is stripped before forwarding.
     const opts: RecordingOptions = {
       images: {
         enabled: true,
@@ -629,16 +632,17 @@ describe('handleStartRecording', () => {
         quality: 0.9,
         resolutionDivisor: 2,
       },
-      depth: { enabled: false, intervalMs: 1000, gridSize: 3 },
+      depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
     await handlers.handleStartRecording();
-    expect(mockStartImageCapture).toHaveBeenCalledWith(
-      { intervalMs: 500, quality: 0.9 },
-      2
-    );
+    expect(mockStartImageCapture).toHaveBeenCalledWith({
+      intervalMs: 500,
+      quality: 0.9,
+      resolutionDivisor: 2,
+    });
   });
 
   it('should NOT start image capture when disabled in options', async () => {
@@ -648,7 +652,13 @@ describe('handleStartRecording', () => {
   });
 
   it('should start depth capture when enabled in options', async () => {
-    // Why: Depth capture is controlled by user settings
+    // Why: Depth capture is controlled by user settings — and the user's
+    // interval/grid/rgb values must actually reach the sampler. They were
+    // dead knobs before startDepthCapture accepted a config (occupancy-grid
+    // port plan Iter 6; see 2026-06-12-payload-rebuild-field-drop-audit.md
+    // F3), so this asserts the exact values, not just the call. The rgb
+    // flag (Iter 8 voxel coloring) rides the same forward-the-whole-section
+    // seam, so it reaches the sampler with no seam edit.
     const opts: RecordingOptions = {
       images: {
         enabled: false,
@@ -656,13 +666,17 @@ describe('handleStartRecording', () => {
         quality: 0.8,
         resolutionDivisor: 1,
       },
-      depth: { enabled: true, intervalMs: 500, gridSize: 3 },
+      depth: { enabled: true, intervalMs: 500, gridSize: 3, rgb: false },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
     await handlers.handleStartRecording();
-    expect(mockStartDepthCapture).toHaveBeenCalled();
+    expect(mockStartDepthCapture).toHaveBeenCalledWith({
+      intervalMs: 500,
+      gridSize: 3,
+      rgb: false,
+    });
   });
 
   it('should NOT start depth capture when disabled in options', async () => {

@@ -46,6 +46,9 @@ import { createStoreRef } from '../state/store-ref';
 import { FrameTileVisualizer } from '../visualization/frame-tile-visualizer';
 import { decodeFrameTexture } from '../visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
+import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import { OccupancyCubesVisualizer } from '../visualization/occupancy-cubes-visualizer';
+import { wireOccupancyGridSubscribers } from '../visualization/wire-occupancy-grid-subscribers';
 import { createZipFrameBlobSource } from '../storage/zip-frame-blob-source';
 import * as THREE from 'three';
 
@@ -158,6 +161,36 @@ export async function startReplayMode(
   } catch (err) {
     log.warn(
       'Frame tile visualizer wiring skipped; replay continues without frame tiles',
+      err
+    );
+  }
+
+  // Occupancy-grid cubes — recordDepthSample actions re-dispatched during
+  // replay rebuild the voxel grid in the replay scene (port plan Iter 5).
+  // The cells are raw-WebXR coordinates, so the visualizer hangs off
+  // arWorldGroup (NOT the scene root) and rides the alignment like the
+  // recorded camera path (Iter 7 reparenting fix). Recordings made before
+  // intrinsics capture carry no projectionMatrix, so their samples are
+  // skipped and the grid simply stays empty; replay continues normally.
+  // Best-effort like the frame tiles above.
+  let unsubscribeOccupancyGrid: (() => void) | null = null;
+  let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
+  try {
+    const occupancyGrid = new OccupancyGrid();
+    occupancyCubesVisualizer = new OccupancyCubesVisualizer(
+      replaySceneState.arWorldGroup
+    );
+    unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
+      storeRef: createStoreRef(store),
+      grid: occupancyGrid,
+      visualizer: occupancyCubesVisualizer,
+      onError: (err) => {
+        log.warn('Occupancy grid update failed during replay', err);
+      },
+    });
+  } catch (err) {
+    log.warn(
+      'Occupancy grid wiring skipped; replay continues without depth cubes',
       err
     );
   }
@@ -290,6 +323,8 @@ export async function startReplayMode(
       unsubscribeRefPoints();
       unsubscribeFrameTiles?.();
       frameTileVisualizer?.dispose();
+      unsubscribeOccupancyGrid?.();
+      occupancyCubesVisualizer?.dispose();
       disposeReplayScene();
       log.info('Replay mode disposed');
     },

@@ -259,6 +259,77 @@ describe('camera-blit-capture', () => {
       });
     });
 
+    describe('captureToPixels', () => {
+      beforeEach(() => {
+        blitCapture = new CameraBlitCapture({ width: 8, height: 4 });
+      });
+
+      /**
+       * Why this test matters (occupancy-grid port plan Iter 8):
+       * The RGB voxel-coloring path needs the raw readback buffer without
+       * the JPEG encode. captureToPixels must run the same blit pipeline
+       * (set texture → render to RT → readPixels) and hand back the buffer
+       * with its dimensions so `createRgbLookup` can address it.
+       */
+      it('returns the readback buffer with its dimensions', () => {
+        const result = blitCapture.captureToPixels(
+          mockRenderer as never,
+          mockTexture as never
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.width).toBe(8);
+        expect(result!.height).toBe(4);
+        expect(result!.pixels).toBeInstanceOf(Uint8Array);
+        expect(result!.pixels.length).toBe(8 * 4 * 4);
+        // Mock renderer fills with 128
+        expect(result!.pixels[0]).toBe(128);
+        expect(mockRenderer.render).toHaveBeenCalledTimes(1);
+      });
+
+      /**
+       * Why this test matters:
+       * Like captureToBlob, the pixel path must restore the renderer state
+       * (render target + xr.enabled) or the main XR render loop breaks.
+       */
+      it('restores renderer state after the blit', () => {
+        blitCapture.captureToPixels(
+          mockRenderer as never,
+          mockTexture as never
+        );
+
+        expect(mockRenderer.xr.enabled).toBe(true);
+        expect(mockRenderer.setRenderTarget).toHaveBeenCalledTimes(2);
+        expect(mockRenderer.setRenderTarget.mock.calls[1]?.[0]).toBeNull();
+      });
+
+      /**
+       * Why this test matters:
+       * The capture path is best-effort — a renderer failure must yield
+       * null (point stays color-less), never an exception into the XR frame
+       * loop.
+       */
+      it('returns null when the renderer throws', () => {
+        mockRenderer.render.mockImplementationOnce(() => {
+          throw new Error('GL context lost');
+        });
+        const result = blitCapture.captureToPixels(
+          mockRenderer as never,
+          mockTexture as never
+        );
+        expect(result).toBeNull();
+      });
+
+      it('returns null after dispose', () => {
+        blitCapture.dispose();
+        const result = blitCapture.captureToPixels(
+          mockRenderer as never,
+          mockTexture as never
+        );
+        expect(result).toBeNull();
+      });
+    });
+
     describe('isBlack helper', () => {
       beforeEach(() => {
         blitCapture = new CameraBlitCapture({ width: 4, height: 4 });

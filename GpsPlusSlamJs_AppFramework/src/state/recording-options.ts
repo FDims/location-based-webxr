@@ -61,8 +61,18 @@ export interface DepthCaptureOptions {
   enabled: boolean;
   /** Interval between samples in milliseconds. Default: 1000 */
   intervalMs: number;
-  /** Grid size (N×N points per sample). Default: 3 */
+  /**
+   * Grid size (N×N points per sample). Default: 16 — dense enough to
+   * populate the AR-space occupancy grid (2026-06-11 port plan §1).
+   */
   gridSize: number;
+  /**
+   * Whether to enrich each depth point with the camera color at its view
+   * coordinates (RGB voxel coloring, occupancy-grid port plan Iter 8).
+   * Costs one small GPU blit+readback per sample (~1 Hz); when off, the
+   * occupancy cubes keep the height-based coloring. Default: true.
+   */
+  rgb: boolean;
 }
 
 /**
@@ -110,7 +120,8 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
     intervalMs: 1000, // 1 sample per second
-    gridSize: 3, // 3×3 = 9 points per sample
+    gridSize: 16, // 16×16 = 256 points per sample (occupancy-grid density)
+    rgb: true, // RGB voxel coloring (Iter 8)
   },
   images: {
     enabled: true,
@@ -131,7 +142,10 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
 /** Validation constraints for depth options */
 export const DEPTH_CONSTRAINTS = {
   intervalMs: { min: 500, max: 5000, step: 100 },
-  gridSize: { min: 2, max: 10, step: 1 },
+  // Max raised 10 → 32 with the occupancy-grid work: 32×32 = 1024
+  // getDepthInMeters reads per sample is the ceiling until the per-frame
+  // cost is measured on-device (port plan Iter 6 field verification).
+  gridSize: { min: 2, max: 32, step: 1 },
 } as const;
 
 /** Validation constraints for image options */
@@ -211,6 +225,7 @@ export function validateDepthOptions(
       DEPTH_CONSTRAINTS.gridSize.min,
       DEPTH_CONSTRAINTS.gridSize.max
     ),
+    rgb: typeof options.rgb === 'boolean' ? options.rgb : defaults.rgb,
   };
 }
 
