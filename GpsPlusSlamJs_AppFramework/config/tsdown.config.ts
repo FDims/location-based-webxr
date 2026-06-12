@@ -32,6 +32,7 @@ const entryFiles = [
   'src/ar/image-capture.ts',
   'src/ar/replay-scene.ts',
   'src/ar/scene-node-names.ts',
+  'src/ar/webxr-nue-basis.ts',
   'src/ar/webxr-session.ts',
   'src/ar/xr-camera-texture.ts',
   'src/ar/xr-error-handler.ts',

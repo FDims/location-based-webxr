@@ -26,10 +26,11 @@
  */
 
 import * as THREE from 'three';
-// WEBXR_TO_NUE comes from the /ar barrel: the deep `ar/webxr-nue-basis`
-// subpath has no dist entry (tsdown builds an explicit entry list), so it
-// resolves in vitest but breaks the browser build.
-import { WEBXR_TO_NUE, type GridCell } from 'gps-plus-slam-app-framework/ar';
+import type { GridCell } from 'gps-plus-slam-app-framework/ar';
+// Deep subpath on purpose: the /ar barrel eagerly evaluates enable-gps-ar's
+// module-level deps, which breaks tests that partially mock webxr-session /
+// permission-checker; webxr-nue-basis depends only on three.
+import { WEBXR_TO_NUE } from 'gps-plus-slam-app-framework/ar/webxr-nue-basis';
 
 /** The read surface of the framework's `OccupancyGrid` this class draws. */
 export interface OccupancyGridSource {
