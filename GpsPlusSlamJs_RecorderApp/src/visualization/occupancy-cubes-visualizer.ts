@@ -48,8 +48,9 @@ export interface OccupancyCubesVisualizerOptions {
   readonly minObservations?: number;
   /**
    * Rendered edge length of each debug cube in meters. Deliberately
-   * smaller than the grid cell (0.15 m) so individual voxels stay
-   * readable instead of fusing into a solid wall. Default 0.1.
+   * much smaller than the grid cell (0.15 m) so individual voxels stay
+   * readable instead of fusing into a solid wall. Default 0.025
+   * (field-tuned: 0.1 still read as too bulky on device).
    */
   readonly cubeSizeM?: number;
   /**
@@ -60,7 +61,7 @@ export interface OccupancyCubesVisualizerOptions {
 }
 
 const DEFAULT_MAX_INSTANCES = 2000;
-const DEFAULT_CUBE_SIZE_M = 0.1;
+const DEFAULT_CUBE_SIZE_M = 0.025;
 const MESH_NAME = 'occupancy-cubes';
 
 /** Height range mapped onto the color ramp (meters, raw WebXR Y). */

@@ -70,7 +70,7 @@ describe('OccupancyCubesVisualizer', () => {
     visualizer.dispose();
   });
 
-  it('draws one cube per occupied cell at the cell center, scaled to the debug cube size (0.1 m)', () => {
+  it('draws one cube per occupied cell at the cell center, scaled to the debug cube size (0.025 m)', () => {
     const arSpaceNode = new THREE.Group();
     const visualizer = new OccupancyCubesVisualizer(arSpaceNode);
     const grid = makeGridSource(
@@ -94,7 +94,7 @@ describe('OccupancyCubesVisualizer', () => {
     expect(pos.toArray()).toEqual([1, 0.5, -2]); // cell · cellSizeM, raw WebXR
     // debug size, NOT cellSizeM (float32 instance buffer → closeTo)
     for (const s of scale.toArray()) {
-      expect(s).toBeCloseTo(0.1);
+      expect(s).toBeCloseTo(0.025);
     }
 
     visualizer.dispose();
