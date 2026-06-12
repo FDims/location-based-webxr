@@ -19,11 +19,14 @@ const entryFiles = [
 
   // ar/
   'src/ar/index.ts',
+  'src/ar/bresenham3d.ts',
   'src/ar/camera-blit-capture.ts',
   'src/ar/capability-checker.ts',
   'src/ar/capture-failure-tracker.ts',
   'src/ar/chromium-camera-access-workaround.ts',
   'src/ar/depth-sampler.ts',
+  'src/ar/depth-unprojection.ts',
+  'src/ar/occupancy-grid.ts',
   'src/ar/enable-gps-ar.ts',
   'src/ar/frame-loop.ts',
   'src/ar/image-capture.ts',

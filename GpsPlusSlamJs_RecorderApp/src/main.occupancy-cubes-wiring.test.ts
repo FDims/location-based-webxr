@@ -267,6 +267,8 @@ vi.mock('./state/recorder-store', () => ({
     dispatch: vi.fn(),
     getState: vi.fn().mockReturnValue({}),
     subscribe: vi.fn().mockReturnValue(() => {}),
+    // handleImageCaptured persists the frame blob through store.writeFrame
+    writeFrame: vi.fn().mockResolvedValue(undefined),
   }),
   startSession: vi.fn(),
   endSession: vi.fn(),
@@ -386,6 +388,9 @@ vi.mock('./recording/recording-session-handlers', () => ({
     handleStartRecording: vi.fn(),
     handleStopRecording: vi.fn(),
     recordCaptureFailure: vi.fn(),
+    recordCaptureSuccess: vi.fn(),
+    recordWriteSuccess: vi.fn(),
+    recordWriteFailure: vi.fn(),
     reset: vi.fn(),
   }),
 }));
@@ -403,8 +408,16 @@ vi.mock('./storage/folder-manager', () => ({
 
 // Import after all mocks are set up
 import { handleEnterARForTesting, resetMainState } from './main';
-import { setDepthCaptureCallback } from 'gps-plus-slam-app-framework/ar/webxr-session';
-import { recordDepthSample, type DepthSample } from './state/recorder-store';
+import {
+  setDepthCaptureCallback,
+  setImageCaptureCallback,
+  type CapturedImage,
+} from 'gps-plus-slam-app-framework/ar/webxr-session';
+import {
+  add2dImage,
+  recordDepthSample,
+  type DepthSample,
+} from './state/recorder-store';
 
 describe('Occupancy-grid cube wiring in live AR', () => {
   beforeEach(() => {
@@ -497,5 +510,43 @@ describe('Occupancy-grid cube wiring in live AR', () => {
     // Same reference — nothing was rebuilt, so no field can be dropped
     expect(dispatched).toBe(sample);
     expect(dispatched?.projectionMatrix).toEqual(sample.projectionMatrix);
+  });
+
+  /**
+   * Why this test matters (2026-06-12-payload-rebuild-field-drop-audit.md F2):
+   * handleImageCaptured rebuilds the add2dImage payload field-by-field — the
+   * same seam shape as the F1 depth bug above. When CapturedImage gains a
+   * persistable field it can be silently dropped before persistence with no
+   * compile error (omitting an optional property still satisfies the target).
+   * This test populates every CapturedImage field and asserts each persistable
+   * one reaches the dispatched add2dImage payload. Note the two fields that are
+   * NOT in the payload by design: `blob` is routed through store.writeFrame and
+   * `frameIndex` is encoded into the `frames/…` filename. A new CapturedImage
+   * field MUST be threaded through handleImageCaptured and asserted here.
+   */
+  it('forwards every persistable CapturedImage field into the add2dImage payload', async () => {
+    await handleEnterARForTesting();
+
+    const handler = vi.mocked(setImageCaptureCallback).mock.calls[0]?.[0];
+    expect(handler).toBeDefined();
+
+    const image: CapturedImage = {
+      blob: new Blob(['x'], { type: 'image/jpeg' }),
+      timestamp: 1700000000123,
+      frameIndex: 7,
+      position: { x: 1.5, y: -2.5, z: 3.5 },
+      rotation: { x: 0.1, y: 0.2, z: 0.3, w: 0.9 },
+      screenRotation: 90,
+    };
+    handler!(image);
+
+    expect(add2dImage).toHaveBeenCalledTimes(1);
+    expect(add2dImage).toHaveBeenCalledWith({
+      imageFile: 'frames/frame-000007.jpg', // frameIndex encoded into the filename
+      position: [1.5, -2.5, 3.5], // WebXRVec3 → tuple (reducer converts to NUE)
+      rotation: [0.1, 0.2, 0.3, 0.9], // WebXRQuaternion → tuple
+      screenRotation: 90,
+      capturedAt: 1700000000123, // timestamp → capturedAt
+    });
   });
 });

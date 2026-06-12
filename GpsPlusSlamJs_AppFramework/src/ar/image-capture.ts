@@ -33,6 +33,12 @@ export interface ImageCaptureConfig {
    *  If a capture promise doesn't resolve within this duration, the flag is
    *  force-reset to prevent permanent pipeline deadlock. */
   captureTimeoutMs: number;
+  /** Resolution divisor for the captured frame: 1 = full native resolution,
+   *  2 = half, 4 = quarter (default: 1). Consumed by the blit pipeline in
+   *  `startImageCapture`, not by ImageCaptureManager's timing loop. Folded
+   *  into this config so the whole user options section can flow through the
+   *  capture seam as one object (see the field-drop audit, F3). */
+  resolutionDivisor: number;
 }
 
 /**
@@ -42,10 +48,18 @@ export const DEFAULT_CAPTURE_CONFIG: ImageCaptureConfig = {
   intervalMs: 2000,
   quality: 0.7,
   captureTimeoutMs: 5000,
+  resolutionDivisor: 1,
 };
 
 /**
- * Data returned when an image is captured
+ * Data returned when an image is captured.
+ *
+ * NOTE: every persistable field here is forwarded into the `add2dImage`
+ * action by the RecorderApp's `handleImageCaptured`, which rebuilds the
+ * payload field-by-field. A new field added here is therefore NOT persisted
+ * until it is threaded through that handler — see
+ * `2026-06-12-payload-rebuild-field-drop-audit.md` (F1/F2) and the forwarding
+ * test in `main.occupancy-cubes-wiring.test.ts`.
  */
 export interface CapturedImage {
   /** The captured image as a Blob */

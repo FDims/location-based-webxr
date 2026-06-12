@@ -160,6 +160,7 @@ describe('image-capture', () => {
         intervalMs: 5000,
         quality: 0.8,
         captureTimeoutMs: 5000,
+        resolutionDivisor: 1,
       };
       manager = new ImageCaptureManager(mockCanvas, mockCallbacks, config);
       manager.start();
@@ -193,6 +194,7 @@ describe('image-capture', () => {
         intervalMs: 2000,
         quality: 0.6,
         captureTimeoutMs: 5000,
+        resolutionDivisor: 1,
       };
       manager = new ImageCaptureManager(mockCanvas, mockCallbacks, config);
       manager.start();
@@ -752,6 +754,17 @@ describe('image-capture', () => {
        */
       it('should use default timeout of 5000ms', () => {
         expect(DEFAULT_CAPTURE_CONFIG.captureTimeoutMs).toBe(5000);
+      });
+
+      /**
+       * Why this test matters (field-drop audit F3):
+       * resolutionDivisor was folded into ImageCaptureConfig so the whole user
+       * image-options section flows through startImageCapture as one object
+       * instead of a bolted-on positional parameter. The default must be 1
+       * (full native resolution) so omitting it never silently downscales.
+       */
+      it('should default resolutionDivisor to 1 (full resolution)', () => {
+        expect(DEFAULT_CAPTURE_CONFIG.resolutionDivisor).toBe(1);
       });
     });
 

@@ -1295,13 +1295,14 @@ export function setImageCaptureCallback(
 /**
  * Start capturing images during recording.
  * Must call setImageCaptureCallback first.
- * @param config - Optional capture configuration (intervalMs, quality)
- * @param resolutionDivisor - Resolution divisor: 1 = full, 2 = half, 4 = quarter (default: 1)
+ *
+ * @param config - Optional capture configuration. Accepts the whole user
+ *   image-options section (`intervalMs`, `quality`, `resolutionDivisor`; any
+ *   extra keys such as `enabled` are ignored). Passing the section as one
+ *   object means a newly-added option flows through without editing this seam
+ *   — see `2026-06-12-payload-rebuild-field-drop-audit.md` (F3).
  */
-export function startImageCapture(
-  config?: Partial<ImageCaptureConfig>,
-  resolutionDivisor = 1
-): void {
+export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
   if (!renderer) {
     log.warn('Cannot start image capture - renderer not initialized');
     return;
@@ -1331,12 +1332,19 @@ export function startImageCapture(
     onSuspiciousImage: onSuspiciousImage ?? undefined,
   };
 
+  // Merge provided config with defaults up front so the blit pipeline and
+  // the capture manager read from the same resolved configuration.
+  const mergedConfig: ImageCaptureConfig = {
+    ...DEFAULT_CAPTURE_CONFIG,
+    ...config,
+  };
+
   // Set up blit capture for WebXR opaque camera textures.
   // This creates a GPU pipeline that converts the opaque texture to readable pixels.
   // Falls back to canvas.toBlob() when camera-access is not available or blit fails.
   blitCapture = new CameraBlitCapture();
   const currentRenderer = renderer;
-  const divisor = resolutionDivisor;
+  const divisor = mergedConfig.resolutionDivisor;
   callbacks.captureFrame = async (quality: number): Promise<Blob | null> => {
     if (!blitCapture || !latestCameraTexture) {
       // camera-access not available or no texture yet — fall back to canvas.toBlob
@@ -1366,12 +1374,6 @@ export function startImageCapture(
     );
   };
   log.info(`Blit capture pipeline initialized (resolutionDivisor=${divisor})`);
-
-  // Merge provided config with defaults
-  const mergedConfig: ImageCaptureConfig = {
-    ...DEFAULT_CAPTURE_CONFIG,
-    ...config,
-  };
 
   imageCaptureManager = new ImageCaptureManager(
     renderer.domElement,

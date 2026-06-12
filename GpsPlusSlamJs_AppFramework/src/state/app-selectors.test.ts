@@ -251,6 +251,33 @@ describe('app-level selectors', () => {
       expect(tile.capturedAt).toBe(1_700_000_000_000);
     });
 
+    it('projects exactly the known ArImageCapture fields (field-drop audit F4)', () => {
+      // Why: selectFrameTilesInWebXR is the single gateway from persisted frame
+      // records to the AR-space frame-tile visualizer. A compile-time guard in
+      // app-selectors.ts forces a conscious decision when ArImageCapture gains a
+      // field; this runtime check is its executable companion — it pins the
+      // projected key set so a mis-mapped (vs. merely missing) field is caught.
+      const nueEntry: ArImageCapture = {
+        imageFile: 'frames/frame-000001.jpg',
+        position: webxrToNUE([1, 2, -3]),
+        rotation: normalizeQuaternion(webxrQuaternionToNUE([0, 0, 0, 1])),
+        screenRotation: 0,
+        capturedAt: 1_700_000_000_000,
+      };
+      const tile = selectFrameTilesInWebXR(makeStateWithPoints([nueEntry]))[0];
+      expect(tile).toBeDefined();
+      if (!tile) return;
+      expect(Object.keys(tile).sort()).toEqual(
+        [
+          'capturedAt',
+          'imageFile',
+          'position',
+          'rotation',
+          'screenRotation',
+        ].sort()
+      );
+    });
+
     it('preserves arrival order', () => {
       const points: ArImageCapture[] = [1, 2, 3].map((i) => ({
         imageFile: `frames/frame-${String(i).padStart(6, '0')}.jpg`,

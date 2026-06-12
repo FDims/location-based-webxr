@@ -620,8 +620,11 @@ describe('handleStartRecording', () => {
     );
   });
 
-  it('should start image capture when enabled in options', async () => {
-    // Why: Image capture is controlled by user settings
+  it('should start image capture with the whole options section (no dropped knobs)', async () => {
+    // Why: Image capture is controlled by user settings, and every tunable —
+    // including resolutionDivisor, which used to be a bolted-on separate
+    // parameter (field-drop audit F3) — must reach the framework as one config
+    // object. The recorder-only `enabled` gate is stripped before forwarding.
     const opts: RecordingOptions = {
       images: {
         enabled: true,
@@ -635,10 +638,11 @@ describe('handleStartRecording', () => {
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
     await handlers.handleStartRecording();
-    expect(mockStartImageCapture).toHaveBeenCalledWith(
-      { intervalMs: 500, quality: 0.9 },
-      2
-    );
+    expect(mockStartImageCapture).toHaveBeenCalledWith({
+      intervalMs: 500,
+      quality: 0.9,
+      resolutionDivisor: 2,
+    });
   });
 
   it('should NOT start image capture when disabled in options', async () => {
