@@ -42,14 +42,28 @@ class FrameTileVisualizer {
   [2026-06-13-frame-tile-rendering-bugs-user-feedback.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-13-frame-tile-rendering-bugs-user-feedback.md)).**
   The shared geometry is square, so a non-square JPEG would be **stretched**
   if scaled uniformly. `addTile` instead scales **non-uniformly** from the
-  frame's persisted `width`/`height`: the **longer** edge = `sizeMeters`, the
-  shorter edge = `sizeMeters × shorter/longer` (`tileScaleXY`). A frame with
-  missing or non-positive dimensions (legacy recordings) falls back to a
-  square `sizeMeters × sizeMeters` tile. Z scale is cosmetic (the plane lies
-  in XY) and left at `sizeMeters`. This replaces the earlier — incorrect —
+  frame's dimensions: the **longer** edge = `sizeMeters`, the shorter edge =
+  `sizeMeters × shorter/longer` (`tileScaleXY`). Z scale is cosmetic (the plane
+  lies in XY) and left at `sizeMeters`. This replaces the earlier — incorrect —
   claim that "texture aspect ratio is preserved by the texture's own
   coordinates": a `THREE.Texture` maps its `[0,1]` UVs across the whole plane,
   so nothing preserves aspect; the geometry footprint must carry it.
+- **Dimension precedence: persisted → bitmap → square (DA-1 of
+  [2026-06-14-followup-frame-tile-legacy-aspect-and-live-toggle.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-14-followup-frame-tile-legacy-aspect-and-live-toggle.md)).**
+  `addTile` resolves each axis as `frame.width ?? bitmapDim(texture, 'width')`
+  (likewise height). Persisted `width`/`height` (D1 capture metadata) win when
+  present. **Legacy recordings predate those fields**, so the visualizer falls
+  back to the decoded texture's `.image` dimensions — in production an
+  `ImageBitmap` carrying the authoritative rendered pixel size — via the
+  defensive `bitmapDim` helper. `bitmapDim` makes **no** `instanceof ImageBitmap`
+  assumption (the `.image` may be `ImageBitmap` | `HTMLImageElement` |
+  `HTMLCanvasElement` | a bare jsdom stub | `null`): it accepts only a finite,
+  positive number per axis and otherwise returns `undefined`. When **neither**
+  source yields usable dims, `tileScaleXY`'s final square fallback
+  (`sizeMeters × sizeMeters`) catches it, so a tile can never collapse or
+  distort. Finding A only makes the _visualizer_ self-sufficient for legacy
+  data; it does not replace D1's persisted dimensions for non-visualizer
+  consumers.
 - **Per-tile material + texture** — captured frames cannot share a
   texture, so each tile owns its `MeshBasicMaterial({ map: texture })`.
   Materials and textures are disposed by `clear()` / `dispose()`. The

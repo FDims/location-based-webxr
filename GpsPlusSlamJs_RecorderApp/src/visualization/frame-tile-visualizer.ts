@@ -131,11 +131,17 @@ export class FrameTileVisualizer {
     const mesh = new THREE.Mesh(SHARED_GEOMETRY, material);
     // Non-uniform scale to the frame's aspect ratio so a non-square JPEG is
     // not stretched onto a square plane (Finding 1 / D1). The longer edge is
-    // sizeMeters; a frame without persisted dimensions falls back to square.
+    // sizeMeters. Dimension precedence (DA-1, 2026-06-14 follow-up):
+    // persisted frame.width/height → decoded texture.image dimensions →
+    // square. The bitmap fallback closes the legacy-recording gap (records
+    // predating the persisted fields) without a schema change; persisted dims
+    // stay authoritative where present.
+    const width = frame.width ?? bitmapDim(texture, 'width');
+    const height = frame.height ?? bitmapDim(texture, 'height');
     const { x: scaleX, y: scaleY } = tileScaleXY(
       this.sizeMeters,
-      frame.width,
-      frame.height
+      width,
+      height
     );
     mesh.scale.set(scaleX, scaleY, this.sizeMeters);
     mesh.name = `${NAME_PREFIX}-${frame.imageFile}`;
@@ -203,6 +209,32 @@ function tileScaleXY(
   return aspect >= 1
     ? { x: sizeMeters, y: sizeMeters / aspect } // landscape: width is the long edge
     : { x: sizeMeters * aspect, y: sizeMeters }; // portrait: height is the long edge
+}
+
+/**
+ * Read a positive, finite pixel dimension from a decoded texture's `.image`
+ * (DA-1 legacy fallback). In production the texture wraps an `ImageBitmap`
+ * whose `.width`/`.height` are the authoritative rendered pixel dimensions —
+ * the data Finding A falls back to for legacy recordings that predate the
+ * persisted `width`/`height` fields. The `.image` shape is **not** guaranteed
+ * (`ImageBitmap` | `HTMLImageElement` | `HTMLCanvasElement` | a bare jsdom
+ * stub | `null`), so read defensively: never assume `instanceof ImageBitmap`,
+ * and return `undefined` when the axis is absent, non-finite, or non-positive
+ * so the caller falls through to the square (`tileScaleXY`'s last resort).
+ */
+function bitmapDim(
+  texture: THREE.Texture,
+  axis: 'width' | 'height'
+): number | undefined {
+  const image = texture.image as
+    | { width?: unknown; height?: unknown }
+    | null
+    | undefined;
+  if (!image) return undefined;
+  const value = image[axis];
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
 }
 
 function disposeTileMaterial(mesh: THREE.Mesh): void {
