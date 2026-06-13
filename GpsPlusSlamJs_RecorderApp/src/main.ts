@@ -149,6 +149,7 @@ import { FrameBlobCache } from './visualization/frame-blob-cache';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import { OccupancyCubesVisualizer } from './visualization/occupancy-cubes-visualizer';
 import { wireOccupancyGridSubscribers } from './visualization/wire-occupancy-grid-subscribers';
+import { setOccupancyGrid } from './state/occupancy-grid-provider';
 
 import {
   initReplayUI,
@@ -419,6 +420,7 @@ export function resetMainState(): void {
     occupancyCubesVisualizer = null;
   }
   occupancyGrid = null;
+  setOccupancyGrid(null);
   liveFrameBlobs.clear();
   recordingSessionHandlers.reset();
   refPointHandlers.reset();
@@ -1040,8 +1042,14 @@ async function handleEnterAR(): Promise<void> {
         occupancyCubesVisualizer?.dispose();
         occupancyCubesVisualizer = null;
         occupancyGrid = null;
+        setOccupancyGrid(null);
 
         occupancyGrid = new OccupancyGrid();
+        // Publish the single live grid so non-visualizer consumers (the COLMAP
+        // ZIP contributor, future floor/nav-mesh builders) can read it without a
+        // one-off reference. Mirrors main.ts's `occupancyGrid` var exactly; the
+        // teardown paths below clear it back to null (COLMAP export plan Q2).
+        setOccupancyGrid(occupancyGrid);
         occupancyCubesVisualizer = new OccupancyCubesVisualizer(arWorldGroup);
         unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
           storeRef,

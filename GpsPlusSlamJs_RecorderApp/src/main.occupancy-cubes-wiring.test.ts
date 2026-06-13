@@ -406,8 +406,11 @@ vi.mock('./storage/folder-manager', () => ({
   }),
 }));
 
-// Import after all mocks are set up
+// Import after all mocks are set up. The occupancy-grid provider is imported
+// REAL (not mocked) so we can assert main.ts publishes/clears the live grid
+// through it — the shared accessor the COLMAP contributor reads (Iter 2.5).
 import { handleEnterARForTesting, resetMainState } from './main';
+import { getOccupancyGrid } from './state/occupancy-grid-provider';
 import {
   setDepthCaptureCallback,
   setImageCaptureCallback,
@@ -468,6 +471,22 @@ describe('Occupancy-grid cube wiring in live AR', () => {
     resetMainState();
     expect(occupancyGridDisposers[0]).toHaveBeenCalledTimes(1);
     expect(mockVisualizerInstance.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Why this test matters (Iter 2.5): the COLMAP contributor and future grid
+   * consumers read the live grid through `getOccupancyGrid()`. main.ts must
+   * publish the SAME instance it feeds the visualizer when entering AR, and
+   * clear it back to null on session-swap/teardown so a stale grid is never
+   * exported (e.g. during replay, which keeps its own grid).
+   */
+  it('publishes the live grid via the provider on Enter AR and clears it on reset', async () => {
+    await handleEnterARForTesting();
+    // Same instance the visualizer/subscribers were fed.
+    expect(getOccupancyGrid()).toBe(mockOccupancyGridInstance);
+
+    resetMainState();
+    expect(getOccupancyGrid()).toBeNull();
   });
 
   /**
