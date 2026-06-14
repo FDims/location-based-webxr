@@ -18,6 +18,10 @@ import {
 } from 'gps-plus-slam-app-framework/state/recording-options';
 import type { StoreSubscriberDeps } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
+import {
+  gpsPathToCoverageCells,
+  H3_RESOLUTION,
+} from 'gps-plus-slam-app-framework/geo';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -858,6 +862,54 @@ describe('handleStopRecording', () => {
     await handlers.handleStopRecording();
     expect(mockEndSession).toHaveBeenCalled();
     expect(mockStore.dispatch).toHaveBeenCalled();
+  });
+
+  it('should persist the H3 coverage index from the GPS path', async () => {
+    // Why: the map-centric recording browser (Step 2 / D1) reads h3Cells from
+    // session.json to show roughly where each tour was recorded WITHOUT
+    // unzipping GPS data. The stored cells are the deduped res-11 coverage of
+    // the walked path; h3Resolution records the capture resolution so older
+    // readers stay self-describing if it ever changes.
+    (mockStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+      gpsData: {
+        gpsEvents: {
+          gpsPositions: [
+            { latitude: 50.7495, longitude: 6.4793, timestamp: 1 },
+            { latitude: 50.7475, longitude: 6.4812, timestamp: 2 },
+            { latitude: 50.7475, longitude: 6.4812, timestamp: 3 }, // dwell → dedup
+            { latitude: 50.7451, longitude: 6.4804, timestamp: 4 },
+          ],
+          odometryPositions: [],
+        },
+        referencePoints: [],
+      },
+      recording: {
+        sessionMetadata: {
+          scenarioName: 'TestScenario',
+          sessionName: 'test-session',
+          startTime: 1000000,
+        },
+        failedWriteCount: 0,
+      },
+      scenario: { currentScenarioName: 'TestScenario' },
+      refPoints: { entries: [] },
+    });
+
+    await handlers.handleStopRecording();
+
+    const expectedCells = gpsPathToCoverageCells([
+      { lat: 50.7495, lng: 6.4793 },
+      { lat: 50.7475, lng: 6.4812 },
+      { lat: 50.7475, lng: 6.4812 },
+      { lat: 50.7451, lng: 6.4804 },
+    ]);
+    expect(expectedCells).toHaveLength(3); // dwell deduped away
+    expect(mockStore.writeSessionMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        h3Cells: expectedCells,
+        h3Resolution: H3_RESOLUTION,
+      })
+    );
   });
 
   it('should call collectTrackerErrors for both trackers', async () => {

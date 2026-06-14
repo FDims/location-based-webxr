@@ -91,6 +91,10 @@ import {
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
 import { computeFusedPath } from 'gps-plus-slam-app-framework/utils/fused-path';
+import {
+  gpsPathToCoverageCells,
+  H3_RESOLUTION,
+} from 'gps-plus-slam-app-framework/geo';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type { LatLong, Matrix4 } from 'gps-plus-slam-app-framework/core';
 import { calcGpsCoords } from 'gps-plus-slam-app-framework/core';
@@ -539,6 +543,13 @@ export function createRecordingSessionHandlers(
         log.warn('Build metadata unavailable for session metadata', error);
       }
 
+      // Per-tour H3 coverage index (Step 2 / D1): deduped res-11 cells the GPS
+      // path crossed, so the map-centric browser can place this tour without
+      // unzipping its GPS data. Computed here at stop while the path is in state.
+      const h3Cells = gpsPathToCoverageCells(
+        gpsPositions.map((p) => ({ lat: p.latitude, lng: p.longitude }))
+      );
+
       await store.writeSessionMetadata({
         version: 1,
         odomCoordVersion: 5,
@@ -552,6 +563,8 @@ export function createRecordingSessionHandlers(
         userAgent: navigator.userAgent,
         ...(buildInfo ? { build: buildInfo } : {}),
         pageUrl: getSanitizedPageUrl(),
+        h3Cells,
+        h3Resolution: H3_RESOLUTION,
       });
     } catch (err) {
       log.error('Failed to write session metadata:', err);

@@ -40,6 +40,7 @@ import {
   syncToExternalZip,
   type ZipExportResult,
 } from './zip-export';
+import { loadSessionMetadataFromBlob } from './zip-reader';
 
 /**
  * Helper to decompress a ZIP blob and return file contents.
@@ -190,6 +191,73 @@ describe('zip-export', () => {
       const content = new TextDecoder().decode(files.get('session.json'));
       const parsed = JSON.parse(content) as { contextTag: string };
       expect(parsed.contextTag).toBe('test-scenario');
+    });
+
+    it('round-trips the H3 coverage index (h3Cells + h3Resolution) through the ZIP', async () => {
+      // Why: the map-centric browser reads h3Cells straight from session.json via
+      // loadSessionMetadataFromBlob during folder discovery. The reader must not
+      // strip the new fields on the export→read round-trip (Step 2 / D1).
+      await initOpfsStorage();
+      const { scenarioName, sessionName } = await createScenarioSession(
+        'test-scenario',
+        new Date('2026-01-26T10:00:00Z')
+      );
+
+      const h3Cells = ['8b1fa1da1d64fff', '8b1fa1da1d4afff', '8b1fa1da1c09fff'];
+      const metadata: SessionMetadata = {
+        version: 1,
+        startedAt: '2026-01-26T10:00:00.000Z',
+        endedAt: '2026-01-26T10:30:00.000Z',
+        contextTag: 'test-scenario',
+        actionCount: 3,
+        frameCount: 0,
+        userAgent: 'Test Browser',
+        h3Cells,
+        h3Resolution: 11,
+      };
+      await writeSessionMetadata(metadata);
+
+      const { blob: zipBlob } = await exportSessionAsZip(
+        scenarioName,
+        sessionName
+      );
+      const parsed = await loadSessionMetadataFromBlob(zipBlob);
+
+      expect(parsed?.h3Cells).toEqual(h3Cells);
+      expect(parsed?.h3Resolution).toBe(11);
+    });
+
+    it('reads legacy session.json without h3Cells (backward compatibility)', async () => {
+      // Why: recordings made before the coverage index existed have no h3Cells.
+      // The reader must still load them (h3Cells undefined) so the browser can
+      // fall back to in-memory backfill rather than crashing (Step 2 / D2).
+      await initOpfsStorage();
+      const { scenarioName, sessionName } = await createScenarioSession(
+        'legacy-scenario',
+        new Date('2026-01-26T10:00:00Z')
+      );
+
+      const legacyMetadata: SessionMetadata = {
+        version: 1,
+        startedAt: '2026-01-26T10:00:00.000Z',
+        endedAt: '2026-01-26T10:30:00.000Z',
+        contextTag: 'legacy-scenario',
+        actionCount: 0,
+        frameCount: 0,
+        userAgent: 'Test Browser',
+      };
+      await writeSessionMetadata(legacyMetadata);
+
+      const { blob: zipBlob } = await exportSessionAsZip(
+        scenarioName,
+        sessionName
+      );
+      const parsed = await loadSessionMetadataFromBlob(zipBlob);
+
+      expect(parsed).not.toBeNull();
+      expect(parsed?.contextTag).toBe('legacy-scenario');
+      expect(parsed?.h3Cells).toBeUndefined();
+      expect(parsed?.h3Resolution).toBeUndefined();
     });
 
     it('includes actions in actions/ folder', async () => {

@@ -90,6 +90,26 @@ export interface SessionMetadata {
 
   /** The page URL the recording was made from (origin + pathname only). Optional for backwards compat. */
   pageUrl?: string;
+
+  /**
+   * Per-tour H3 coverage index: the deduplicated H3 cells (at {@link h3Resolution})
+   * that the recording's GPS path crossed. Powers the map-centric recording
+   * browser — it shows roughly where each tour was recorded and which tours cross
+   * a given tile — WITHOUT unzipping the GPS action data (the cells are read
+   * straight from session.json during folder discovery). Computed from the raw GPS
+   * path at recording stop via `gpsPathToCoverageCells`.
+   *
+   * Optional for backwards compatibility: legacy recordings predate this field and
+   * are backfilled in memory from their GPS path on demand by the browser.
+   */
+  h3Cells?: string[];
+
+  /**
+   * The H3 resolution used to compute {@link h3Cells} (currently
+   * `H3_RESOLUTION` = 11). Stored so older readers stay self-describing if the
+   * capture resolution ever changes.
+   */
+  h3Resolution?: number;
 }
 
 /**
