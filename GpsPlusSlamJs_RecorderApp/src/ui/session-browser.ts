@@ -228,17 +228,30 @@ const METADATA_SCAN_CONCURRENCY = 4;
 /**
  * Defensively parse the `h3Cells` field read from a recording's `session.json`.
  *
- * Returns an array of valid-looking H3 id strings when the field is present and
- * well-formed (an array whose entries are all strings), or `undefined` when the
- * field is absent (legacy recording) or malformed. Non-string entries are
- * dropped rather than trusted — the metadata comes from a file on disk and must
- * not be assumed well-formed (defensive boundary per CLAUDE.md).
+ * Returns the array of H3 id strings when the field is present and well-formed
+ * (an array whose entries are *all* strings — including an empty array, which
+ * means "no GPS coverage"), or `undefined` when the field is absent (legacy
+ * recording) or malformed.
+ *
+ * Malformed is treated as all-or-nothing: if *any* entry is not a string the
+ * whole array is rejected (returns `undefined`), rather than silently keeping
+ * the valid strings. The metadata comes from a file on disk and must not be
+ * assumed well-formed (defensive boundary per CLAUDE.md); a partially-corrupt
+ * array is untrustworthy, and surfacing a truncated-but-valid-looking coverage
+ * is worse than falling back to deriving coverage from the authoritative GPS
+ * path. `undefined` is what triggers that legacy backfill downstream
+ * (`recording-index.ts`), so a non-empty array that filters to empty must NOT
+ * be returned as a valid empty `[]` (which means "no coverage", no backfill).
  */
 function parseH3Cells(value: unknown): readonly string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  return value.filter((c): c is string => typeof c === 'string');
+  const strings = value.filter((c): c is string => typeof c === 'string');
+  // All-or-nothing: a non-empty array that lost entries to filtering contained
+  // non-strings and is untrustworthy — reject it (undefined) so coverage is
+  // backfilled from the GPS path, rather than surfaced as a valid empty array.
+  return strings.length === value.length ? strings : undefined;
 }
 
 export async function discoverScenariosFromZipMetadata(
