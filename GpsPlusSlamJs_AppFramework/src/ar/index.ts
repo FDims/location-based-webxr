@@ -54,6 +54,29 @@ export {
   type DepthUnprojector,
 } from './depth-unprojection.js';
 
+// --- qr-pose ---
+export {
+  type Point2,
+  type CameraIntrinsics,
+  type Pose,
+  type OpenCvPnpResult,
+  type SolvePnpSquare,
+  type SolveQrPoseInput,
+  type QrPoseSolution,
+  type QuadValidation,
+  buildObjectPoints,
+  intrinsicsFromProjection,
+  projectViewPoint,
+  qrInCameraFromOpenCv,
+  composePose,
+  invertPose,
+  transformPoint,
+  signedQuadArea,
+  validateQuad,
+  reprojectionErrorPx,
+  solveQrPose,
+} from './qr-pose.js';
+
 // --- bresenham3d ---
 export { bresenham3d, type GridCell } from './bresenham3d.js';
 
