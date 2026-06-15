@@ -18,8 +18,12 @@ axis + cube. Geo-less: never casts a GPS vote.
 
 - Built on the framework's generic `createDetectionScheduler` (throttle +
   coalesce + N-lock). `minIntervalMs` defaults to 0 (debug demo), `requiredLockCount` 2.
-- A missing depth context, a corner with no depth read, a degenerate pose, or no
-  detection → treated as a miss (no record, no scene update).
+- A detection whose quad fails `validateQuad` (mirrored winding / degenerate),
+  a missing depth context, a corner with no depth read, a degenerate pose, or no
+  detection → treated as a miss (no record, no scene update). The `validateQuad`
+  guard mirrors the framework's `solveQrPose` so the rigid-fit path rejects the
+  same bad reads; it does NOT reorder corners (the detector's order carries the
+  reading orientation — see the on-device follow-up §2.3).
 - **Persistence (Note 3):** a miss does NOT clear the scene (objects keep their
   last pose). `qrPoseInCamera` is derived from the depth-fit world pose +
   `cameraPose`; `reprojectionErrorPx` is 0 (depth-fit has no PnP metric).

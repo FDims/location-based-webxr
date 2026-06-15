@@ -138,6 +138,25 @@ describe("createQrDemoController", () => {
     expect(controller.status).toBe("scanning");
   });
 
+  it("rejects a degenerate quad (matches solveQrPose's validateQuad guard)", async () => {
+    // Four collinear corners → zero area → degenerate → must not lock.
+    const degenerate: QrDetection = {
+      corners: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+        { x: 3, y: 0 },
+      ],
+      text: TEXT,
+    };
+    const { controller, detections } = setup({
+      detect: () => Promise.resolve<QrDetection | null>(degenerate),
+    });
+    await feed(controller, 4);
+    expect(detections).toHaveLength(0);
+    expect(controller.status).toBe("scanning");
+  });
+
   it("reset() clears accumulators and returns to idle", async () => {
     const { controller } = setup();
     await feed(controller, 4);

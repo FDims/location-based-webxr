@@ -19,6 +19,7 @@ import {
   estimateQrSizeFromDepth,
   composePose,
   invertPose,
+  validateQuad,
   type DetectionScheduler,
   type RgbaImage,
   type QrDetection,
@@ -152,6 +153,14 @@ export function createQrDemoController(
 
     const detection = await detect(image);
     if (!detection) return null;
+
+    // Guard the same failure modes the framework's `solveQrPose` rejects:
+    // a mirrored winding or a degenerate (tiny / collinear) quad. This keeps
+    // the demo's rigid-fit path consistent with the PnP path and prevents an
+    // inside-out basis from a bad read. (It does NOT reorder corners — the
+    // detector's order carries the QR's reading orientation; see the
+    // on-device follow-up §2.3.)
+    if (!validateQuad(detection.corners).ok) return null;
 
     const ctx = getDepthContext();
     if (!ctx) return null; // no depth → cannot size/place (auto-size gate)
