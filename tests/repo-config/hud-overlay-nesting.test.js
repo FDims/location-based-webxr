@@ -26,9 +26,9 @@
 // `getElementById` — that linkage is asserted indirectly by each app's own
 // unit/e2e suite.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -141,4 +141,113 @@ describe('DOM-overlay / HUD stacking convention', () => {
       }
     });
   }
+});
+
+/**
+ * Discovered AR-app `index.html` paths (repo-root-relative, forward-slash) that
+ * appear in `registered` paths subtracted out — i.e. AR apps with no overlay
+ * contract. Pure so it's unit-testable with fixtures.
+ *
+ * @param {readonly string[]} discovered
+ * @param {readonly string[]} registered
+ * @returns {string[]}
+ */
+function appsMissingContracts(discovered, registered) {
+  const reg = new Set(registered);
+  return discovered.filter((p) => !reg.has(p));
+}
+
+/**
+ * True if any `src/**` source file in `appDir` imports the framework
+ * (`gps-plus-slam-app-framework`). This is the "is a consuming AR app" signal:
+ * every app boots its WebXR/dom-overlay session through the framework, but they
+ * do so via different entry points (`initAR` directly, or the `enable-gps-ar`
+ * controller), so matching the framework import is more robust than matching a
+ * single function name. The framework itself never imports its own package
+ * name, so this also excludes it.
+ */
+function srcImportsFramework(appDir) {
+  const srcDir = join(appDir, 'src');
+  if (!existsSync(srcDir)) return false;
+  return readdirSync(srcDir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile() && /\.(ts|tsx|js|jsx|mts|cts)$/.test(e.name))
+    .some((e) =>
+      readFileSync(join(e.parentPath, e.name), 'utf8').includes(
+        'gps-plus-slam-app-framework',
+      ),
+    );
+}
+
+/**
+ * Discover every AR app in the repo: a top-level workspace package (has both
+ * `package.json` and `index.html`) whose source consumes the framework (so it
+ * opens a WebXR dom-overlay session). Excludes the framework (no `index.html`,
+ * and it never self-imports) and the static landing page (no `package.json` /
+ * `src`). Returns repo-root-relative forward-slash `index.html` paths, matching
+ * `APP_OVERLAY_CONTRACTS[].htmlPath`.
+ *
+ * @param {string} root repo root
+ * @returns {string[]}
+ */
+function discoverArAppHtmlPaths(root) {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter(
+      (name) =>
+        existsSync(join(root, name, 'index.html')) &&
+        existsSync(join(root, name, 'package.json')) &&
+        srcImportsFramework(join(root, name)),
+    )
+    .map((name) => `${name}/index.html`)
+    .sort();
+}
+
+// --- Coverage guard ---------------------------------------------------------
+//
+// APP_OVERLAY_CONTRACTS above is hand-maintained. The failure mode is "someone
+// adds a new AR app and forgets to register it" — the new app then ships with
+// NO overlay-nesting protection (exactly what happened when the QrTrackingDemo
+// was first added). This guard closes that gap: it discovers every AR app in
+// the repo and asserts each one has a contract, so a missing registration turns
+// into a red test instead of an unprotected app. We keep the explicit registry
+// (the per-app container/overlay ids are clearer written out than auto-derived);
+// the guard only enforces that the registry is COMPLETE.
+
+describe('overlay-contract coverage guard', () => {
+  // The pure diff that powers the guard: which discovered apps lack a contract.
+  describe('appsMissingContracts', () => {
+    it('flags a discovered AR app that has no contract', () => {
+      expect(
+        appsMissingContracts(
+          ['a/index.html', 'b/index.html'],
+          ['a/index.html'],
+        ),
+      ).toEqual(['b/index.html']);
+    });
+
+    it('is empty when every discovered app is registered', () => {
+      expect(
+        appsMissingContracts(
+          ['a/index.html'],
+          ['a/index.html', 'x/index.html'],
+        ),
+      ).toEqual([]);
+    });
+  });
+
+  it('discovers the known AR apps (so the guard is not vacuous)', () => {
+    const discovered = discoverArAppHtmlPaths(repoRoot);
+    expect(discovered).toContain('GpsPlusSlamJs_QrTrackingDemo/index.html');
+    expect(discovered).toContain('GpsPlusSlamJs_RecorderApp/index.html');
+    expect(discovered.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('every AR app (workspace pkg + index.html + framework import) has an overlay contract', () => {
+    const discovered = discoverArAppHtmlPaths(repoRoot);
+    const registered = APP_OVERLAY_CONTRACTS.map((c) => c.htmlPath);
+    // A non-empty result names the unregistered app(s) — add them to
+    // APP_OVERLAY_CONTRACTS so they inherit the nesting protection.
+    expect(appsMissingContracts(discovered, registered)).toEqual([]);
+  });
 });
