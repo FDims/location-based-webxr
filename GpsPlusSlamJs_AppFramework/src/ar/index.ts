@@ -77,6 +77,17 @@ export {
   solveQrPose,
 } from './qr-pose.js';
 
+// --- qr-gps-vote ---
+export {
+  METERS_PER_DEG_LAT,
+  type QrGeoPose,
+  type QrGpsVoteInput,
+  type Enu,
+  localPlaneToEnu,
+  offsetGeo,
+  buildQrGpsVotes,
+} from './qr-gps-vote.js';
+
 // --- qr-occupancy-check ---
 export {
   type OccupancySurface,
