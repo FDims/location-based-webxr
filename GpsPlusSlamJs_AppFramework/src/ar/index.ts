@@ -116,12 +116,15 @@ export {
 // --- opencv-pnp ---
 export { type CvMat, type CvLike, OpenCvPnpSquare } from './opencv-pnp.js';
 
-// --- qr-detection-scheduler ---
+// --- detection-scheduler (generic; QR aliases kept for back-compat) ---
 export {
+  type DetectionSchedulerConfig,
+  type DetectionScheduler,
   type QrDetectionSchedulerConfig,
   type QrDetectionScheduler,
+  createDetectionScheduler,
   createQrDetectionScheduler,
-} from './qr-detection-scheduler.js';
+} from './detection-scheduler.js';
 
 // --- qr-gps-vote ---
 export {

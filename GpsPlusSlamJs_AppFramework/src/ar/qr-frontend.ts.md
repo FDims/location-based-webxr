@@ -48,4 +48,4 @@ Native `BarcodeDetector` is preferred; OpenCV's `QRCodeDetector` is the fallback
 
 - Emits corners consumed by [qr-pose.ts.md](qr-pose.ts.md) (`solveQrPose`).
 - The OpenCV PnP backend is [opencv-pnp.ts.md](opencv-pnp.ts.md).
-- Driven at a throttled cadence by [qr-detection-scheduler.ts.md](qr-detection-scheduler.ts.md).
+- Driven at a throttled cadence by [detection-scheduler.ts.md](detection-scheduler.ts.md).

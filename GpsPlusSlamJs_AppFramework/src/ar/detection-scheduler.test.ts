@@ -1,18 +1,20 @@
 /**
- * QR detection scheduler — unit tests.
+ * Detection scheduler — unit tests.
  *
  * Why this test matters: these pin the three runtime behaviors that keep the
  * heavy detection off the render thread and reject one-off bad reads — throttle
  * (≤ one start per interval), coalesce (no overlapping detections), and the
  * N-consecutive-lock gate with miss/error reset. The clock and the async detect
- * are injected so the timing is deterministic.
+ * are injected so the timing is deterministic. The final block proves the
+ * scheduler is generic over the result type (Note 1), not QR-coupled.
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import {
+  createDetectionScheduler,
   createQrDetectionScheduler,
   type QrDetectionScheduler,
-} from './qr-detection-scheduler';
+} from './detection-scheduler';
 import type { QrPoseSolution } from './qr-pose';
 import type { RgbaImage } from './qr-frontend';
 
@@ -162,5 +164,37 @@ describe('createQrDetectionScheduler', () => {
     expect(s.consecutiveLocks).toBe(0);
     expect(onError).toHaveBeenCalledTimes(1);
     expect(s.inFlight).toBe(false);
+  });
+});
+
+describe('createDetectionScheduler<T> generality (Note 1)', () => {
+  it('works with a non-QR result type and a custom frame type', async () => {
+    // A YOLO-shaped result + a custom frame — no QR types involved.
+    interface Box {
+      label: string;
+      confidence: number;
+    }
+    let t = 0;
+    const locked: Box[] = [];
+    const detect = vi.fn((_frame: { id: number }) =>
+      Promise.resolve<Box | null>({ label: 'chair', confidence: 0.9 })
+    );
+    const s = createDetectionScheduler<Box, { id: number }>({
+      detect,
+      minIntervalMs: 0,
+      requiredLockCount: 2,
+      now: () => t++,
+      onLocked: (box) => locked.push(box),
+    });
+
+    const flush = async () => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    };
+    s.offerFrame({ id: 1 });
+    await flush();
+    s.offerFrame({ id: 2 });
+    await flush();
+
+    expect(locked).toEqual([{ label: 'chair', confidence: 0.9 }]);
   });
 });

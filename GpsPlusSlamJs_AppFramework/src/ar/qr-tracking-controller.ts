@@ -4,7 +4,7 @@
  * The orchestration "brain" of the demonstrator, reusable across apps: it wires
  * a {@link QrFrontEnd} → level-file fetch (§8) → pose solve (§1/§5) → the
  * synthetic GPS-vote bridge (§6), driven at a throttled, coalesced cadence by
- * {@link createQrDetectionScheduler}, and exposes a small async-status state
+ * {@link createDetectionScheduler}, and exposes a small async-status state
  * machine so the UI can satisfy the "feedback for async actions" rule:
  *
  *   idle → scanning → loading-level → tracking, with `error` on any failure.
@@ -25,9 +25,9 @@ import type { QrFrontEnd, RgbaImage } from './qr-frontend.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
 import {
-  createQrDetectionScheduler,
-  type QrDetectionScheduler,
-} from './qr-detection-scheduler.js';
+  createDetectionScheduler,
+  type DetectionScheduler,
+} from './detection-scheduler.js';
 
 export type QrTrackingStatus =
   | 'idle'
@@ -97,7 +97,7 @@ export interface QrTrackingControllerConfig {
   onLocked?: (solution: QrPoseSolution, level: QrLevel) => void;
   /** Surfaced failures (level fetch, detect throw). */
   onError?: (err: unknown) => void;
-  /** Scheduler tuning (see `qr-detection-scheduler.ts`). */
+  /** Scheduler tuning (see `detection-scheduler.ts`). */
   minIntervalMs?: number;
   requiredLockCount?: number;
   now?: () => number;
@@ -208,51 +208,52 @@ export function createQrTrackingController(
     return solution;
   }
 
-  const scheduler: QrDetectionScheduler = createQrDetectionScheduler({
-    detect,
-    minIntervalMs,
-    requiredLockCount,
-    now,
-    onLocked: (solution) => {
-      const current = active;
-      if (!current) return;
-      const { level, text, sizeM } = current;
+  const scheduler: DetectionScheduler =
+    createDetectionScheduler<QrPoseSolution>({
+      detect,
+      minIntervalMs,
+      requiredLockCount,
+      now,
+      onLocked: (solution) => {
+        const current = active;
+        if (!current) return;
+        const { level, text, sizeM } = current;
 
-      // qrDetected emission is UNCONDITIONAL (Note 3): overlay/trigger/anchor
-      // consumers subscribe regardless of whether this QR carries geo.
-      onDetection?.({
-        text,
-        qrPoseWorld: solution.qrPoseWorld,
-        qrPoseInCamera: solution.qrPoseInCamera,
-        reprojectionErrorPx: solution.reprojectionErrorPx,
-        timestamp: timestampNow(),
-      });
-
-      // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
-      // trigger, AR-root-anchored spawn) emit the detection but cast no vote.
-      if (level.qr.geo) {
-        const votes = buildQrGpsVotes({
+        // qrDetected emission is UNCONDITIONAL (Note 3): overlay/trigger/anchor
+        // consumers subscribe regardless of whether this QR carries geo.
+        onDetection?.({
+          text,
           qrPoseWorld: solution.qrPoseWorld,
-          sizeM,
-          qrGeo: level.qr.geo,
-          syntheticAccuracyM,
+          qrPoseInCamera: solution.qrPoseInCamera,
+          reprojectionErrorPx: solution.reprojectionErrorPx,
+          timestamp: timestampNow(),
         });
-        dispatchVotes(votes);
-      }
 
-      setStatus('tracking');
-      onLocked?.(solution, level);
-    },
-    onMiss: () => {
-      // Back to scanning unless an error is showing.
-      if (status === 'tracking') setStatus('scanning');
-    },
-    onError: (err) => {
-      active = null;
-      setStatus('error');
-      onError?.(err);
-    },
-  });
+        // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
+        // trigger, AR-root-anchored spawn) emit the detection but cast no vote.
+        if (level.qr.geo) {
+          const votes = buildQrGpsVotes({
+            qrPoseWorld: solution.qrPoseWorld,
+            sizeM,
+            qrGeo: level.qr.geo,
+            syntheticAccuracyM,
+          });
+          dispatchVotes(votes);
+        }
+
+        setStatus('tracking');
+        onLocked?.(solution, level);
+      },
+      onMiss: () => {
+        // Back to scanning unless an error is showing.
+        if (status === 'tracking') setStatus('scanning');
+      },
+      onError: (err) => {
+        active = null;
+        setStatus('error');
+        onError?.(err);
+      },
+    });
 
   return {
     offerFrame(image: RgbaImage): void {

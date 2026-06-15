@@ -41,4 +41,4 @@
 
 - Implements the `SolvePnpSquare` interface from [qr-pose.ts.md](qr-pose.ts.md).
 - Hosted alongside the detection front-ends in [qr-frontend.ts.md](qr-frontend.ts.md);
-  driven by [qr-detection-scheduler.ts.md](qr-detection-scheduler.ts.md).
+  driven by [detection-scheduler.ts.md](detection-scheduler.ts.md).

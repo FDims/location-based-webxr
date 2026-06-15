@@ -60,6 +60,6 @@ timestamp }`, emitted via `onDetection` on every lock. Structural (no import
 
 - Composes [qr-frontend.ts.md](qr-frontend.ts.md), [qr-pose.ts.md](qr-pose.ts.md),
   [qr-level.ts.md](qr-level.ts.md), [qr-gps-vote.ts.md](qr-gps-vote.ts.md),
-  [qr-detection-scheduler.ts.md](qr-detection-scheduler.ts.md), and optionally
+  [detection-scheduler.ts.md](detection-scheduler.ts.md), and optionally
   [qr-occupancy-check.ts.md](qr-occupancy-check.ts.md). Consumed by the Recorder
   demonstrator (Phase 6c).
