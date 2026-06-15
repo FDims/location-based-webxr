@@ -91,6 +91,7 @@ export {
 export {
   type QrTrackingStatus,
   type QrSolvePoseInput,
+  type QrDetectionEvent,
   type QrTrackingControllerConfig,
   type QrTrackingController,
   createQrTrackingController,

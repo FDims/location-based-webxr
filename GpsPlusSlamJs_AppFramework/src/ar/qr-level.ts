@@ -16,15 +16,26 @@
 
 import type { QrGeoPose } from './qr-gps-vote.js';
 
-/** A validated QR level file. */
+/**
+ * A validated QR level file.
+ *
+ * Both `physicalSizeM` and `geo` are OPTIONAL (Note 3 of the follow-up plan:
+ * flat optionals + a capability model, not a discriminated union). Their
+ * PRESENCE gates which capabilities activate, and the use-cases are combinable:
+ * - `geo` present → the high-weight GPS vote (`buildQrGpsVotes`) runs.
+ * - `physicalSizeM` present → size is authored; otherwise it must be MEASURED
+ *   first (Note 4 depth path) before size-dependent features (PnP solve, vote)
+ *   unlock. See the size lifecycle in `state/qr-detected-slice.ts`.
+ * - neither → a debug/observe or trigger-only level (still keyed by payload).
+ */
 export interface QrLevel {
   /** Schema version for forward-compat. */
   version: number;
   qr: {
-    /** Printed physical side length, meters. */
-    physicalSizeM: number;
-    /** Absolute geo pose of the QR center + heading. */
-    geo: QrGeoPose;
+    /** Printed physical side length, meters. Optional — may be measured instead. */
+    physicalSizeM?: number;
+    /** Absolute geo pose of the QR center + heading. Optional — geo-less levels skip the vote. */
+    geo?: QrGeoPose;
   };
   /** AR content to instantiate (format deferred — plan §12). Opaque here. */
   content?: unknown;
@@ -61,45 +72,61 @@ export function parseQrLevel(data: unknown): QrLevel {
     throw new QrLevelValidationError('missing/invalid "qr"');
   }
   const { qr } = data;
-  if (!isFiniteNumber(qr.physicalSizeM) || qr.physicalSizeM <= 0) {
-    throw new QrLevelValidationError(
-      '"qr.physicalSizeM" must be a positive number'
-    );
+
+  // `physicalSizeM` is optional; when present it MUST be a positive number
+  // (a `0`/negative authored size is a bug, not a "measure it instead" signal).
+  let physicalSizeM: number | undefined;
+  if (qr.physicalSizeM !== undefined) {
+    if (!isFiniteNumber(qr.physicalSizeM) || qr.physicalSizeM <= 0) {
+      throw new QrLevelValidationError(
+        '"qr.physicalSizeM" must be a positive number when present'
+      );
+    }
+    physicalSizeM = qr.physicalSizeM;
   }
-  if (!isRecord(qr.geo)) {
-    throw new QrLevelValidationError('missing/invalid "qr.geo"');
-  }
-  const { geo } = qr;
-  if (!isFiniteNumber(geo.lat) || geo.lat < -90 || geo.lat > 90) {
-    throw new QrLevelValidationError(
-      '"qr.geo.lat" must be a number in [-90, 90]'
-    );
-  }
-  if (!isFiniteNumber(geo.lon) || geo.lon < -180 || geo.lon > 180) {
-    throw new QrLevelValidationError(
-      '"qr.geo.lon" must be a number in [-180, 180]'
-    );
-  }
-  if (!isFiniteNumber(geo.alt)) {
-    throw new QrLevelValidationError('"qr.geo.alt" must be a finite number');
-  }
-  if (!isFiniteNumber(geo.headingDeg)) {
-    throw new QrLevelValidationError(
-      '"qr.geo.headingDeg" must be a finite number'
-    );
+
+  // `geo` is optional; when present every field is validated (a partial geo is
+  // a bug — it would silently place the vote wrong).
+  let geo: QrGeoPose | undefined;
+  if (qr.geo !== undefined) {
+    if (!isRecord(qr.geo)) {
+      throw new QrLevelValidationError(
+        '"qr.geo" must be an object when present'
+      );
+    }
+    const g = qr.geo;
+    if (!isFiniteNumber(g.lat) || g.lat < -90 || g.lat > 90) {
+      throw new QrLevelValidationError(
+        '"qr.geo.lat" must be a number in [-90, 90]'
+      );
+    }
+    if (!isFiniteNumber(g.lon) || g.lon < -180 || g.lon > 180) {
+      throw new QrLevelValidationError(
+        '"qr.geo.lon" must be a number in [-180, 180]'
+      );
+    }
+    if (!isFiniteNumber(g.alt)) {
+      throw new QrLevelValidationError('"qr.geo.alt" must be a finite number');
+    }
+    if (!isFiniteNumber(g.headingDeg)) {
+      throw new QrLevelValidationError(
+        '"qr.geo.headingDeg" must be a finite number'
+      );
+    }
+    geo = {
+      lat: g.lat,
+      lon: g.lon,
+      alt: g.alt,
+      // Normalize heading into [0, 360).
+      headingDeg: ((g.headingDeg % 360) + 360) % 360,
+    };
   }
 
   return {
     version: data.version,
     qr: {
-      physicalSizeM: qr.physicalSizeM,
-      geo: {
-        lat: geo.lat,
-        lon: geo.lon,
-        alt: geo.alt,
-        // Normalize heading into [0, 360).
-        headingDeg: ((geo.headingDeg % 360) + 360) % 360,
-      },
+      ...(physicalSizeM !== undefined ? { physicalSizeM } : {}),
+      ...(geo !== undefined ? { geo } : {}),
     },
     content: 'content' in data ? data.content : undefined,
   };

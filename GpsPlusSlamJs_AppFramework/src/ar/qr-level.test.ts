@@ -43,13 +43,13 @@ describe('parseQrLevel', () => {
       parseQrLevel({
         ...valid,
         qr: { ...valid.qr, geo: { ...valid.qr.geo, headingDeg: -90 } },
-      }).qr.geo.headingDeg
+      }).qr.geo?.headingDeg
     ).toBe(270);
     expect(
       parseQrLevel({
         ...valid,
         qr: { ...valid.qr, geo: { ...valid.qr.geo, headingDeg: 450 } },
-      }).qr.geo.headingDeg
+      }).qr.geo?.headingDeg
     ).toBe(90);
   });
 
@@ -69,6 +69,39 @@ describe('parseQrLevel', () => {
     expect(() =>
       parseQrLevel({ ...valid, qr: { ...valid.qr, physicalSizeM: -1 } })
     ).toThrow(/physicalSizeM/);
+  });
+
+  it('accepts a geo-less level (no vote) — geo omitted', () => {
+    const level = parseQrLevel({ version: 1, qr: { physicalSizeM: 0.2 } });
+    expect(level.qr.geo).toBeUndefined();
+    expect(level.qr.physicalSizeM).toBe(0.2);
+  });
+
+  it('accepts a size-less level (size measured later) — physicalSizeM omitted', () => {
+    const level = parseQrLevel({
+      version: 1,
+      qr: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 } },
+    });
+    expect(level.qr.physicalSizeM).toBeUndefined();
+    expect(level.qr.geo?.headingDeg).toBe(30);
+  });
+
+  it('accepts a bare level with neither size nor geo (trigger/observe-only)', () => {
+    const level = parseQrLevel({ version: 1, qr: {} });
+    expect(level.qr.physicalSizeM).toBeUndefined();
+    expect(level.qr.geo).toBeUndefined();
+  });
+
+  it('still rejects a present-but-invalid size or partial geo', () => {
+    expect(() =>
+      parseQrLevel({ version: 1, qr: { physicalSizeM: 0 } })
+    ).toThrow(/physicalSizeM/);
+    expect(() =>
+      parseQrLevel({
+        version: 1,
+        qr: { geo: { lat: 47.5, lon: 8.7, alt: 400 } },
+      })
+    ).toThrow(/headingDeg/);
   });
 
   it('rejects out-of-range geo coordinates', () => {

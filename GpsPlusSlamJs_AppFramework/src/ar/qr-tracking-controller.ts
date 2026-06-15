@@ -44,6 +44,22 @@ export interface QrSolvePoseInput {
   cameraPose: Pose;
 }
 
+/**
+ * Emitted on every lock, INDEPENDENTLY of the GPS vote (Note 3). The app maps
+ * this onto `recordQrDetection` of the `qrDetected` slice. Kept structural (no
+ * import of the state slice) so the `ar` layer never depends on `state` — that
+ * would close a cycle (`state/qr-detected-slice` already imports `ar/qr-pose`).
+ */
+export interface QrDetectionEvent {
+  /** Decoded payload (text/URL) — the marker key. */
+  text: string;
+  qrPoseWorld: Pose;
+  qrPoseInCamera: Pose;
+  reprojectionErrorPx: number;
+  /** Epoch ms (or the injected clock) when the lock fired. */
+  timestamp: number;
+}
+
 export interface QrTrackingControllerConfig {
   /** Detect + decode (BarcodeDetector / OpenCV front-end). */
   frontEnd: QrFrontEnd;
@@ -53,6 +69,20 @@ export interface QrTrackingControllerConfig {
   fetchLevel: (url: string) => Promise<QrLevel>;
   /** Dispatch the synthetic GPS votes (production: `recordGpsEvent` per payload). */
   dispatchVotes: (votes: RecordGpsEventPayload[]) => void;
+  /**
+   * Emitted on every lock, independent of the vote (Note 3). Apps wire this to
+   * `dispatch(recordQrDetection(event))`. The vote is conditional on `geo`;
+   * this emission is not.
+   */
+  onDetection?: (event: QrDetectionEvent) => void;
+  /**
+   * Resolve the physical size (m) when the level omits `physicalSizeM` — e.g. a
+   * depth-measured running median (Note 4). Returns `null` while size is still
+   * unknown, which BLOCKS the pose solve (and therefore the vote + detection
+   * emission) until a size is authored or measured-and-locked (the Note 3 size
+   * lifecycle gate). Ignored when the level already carries `physicalSizeM`.
+   */
+  resolveSizeM?: (text: string, level: QrLevel) => number | null;
   /** Current camera pose in raw-WebXR/odom space, or `null` if unavailable. */
   getCameraPose: () => Pose | null;
   /** Intrinsics for the exact frame buffer, or `null` if unavailable. */
@@ -90,6 +120,8 @@ export function createQrTrackingController(
     solvePose,
     fetchLevel,
     dispatchVotes,
+    onDetection,
+    resolveSizeM,
     getCameraPose,
     getIntrinsics,
     syntheticAccuracyM,
@@ -102,10 +134,13 @@ export function createQrTrackingController(
     now,
   } = config;
 
+  const timestampNow = now ?? (() => Date.now());
+
   let status: QrTrackingStatus = 'idle';
   const levelCache = new Map<string, QrLevel>();
-  // The level + solution from the in-flight detection, read by onLocked.
-  let activeLevel: QrLevel | null = null;
+  // The level + payload + resolved size from the in-flight detection, read by
+  // onLocked to emit the detection and (conditionally) build the vote.
+  let active: { level: QrLevel; text: string; sizeM: number } | null = null;
 
   function setStatus(next: QrTrackingStatus): void {
     if (status === next) return;
@@ -127,34 +162,49 @@ export function createQrTrackingController(
 
     const detection = await frontEnd.detect(image);
     if (!detection) {
-      activeLevel = null;
+      active = null;
       return null;
     }
 
     const level = await ensureLevel(detection.text);
+
+    // Size lifecycle gate (Note 3): authored size wins; else ask the resolver
+    // (e.g. a depth-measured median). A `null`/absent size blocks the solve —
+    // we cannot place the QR in 3D without it — so we stay scanning.
+    const sizeM =
+      level.qr.physicalSizeM ?? resolveSizeM?.(detection.text, level) ?? null;
+    if (sizeM === null) {
+      active = null;
+      // We fetched the level but can't place the QR without a size; fall back
+      // to scanning rather than sticking on 'loading-level'. Size-dependent
+      // features stay blocked until a size is authored/measured (Note 3).
+      if (status === 'loading-level') setStatus('scanning');
+      return null;
+    }
+
     const cameraPose = getCameraPose();
     const intrinsics = getIntrinsics(image);
     if (!cameraPose || !intrinsics) {
-      activeLevel = null;
+      active = null;
       return null;
     }
 
     const solution = solvePose({
       imagePoints: detection.corners,
-      sizeM: level.qr.physicalSizeM,
+      sizeM,
       intrinsics,
       cameraPose,
     });
     if (!solution) {
-      activeLevel = null;
+      active = null;
       return null;
     }
     if (isPlausible && !isPlausible(solution, cameraPose)) {
-      activeLevel = null;
+      active = null;
       return null;
     }
 
-    activeLevel = level;
+    active = { level, text: detection.text, sizeM };
     return solution;
   }
 
@@ -164,15 +214,32 @@ export function createQrTrackingController(
     requiredLockCount,
     now,
     onLocked: (solution) => {
-      const level = activeLevel;
-      if (!level) return;
-      const votes = buildQrGpsVotes({
+      const current = active;
+      if (!current) return;
+      const { level, text, sizeM } = current;
+
+      // qrDetected emission is UNCONDITIONAL (Note 3): overlay/trigger/anchor
+      // consumers subscribe regardless of whether this QR carries geo.
+      onDetection?.({
+        text,
         qrPoseWorld: solution.qrPoseWorld,
-        sizeM: level.qr.physicalSizeM,
-        qrGeo: level.qr.geo,
-        syntheticAccuracyM,
+        qrPoseInCamera: solution.qrPoseInCamera,
+        reprojectionErrorPx: solution.reprojectionErrorPx,
+        timestamp: timestampNow(),
       });
-      dispatchVotes(votes);
+
+      // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
+      // trigger, AR-root-anchored spawn) emit the detection but cast no vote.
+      if (level.qr.geo) {
+        const votes = buildQrGpsVotes({
+          qrPoseWorld: solution.qrPoseWorld,
+          sizeM,
+          qrGeo: level.qr.geo,
+          syntheticAccuracyM,
+        });
+        dispatchVotes(votes);
+      }
+
       setStatus('tracking');
       onLocked?.(solution, level);
     },
@@ -181,7 +248,7 @@ export function createQrTrackingController(
       if (status === 'tracking') setStatus('scanning');
     },
     onError: (err) => {
-      activeLevel = null;
+      active = null;
       setStatus('error');
       onError?.(err);
     },
@@ -196,7 +263,7 @@ export function createQrTrackingController(
     },
     reset(): void {
       levelCache.clear();
-      activeLevel = null;
+      active = null;
       setStatus('idle');
     },
   };

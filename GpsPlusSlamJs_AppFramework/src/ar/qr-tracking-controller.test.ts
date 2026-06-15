@@ -12,6 +12,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   createQrTrackingController,
   type QrTrackingStatus,
+  type QrSolvePoseInput,
 } from './qr-tracking-controller';
 import type { QrPoseSolution } from './qr-pose';
 import type { QrLevel } from './qr-level';
@@ -136,6 +137,84 @@ describe('createQrTrackingController', () => {
     await tick(controller);
     expect(dispatched).toHaveLength(0);
     expect(controller.status).not.toBe('tracking');
+  });
+
+  it('emits a qrDetected event on every lock (independent of the vote)', async () => {
+    const events: unknown[] = [];
+    const { controller } = setup({ onDetection: (e) => events.push(e) });
+    await tick(controller);
+    await tick(controller); // lock
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      text: 'https://lvl/1',
+      qrPoseWorld: solution.qrPoseWorld,
+      qrPoseInCamera: solution.qrPoseInCamera,
+      reprojectionErrorPx: 0.5,
+    });
+    expect((events[0] as { timestamp: number }).timestamp).toBeTypeOf('number');
+  });
+
+  it('skips the vote for a geo-less level but still emits the detection', async () => {
+    const events: unknown[] = [];
+    const { controller, dispatched } = setup({
+      fetchLevel: vi.fn(() =>
+        Promise.resolve({ version: 1, qr: { physicalSizeM: 0.2 } })
+      ),
+      onDetection: (e) => events.push(e),
+    });
+    await tick(controller);
+    await tick(controller); // lock
+    expect(controller.status).toBe('tracking');
+    expect(dispatched).toHaveLength(0); // no geo → no vote
+    expect(events).toHaveLength(1); // detection still emitted
+  });
+
+  it('blocks the solve when size is unknown and no resolver supplies it', async () => {
+    const solvePose = vi.fn(() => solution);
+    const { controller, dispatched } = setup({
+      fetchLevel: vi.fn(() =>
+        Promise.resolve({
+          version: 1,
+          qr: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 } },
+        })
+      ),
+      solvePose,
+    });
+    await tick(controller);
+    await tick(controller);
+    expect(solvePose).not.toHaveBeenCalled(); // size gate blocks the solve
+    expect(controller.status).toBe('scanning');
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('uses a resolved (e.g. depth-measured) size when the level omits it', async () => {
+    const solvePose = vi.fn((_input: QrSolvePoseInput) => solution);
+    const dispatched: unknown[] = [];
+    const controller = createQrTrackingController({
+      frontEnd: {
+        kind: 'barcode-detector',
+        detect: () => Promise.resolve<QrDetection | null>(detection),
+      },
+      solvePose,
+      fetchLevel: vi.fn(() =>
+        Promise.resolve({
+          version: 1,
+          qr: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 } },
+        })
+      ),
+      dispatchVotes: (v) => dispatched.push(...v),
+      resolveSizeM: () => 0.18,
+      getCameraPose: () => cameraPose,
+      getIntrinsics: () => intrinsics,
+      syntheticAccuracyM: 0.05,
+      requiredLockCount: 2,
+      minIntervalMs: 0,
+    });
+    await tick(controller);
+    await tick(controller);
+    expect(solvePose).toHaveBeenCalled();
+    expect(solvePose.mock.calls[0]?.[0]).toMatchObject({ sizeM: 0.18 });
+    expect(dispatched).toHaveLength(4); // geo present + size resolved → vote
   });
 
   it('reset() clears the cache and returns to idle', async () => {

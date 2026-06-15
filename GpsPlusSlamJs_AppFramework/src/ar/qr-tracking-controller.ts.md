@@ -13,8 +13,14 @@ coalesced cadence and exposes an async-status state machine for the UI.
 - `QrTrackingControllerConfig` — injected `frontEnd`, `solvePose` (wraps
   `solveQrPose`), `fetchLevel`, `dispatchVotes`, `getCameraPose`,
   `getIntrinsics`, `syntheticAccuracyM`, optional `isPlausible` gate,
+  optional `onDetection` (qrDetected emission) and `resolveSizeM` (size when
+  the level omits it — e.g. a depth-measured median),
   `onStatus`/`onLocked`/`onError`, and scheduler tuning
   (`minIntervalMs`, `requiredLockCount`, `now`).
+- `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera, reprojectionErrorPx,
+timestamp }`, emitted via `onDetection` on every lock. Structural (no import
+  of the `qrDetected` state slice) so `ar` never depends on `state`; the app
+  maps it onto `recordQrDetection`.
 
 ## Invariants & assumptions
 
@@ -24,9 +30,17 @@ coalesced cadence and exposes an async-status state machine for the UI.
   dispatched; `error` on a level fetch / detect rejection; a miss while
   `tracking` drops back to `scanning`. `onStatus` fires only on change.
 - **One detection in flight** (the scheduler coalesces), so the closure
-  `activeLevel` set during `detect` is the correct level read by `onLocked`.
-- **Vote dispatch** uses `buildQrGpsVotes` (4-corner multi-correspondence) with
-  the level's `physicalSizeM` + `geo` and the configured synthetic accuracy.
+  `active` (`{ level, text, sizeM }`) set during `detect` is the correct context
+  read by `onLocked`.
+- **Size lifecycle gate (Note 3):** the solve needs a size. Order: the level's
+  authored `physicalSizeM`, else `resolveSizeM(text, level)` (e.g. a measured
+  median). A `null`/absent size BLOCKS the solve (stays `scanning`) — no pose,
+  no detection, no vote — until a size is authored or measured-and-locked.
+- **qrDetected emission is unconditional; the vote is conditional on `geo`**
+  (Note 3). Every lock fires `onDetection`; `buildQrGpsVotes` (4-corner
+  multi-correspondence) runs **only** when `level.qr.geo` is present, so geo-less
+  levels (debug/observe, trigger, AR-root-anchored spawn) emit the detection but
+  cast no vote.
 - **Fully injected** (front-end, solve, fetch, dispatch, camera/intrinsics
   accessors, clock) → no WASM, device, or store needed to test. Production wires
   `solvePose` to `solveQrPose({...input, solver: OpenCvPnpSquare})`,
@@ -38,7 +52,9 @@ coalesced cadence and exposes an async-status state machine for the UI.
 - `qr-tracking-controller.test.ts` — happy-path status progression + 4 votes
   dispatched, level cached once per URL, error path on fetch failure, stays
   scanning on no-detection, plausibility gate blocks the lock, `reset()` clears
-  cache + returns to idle.
+  cache + returns to idle; qrDetected emitted on every lock, geo-less level
+  emits detection but no vote, size gate blocks the solve when unknown, and a
+  `resolveSizeM`-supplied size unblocks it.
 
 ## Related
 
