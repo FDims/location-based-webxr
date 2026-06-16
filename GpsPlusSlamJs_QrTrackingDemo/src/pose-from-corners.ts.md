@@ -1,8 +1,10 @@
 # pose-from-corners.ts
 
-**Purpose:** Fit a rigid 6-DoF pose to the 4 depth-unprojected QR corners — the
-demo's pose source (Note 4 "cleanest — a rigid fit to the depth-unprojected 3D
-corners, needs no size up front"). No `solvePnP`, no OpenCV.
+**Purpose:** Fit a rigid 6-DoF pose to the 4 depth-unprojected QR corners. No
+`solvePnP`, no OpenCV. **Off the live path since the demo switched to full PnP**
+(`solveQrPose` + `PlanarPnpSquare`); kept as a tested utility and the building
+block for a possible depth-position + PnP-rotation hybrid fallback (see the
+planar-PnP plan's "Consequences / risks").
 
 ## Public API
 

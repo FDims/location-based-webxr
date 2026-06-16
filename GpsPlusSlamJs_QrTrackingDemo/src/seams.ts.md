@@ -20,7 +20,9 @@ plan defers the Recorder's live camera wiring).
   `import.meta.env.DEV && !import.meta.env.VITEST` — Vite statically strips it
   from production; unit tests ignore it.
 - PROD `getDepthContext` builds an unprojector + nearest-neighbour depth lookup +
-  camera pose from the latest `DepthSample` (`setDepthCaptureCallback`).
+  camera pose + the view `projectionMatrix` from the latest `DepthSample`
+  (`setDepthCaptureCallback`). The `projectionMatrix` feeds PnP intrinsics
+  (`intrinsicsFromProjection`) in the controller.
 - PROD frames come from the framework's generic **camera-frame RGBA capture**
   (B2): `initAR` registers `setCameraFrameCallback` (before the framework
   `initAR`, like the depth callback) to forward each throttled **top-left RGBA**
