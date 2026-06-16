@@ -13,6 +13,7 @@ import {
   CameraBlitCapture,
   DEFAULT_BLIT_CONFIG,
   computeCaptureSize,
+  computeAspectFitSize,
   type CameraBlitCaptureConfig,
 } from './camera-blit-capture';
 
@@ -899,6 +900,90 @@ describe('camera-blit-capture', () => {
       const result = computeCaptureSize(10, 10, 100);
       expect(result.width).toBeGreaterThanOrEqual(1);
       expect(result.height).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('computeAspectFitSize', () => {
+    /**
+     * Why this test matters (B2 Option 1 — aspect-correct QR blit):
+     * A 4:3 camera must NOT be squashed into a square (which would stretch the
+     * QR for the detector). The longer edge is fixed at maxEdge; the shorter
+     * edge scales to preserve aspect.
+     */
+    it('fits a 4:3 landscape camera to maxEdge on the long (width) edge', () => {
+      expect(computeAspectFitSize(640, 480, 512)).toEqual({
+        width: 512,
+        height: 384,
+      });
+    });
+
+    it('fits a 16:9 landscape camera', () => {
+      expect(computeAspectFitSize(1920, 1080, 512)).toEqual({
+        width: 512,
+        height: 288,
+      });
+    });
+
+    /**
+     * Why this test matters:
+     * Portrait orientation must fix maxEdge on HEIGHT (the longer edge), not
+     * width — otherwise a rotated device would over- or under-size the blit.
+     */
+    it('fits a portrait (3:4) camera to maxEdge on the long (height) edge', () => {
+      expect(computeAspectFitSize(480, 640, 512)).toEqual({
+        width: 384,
+        height: 512,
+      });
+    });
+
+    it('returns a square for a square camera', () => {
+      expect(computeAspectFitSize(1000, 1000, 512)).toEqual({
+        width: 512,
+        height: 512,
+      });
+    });
+
+    /**
+     * Why this test matters:
+     * Invalid camera dimensions (texture not ready) must fall back to a safe
+     * maxEdge-square rather than producing a 0-sized render target.
+     */
+    it('falls back to a maxEdge square for invalid camera dimensions', () => {
+      expect(computeAspectFitSize(0, 0, 512)).toEqual({
+        width: 512,
+        height: 512,
+      });
+      expect(computeAspectFitSize(-10, 480, 512)).toEqual({
+        width: 512,
+        height: 512,
+      });
+    });
+
+    /**
+     * Why this test matters:
+     * A nonsensical maxEdge must fall back to the default blit EDGE LENGTH (so
+     * we never build a 0×0/NaN target) while still preserving the camera aspect
+     * — a 4:3 frame stays 4:3 at the default edge, not forced to a square.
+     */
+    it('falls back to the default edge length (still aspect-fit) when maxEdge is invalid', () => {
+      // 640×480 (4:3) at the 512 default edge → 512×384, NOT a 512² square.
+      expect(computeAspectFitSize(640, 480, 0)).toEqual({
+        width: DEFAULT_BLIT_CONFIG.width,
+        height: 384,
+      });
+      expect(computeAspectFitSize(640, 480, Number.NaN)).toEqual({
+        width: DEFAULT_BLIT_CONFIG.width,
+        height: 384,
+      });
+    });
+
+    it('floors the longer edge and clamps the shorter to ≥ 1', () => {
+      // Extreme aspect: the short edge rounds below 1 → clamped to 1.
+      const r = computeAspectFitSize(1000, 1, 512);
+      expect(r.width).toBe(512);
+      expect(r.height).toBe(1);
+      expect(Number.isInteger(r.width)).toBe(true);
+      expect(Number.isInteger(r.height)).toBe(true);
     });
   });
 });

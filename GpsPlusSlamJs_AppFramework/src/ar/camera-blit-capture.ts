@@ -76,6 +76,45 @@ export function computeCaptureSize(
 }
 
 /**
+ * Compute blit dimensions that PRESERVE the camera aspect ratio with the
+ * **longer edge fixed at `maxEdge`**. Unlike {@link computeCaptureSize} (which
+ * divides the native resolution by a user divisor), this fits the frame into a
+ * fixed pixel budget, so a 4:3 camera becomes e.g. 512×384 — NOT a stretched
+ * 512×512. Used by the QR-detection blit (B2) so the detector sees an
+ * undistorted code while the readback cost stays bounded by `maxEdge²`.
+ *
+ * @param cameraWidth  - Native camera width in pixels (from XRCamera)
+ * @param cameraHeight - Native camera height in pixels (from XRCamera)
+ * @param maxEdge      - Target length (px) of the longer output edge.
+ * @returns Integer dimensions, longer edge == `maxEdge`, aspect preserved
+ *   (within rounding), each clamped to ≥ 1. When `maxEdge` itself is invalid
+ *   (< 1 / NaN) the longer edge falls back to `DEFAULT_BLIT_CONFIG.width` (still
+ *   aspect-preserving). When the camera dimensions are invalid (≤ 0) the aspect
+ *   is unknown, so it returns a square at the (possibly defaulted) edge.
+ */
+export function computeAspectFitSize(
+  cameraWidth: number,
+  cameraHeight: number,
+  maxEdge: number
+): { width: number; height: number } {
+  // Guard: nonsensical maxEdge → fall back to the default square edge.
+  const safeEdge =
+    maxEdge >= 1 ? Math.floor(maxEdge) : DEFAULT_BLIT_CONFIG.width;
+
+  // Guard: invalid camera dimensions → safe square (aspect unknown).
+  if (cameraWidth <= 0 || cameraHeight <= 0) {
+    return { width: safeEdge, height: safeEdge };
+  }
+
+  const longEdge = Math.max(cameraWidth, cameraHeight);
+  const scale = safeEdge / longEdge;
+  return {
+    width: Math.max(1, Math.round(cameraWidth * scale)),
+    height: Math.max(1, Math.round(cameraHeight * scale)),
+  };
+}
+
+/**
  * Number of sampled pixels to check in isBlackFrame.
  * We sample a subset rather than checking every pixel for speed.
  */

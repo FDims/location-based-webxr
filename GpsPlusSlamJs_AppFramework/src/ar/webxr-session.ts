@@ -61,7 +61,11 @@ import {
   type DepthSample,
   type DepthInfo,
 } from './depth-sampler';
-import { CameraBlitCapture, computeCaptureSize } from './camera-blit-capture';
+import {
+  CameraBlitCapture,
+  computeCaptureSize,
+  computeAspectFitSize,
+} from './camera-blit-capture';
 import { QrFrameSource } from './qr-frame-source';
 import type { RgbaImage } from './qr-frontend';
 import { createRgbLookup, type RgbLookup } from './depth-rgb-lookup';
@@ -391,12 +395,17 @@ const DEPTH_RGB_BLIT_CONFIG = { width: 256, height: 192 };
  * detection needs more pixels across the code (~512²) than a colour lookup,
  * but only at the detection cadence, so the {@link QrFrameSource} throttle
  * keeps the readback off the per-frame path. Created lazily on the first QR
- * capture, disposed by resetWebXRState(). The square size is configurable via
- * `startQrCapture`.
+ * capture, disposed by resetWebXRState(). The longer-edge size is configurable
+ * via `startQrCapture`; the blit preserves the camera aspect (see
+ * `acquireQrRgba`).
  */
 let qrBlit: CameraBlitCapture | null = null;
 
-/** The QR-detection blit resolution (square). Default 512 (plan B2). */
+/**
+ * Longer-edge resolution of the QR-detection blit (px). Default 512 (plan B2).
+ * The blit preserves the camera aspect, so the actual target is e.g. 512×384
+ * for a 4:3 frame — see `computeAspectFitSize` / `acquireQrRgba`.
+ */
 let qrCaptureSize = 512;
 
 /**
@@ -480,11 +489,21 @@ function acquireQrRgba(): RgbaImage | null {
   if (!renderer || !latestCameraTexture) {
     return null;
   }
+  // Size the readback to the camera ASPECT with the longer edge = qrCaptureSize
+  // (Option 1) so a 4:3 frame becomes e.g. 512×384 — the QR reaches the detector
+  // undistorted instead of squashed into a square. The camera dimensions are
+  // set alongside `latestCameraTexture` each frame; `resizeIfNeeded` is a no-op
+  // once they stabilise, so the realloc only happens on the first frame or a
+  // device rotation.
+  const target = computeAspectFitSize(
+    latestCameraWidth,
+    latestCameraHeight,
+    qrCaptureSize
+  );
   if (!qrBlit) {
-    qrBlit = new CameraBlitCapture({
-      width: qrCaptureSize,
-      height: qrCaptureSize,
-    });
+    qrBlit = new CameraBlitCapture(target);
+  } else {
+    qrBlit.resizeIfNeeded(target.width, target.height);
   }
   return qrBlit.captureToRgba(renderer, latestCameraTexture);
 }
@@ -1653,9 +1672,11 @@ export interface QrCaptureConfig {
   /** Detection cadence (ms between captures). Default 125 (~8 Hz). */
   intervalMs?: number;
   /**
-   * Square blit resolution (px) for QR detection. Default 512 (plan B2). A QR
-   * needs ~3–5 px per module; 512² across the frame is the verified starting
-   * point. Applied before the first capture; ignored once a blit is allocated.
+   * Longer-edge resolution (px) of the QR-detection blit. Default 512 (plan
+   * B2). The blit preserves the camera ASPECT with its longer edge at this
+   * value (e.g. 512 → 512×384 for a 4:3 camera), so the QR reaches the detector
+   * undistorted. A QR needs ~3–5 px per module; 512 on the long edge is the
+   * verified starting point. Applied before the first capture.
    */
   captureSize?: number;
 }
@@ -1701,7 +1722,7 @@ export function startQrCapture(config?: QrCaptureConfig): void {
   }
   qrFrameSource.start();
   log.info(
-    `QR capture started (interval: ${qrFrameSource.getConfig().intervalMs}ms, ${qrCaptureSize}×${qrCaptureSize})`
+    `QR capture started (interval: ${qrFrameSource.getConfig().intervalMs}ms, long edge ${qrCaptureSize}px, aspect-preserved)`
   );
 }
 

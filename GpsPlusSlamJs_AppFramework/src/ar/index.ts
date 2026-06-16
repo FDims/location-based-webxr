@@ -7,6 +7,7 @@ export {
   type CameraBlitCaptureConfig,
   DEFAULT_BLIT_CONFIG,
   computeCaptureSize,
+  computeAspectFitSize,
   CameraBlitCapture,
 } from './camera-blit-capture.js';
 

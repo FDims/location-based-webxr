@@ -10,7 +10,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { CameraBlitCapture } from './camera-blit-capture';
+import fc from 'fast-check';
+import { CameraBlitCapture, computeAspectFitSize } from './camera-blit-capture';
 
 describe('camera-blit-capture property tests', () => {
   describe('CameraBlitCapture.isBlackFrame', () => {
@@ -84,6 +85,63 @@ describe('camera-blit-capture property tests', () => {
      */
     it('considers empty buffer as black', () => {
       expect(CameraBlitCapture.isBlackFrame(new Uint8Array(0))).toBe(true);
+    });
+  });
+
+  describe('computeAspectFitSize (B2 aspect-correct QR blit)', () => {
+    /**
+     * Property: for any valid camera dimensions and a valid maxEdge, the output
+     * (a) is integer ≥ 1 on both axes, (b) never exceeds maxEdge on either axis
+     * (bounded readback budget), and (c) the LONGER output edge equals
+     * floor(maxEdge) exactly — i.e. it fits the long side to the budget while
+     * preserving aspect, never a stretched square.
+     */
+    it('fits the long edge to maxEdge, bounded, integer ≥ 1', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 1, max: 4000 }),
+          fc.integer({ min: 1, max: 4000 }),
+          fc.integer({ min: 1, max: 2048 }),
+          (cameraWidth, cameraHeight, maxEdge) => {
+            const { width, height } = computeAspectFitSize(
+              cameraWidth,
+              cameraHeight,
+              maxEdge
+            );
+            const edge = Math.floor(maxEdge);
+
+            expect(Number.isInteger(width)).toBe(true);
+            expect(Number.isInteger(height)).toBe(true);
+            expect(width).toBeGreaterThanOrEqual(1);
+            expect(height).toBeGreaterThanOrEqual(1);
+            // Bounded: neither axis exceeds the budget.
+            expect(width).toBeLessThanOrEqual(edge);
+            expect(height).toBeLessThanOrEqual(edge);
+            // The longer output edge lands exactly on the budget.
+            expect(Math.max(width, height)).toBe(edge);
+          }
+        )
+      );
+    });
+
+    /**
+     * Property: orientation symmetry — swapping the camera's width and height
+     * swaps the output's width and height (no landscape/portrait bias).
+     */
+    it('is orientation-symmetric (swapping camera dims swaps output dims)', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 1, max: 4000 }),
+          fc.integer({ min: 1, max: 4000 }),
+          fc.integer({ min: 1, max: 2048 }),
+          (a, b, maxEdge) => {
+            const landscape = computeAspectFitSize(a, b, maxEdge);
+            const portrait = computeAspectFitSize(b, a, maxEdge);
+            expect(portrait.width).toBe(landscape.height);
+            expect(portrait.height).toBe(landscape.width);
+          }
+        )
+      );
     });
   });
 });

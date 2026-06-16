@@ -16,6 +16,7 @@ Background: `docs/2026-02-06-bug-camera-frames-black.md`; RGB path: `GpsPlusSlam
 - **`getWidth(): number` / `getHeight(): number`** — current render-target dimensions. These equal the encoded JPEG's pixel size (the encode canvas is sized to the render target), so `webxr-session` reads them after `captureToBlob` to persist each captured frame's true width/height for aspect-correct frame-tile rendering (D1 of `2026-06-13-frame-tile-rendering-bugs-user-feedback.md`) without decoding the blob.
 - **`CameraBlitCapture.isBlackFrame(pixels): boolean`** — sampled all-zero check (blit-failed detection vs. dark scene).
 - **`computeCaptureSize(cameraWidth, cameraHeight, divisor)`** — capture dimensions from native camera resolution and the user's resolution divisor; falls back to the default config on invalid input.
+- **`computeAspectFitSize(cameraWidth, cameraHeight, maxEdge)`** — capture dimensions that **preserve the camera aspect** with the **longer edge fixed at `maxEdge`** (e.g. `512` → `512×384` for a 4:3 camera). Unlike `computeCaptureSize` (divide-by-divisor), this fits a fixed pixel budget — used by the QR blit (B2) so the detector sees an undistorted code. Integer, longer edge `== maxEdge`, each axis ≥ 1. For an invalid `maxEdge` (< 1 / NaN) the edge length falls back to `DEFAULT_BLIT_CONFIG.width` (still aspect-preserving); for invalid camera dims (≤ 0) the aspect is unknown → a square at the (possibly defaulted) edge.
 - **`DEFAULT_BLIT_CONFIG`** — 512×512.
 
 ## Invariants & Assumptions
@@ -38,4 +39,4 @@ blit.dispose(); // on session teardown
 ## Tests
 
 - `camera-blit-capture.test.ts` — blob pipeline (blit → readPixels → JPEG), renderer-state restore, black-frame handling, `captureToPixels` (buffer + dimensions, state restore, throw → null, dispose → null), `captureToRgba` (top-left flip, owned copy survives next capture, dispose → null), resize and dispose paths.
-- `camera-blit-capture.property.test.ts` — `computeCaptureSize` clamping/fallback properties.
+- `camera-blit-capture.property.test.ts` — `isBlackFrame` sampling properties; `computeAspectFitSize` invariants (long edge == `maxEdge`, bounded, integer ≥ 1, orientation-symmetric). Concrete `computeAspectFitSize` aspect cases (4:3, 16:9, portrait, square, fallbacks, ≥1 clamp) are in `camera-blit-capture.test.ts`.
