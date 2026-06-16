@@ -83,6 +83,18 @@ export interface QrTrackingControllerConfig {
    * lifecycle gate). Ignored when the level already carries `physicalSizeM`.
    */
   resolveSizeM?: (text: string, level: QrLevel) => number | null;
+  /**
+   * Resolve the STABLE (sliding-window filtered) world pose for the vote — e.g.
+   * `selectStableQrPose(store.getState(), text)`. Returns `null` until the pose
+   * has converged, which GATES the high-weight vote (the detection emission is
+   * unconditional; only the vote waits for stability). When omitted (back-compat)
+   * the raw single-frame solve pose drives the vote.
+   *
+   * Ordering: the `onDetection` emission above feeds this frame's RAW pose into
+   * the slice synchronously, so the window this reads already includes it. See
+   * the sliding-window stabilization design doc.
+   */
+  resolveStablePose?: (text: string) => Pose | null;
   /** Current camera pose in raw-WebXR/odom space, or `null` if unavailable. */
   getCameraPose: () => Pose | null;
   /** Intrinsics for the exact frame buffer, or `null` if unavailable. */
@@ -131,6 +143,7 @@ export function createQrTrackingController(
     dispatchVotes,
     onDetection,
     resolveSizeM,
+    resolveStablePose,
     getCameraPose,
     getIntrinsics,
     syntheticAccuracyM,
@@ -243,17 +256,25 @@ export function createQrTrackingController(
         // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
         // trigger, AR-root-anchored spawn) emit the detection but cast no vote.
         if (level.qr.geo) {
-          const votes = buildQrGpsVotes({
-            qrPoseWorld: solution.qrPoseWorld,
-            sizeM,
-            qrGeo: level.qr.geo,
-            syntheticAccuracyM,
-            ...(voteBaselineM !== undefined
-              ? { baselineM: voteBaselineM }
-              : {}),
-            ...(voteCount !== undefined ? { count: voteCount } : {}),
-          });
-          dispatchVotes(votes);
+          // Stability gate (sliding-window stabilization): when a resolver is
+          // wired, vote on the FILTERED pose and skip the vote entirely until it
+          // converges (`null`). Without a resolver, the raw solve pose is used.
+          const votePose = resolveStablePose
+            ? resolveStablePose(text)
+            : solution.qrPoseWorld;
+          if (votePose) {
+            const votes = buildQrGpsVotes({
+              qrPoseWorld: votePose,
+              sizeM,
+              qrGeo: level.qr.geo,
+              syntheticAccuracyM,
+              ...(voteBaselineM !== undefined
+                ? { baselineM: voteBaselineM }
+                : {}),
+              ...(voteCount !== undefined ? { count: voteCount } : {}),
+            });
+            dispatchVotes(votes);
+          }
         }
 
         setStatus('tracking');

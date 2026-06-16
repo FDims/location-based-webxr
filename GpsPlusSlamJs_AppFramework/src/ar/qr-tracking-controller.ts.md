@@ -13,8 +13,9 @@ coalesced cadence and exposes an async-status state machine for the UI.
 - `QrTrackingControllerConfig` — injected `frontEnd`, `solvePose` (wraps
   `solveQrPose`), `fetchLevel`, `dispatchVotes`, `getCameraPose`,
   `getIntrinsics`, `syntheticAccuracyM`, optional `isPlausible` gate,
-  optional `onDetection` (qrDetected emission) and `resolveSizeM` (size when
-  the level omits it — e.g. a depth-measured median),
+  optional `onDetection` (qrDetected emission), `resolveSizeM` (size when
+  the level omits it — e.g. a depth-measured median), `resolveStablePose`
+  (sliding-window filtered pose for the vote — e.g. `selectStableQrPose`),
   `onStatus`/`onLocked`/`onError`, and scheduler tuning
   (`minIntervalMs`, `requiredLockCount`, `now`).
 - `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera, reprojectionErrorPx,
@@ -41,6 +42,14 @@ timestamp }`, emitted via `onDetection` on every lock. Structural (no import
   multi-correspondence) runs **only** when `level.qr.geo` is present, so geo-less
   levels (debug/observe, trigger, AR-root-anchored spawn) emit the detection but
   cast no vote.
+- **Pose-stability gate (sliding-window stabilization):** when `resolveStablePose`
+  is wired, the vote is built from the FILTERED pose and is SKIPPED until it
+  converges (`null`) — the detection is still emitted, only the vote waits. The
+  `onDetection` emission runs **before** the vote and feeds this frame's raw pose
+  into the slice synchronously, so `resolveStablePose` reads a window that already
+  includes the current frame. Without a resolver, the raw solve pose drives the
+  vote (back-compat). See
+  [2026-06-16-followup-qr-pose-stabilization-sliding-window.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-16-followup-qr-pose-stabilization-sliding-window.md).
 - **Fully injected** (front-end, solve, fetch, dispatch, camera/intrinsics
   accessors, clock) → no WASM, device, or store needed to test. Production wires
   `solvePose` to `solveQrPose({...input, solver: OpenCvPnpSquare})`,
@@ -53,8 +62,9 @@ timestamp }`, emitted via `onDetection` on every lock. Structural (no import
   dispatched, level cached once per URL, error path on fetch failure, stays
   scanning on no-detection, plausibility gate blocks the lock, `reset()` clears
   cache + returns to idle; qrDetected emitted on every lock, geo-less level
-  emits detection but no vote, size gate blocks the solve when unknown, and a
-  `resolveSizeM`-supplied size unblocks it.
+  emits detection but no vote, size gate blocks the solve when unknown, a
+  `resolveSizeM`-supplied size unblocks it, the vote uses the `resolveStablePose`
+  filtered pose, and the vote is skipped (detection still emitted) until stable.
 
 ## Related
 

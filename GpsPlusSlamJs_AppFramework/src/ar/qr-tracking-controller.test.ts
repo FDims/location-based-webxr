@@ -217,6 +217,45 @@ describe('createQrTrackingController', () => {
     expect(dispatched).toHaveLength(4); // geo present + size resolved → vote
   });
 
+  it('votes on the STABLE pose when a resolveStablePose bridge is wired', async () => {
+    const stablePose = {
+      position: [10, 20, -30] as const,
+      rotation: [0, 0, 0, 1] as const,
+    };
+    const resolveStablePose = vi.fn(() => stablePose);
+    const { controller, dispatched } = setup({ resolveStablePose });
+    await tick(controller);
+    await tick(controller); // lock
+    expect(resolveStablePose).toHaveBeenCalledWith('https://lvl/1');
+    expect(dispatched).toHaveLength(4);
+    // The 4 corner votes are built around the STABLE pose ([10,20,-30]), NOT the
+    // raw solve pose ([1,2,-3]). Their odom centroid must be the stable center.
+    const centroid = (dispatched as { odomPosition: number[] }[]).reduce(
+      (acc, v) => [
+        acc[0] + v.odomPosition[0]! / 4,
+        acc[1] + v.odomPosition[1]! / 4,
+        acc[2] + v.odomPosition[2]! / 4,
+      ],
+      [0, 0, 0]
+    );
+    expect(centroid[0]).toBeCloseTo(10, 5);
+    expect(centroid[1]).toBeCloseTo(20, 5);
+    expect(centroid[2]).toBeCloseTo(-30, 5);
+  });
+
+  it('skips the vote (but still emits the detection) until the pose is stable', async () => {
+    const events: unknown[] = [];
+    const { controller, dispatched } = setup({
+      resolveStablePose: () => null, // not converged yet
+      onDetection: (e) => events.push(e),
+    });
+    await tick(controller);
+    await tick(controller); // lock
+    expect(controller.status).toBe('tracking');
+    expect(dispatched).toHaveLength(0); // vote gated on stability
+    expect(events).toHaveLength(1); // detection still emitted (unconditional)
+  });
+
   it('reset() clears the cache and returns to idle', async () => {
     const { controller, fetchLevel } = setup();
     await tick(controller);
