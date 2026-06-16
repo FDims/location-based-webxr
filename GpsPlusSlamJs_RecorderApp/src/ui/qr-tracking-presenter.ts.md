@@ -10,7 +10,7 @@ demonstrator obeys the "UI feedback for async actions" rule. Phase 6c of the
 ## Public API
 
 - `createQrTrackingPresenter(deps): QrTrackingPresenter` — returns `{ onStatus,
-  onLocked, onError }` to pass straight into `createQrTrackingController`.
+onLocked, onError }` to pass straight into `createQrTrackingController`.
 - `qrStatusText(status): string | null` — the in-progress status line per state
   (`null` for `idle`/`error`, which are handled by clearing / `showError`).
 - `deps: { updateStatus, showError }` (the HUD functions, injected).

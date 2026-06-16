@@ -599,6 +599,50 @@ describe('discoverScenariosFromZipMetadata', () => {
     expect(entry.h3Cells).toBeUndefined();
   });
 
+  it('treats an array of string-typed but invalid H3 ids as legacy', async () => {
+    // Why: corruption is not limited to wrong-typed entries. A string that is
+    // not a valid H3 id (e.g. "garbage") is just as untrustworthy as a number,
+    // but is *string-typed* so the type-only filter would let it through. It
+    // must be rejected at the boundary so coverage is re-derived from the
+    // authoritative GPS path.
+    //
+    // This matters because the invalid id does NOT crash downstream and so
+    // would fail silently: `cellToLatLng('garbage')` does not throw — it
+    // returns a garbage coordinate (~79N), which would mis-frame the map in
+    // `map-browser.ts` `fitToCoverage`; and `clusterCellsByZoom` already drops
+    // invalid cells, so the corruption would never surface as an error. The
+    // only safe place to catch it is here, at the parse boundary.
+    const testZip = await produceTestZip({
+      scenarioName: 'BadIds',
+      h3Cells: ['garbage', 'not-an-h3-cell'],
+    });
+    const root = new MockFSDirectoryHandle('Recordings');
+    root.addFile('2026-03-01_09-08-48utc.zip', testZip.zipData);
+
+    const result = await discoverScenariosFromZipMetadata(root);
+
+    const entry = result.scenarioSessions.get('BadIds')![0]!;
+    expect(entry.h3Cells).toBeUndefined();
+  });
+
+  it('treats a mix of valid and invalid H3 id strings as legacy', async () => {
+    // Why: all-or-nothing — one invalid id makes the whole array untrustworthy
+    // (same rationale as the partially-malformed/non-string case above). Keeping
+    // only the valid ids would surface a truncated-but-valid-looking coverage,
+    // which is worse than backfilling the complete coverage from GPS.
+    const testZip = await produceTestZip({
+      scenarioName: 'MixedIds',
+      h3Cells: ['8b1fa1da1d64fff', 'garbage'],
+    });
+    const root = new MockFSDirectoryHandle('Recordings');
+    root.addFile('2026-03-01_09-08-48utc.zip', testZip.zipData);
+
+    const result = await discoverScenariosFromZipMetadata(root);
+
+    const entry = result.scenarioSessions.get('MixedIds')![0]!;
+    expect(entry.h3Cells).toBeUndefined();
+  });
+
   it('groups multiple zips by their scenarioName from metadata', async () => {
     // Why: A folder may contain multiple zips from different scenarios.
     // The function must group them correctly by the scenarioName in session.json.
