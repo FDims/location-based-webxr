@@ -134,12 +134,12 @@ export {
   createBarcodeDetectorFrontEnd,
 } from './qr-frontend.js';
 
-// --- qr-frame-source (B2 — throttled RGBA capturer for QR detection) ---
+// --- camera-frame-source (B2 — generic throttled RGBA feed for CV) ---
 export {
-  type QrFrameSourceConfig,
-  type QrFrameSourceCallbacks,
-  QrFrameSource,
-} from './qr-frame-source.js';
+  type CameraFrameSourceConfig,
+  type CameraFrameSourceCallbacks,
+  CameraFrameSource,
+} from './camera-frame-source.js';
 
 // --- opencv-pnp ---
 export { type CvMat, type CvLike, OpenCvPnpSquare } from './opencv-pnp.js';
@@ -243,11 +243,11 @@ export {
   startDepthCapture,
   stopDepthCapture,
   getDepthSampleCount,
-  setQrFrameCallback,
-  startQrCapture,
-  stopQrCapture,
-  getQrFrameCount,
-  type QrCaptureConfig,
+  setCameraFrameCallback,
+  startCameraFrameCapture,
+  stopCameraFrameCapture,
+  getCameraFrameCount,
+  type CameraFrameCaptureConfig,
   setFrameCallback,
   getLiveCss3dManager,
   getScene,

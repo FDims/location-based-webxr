@@ -15,8 +15,9 @@
  *
  * The PROD frame/depth source is the **on-device-verified layer** (the §5 gate
  * is manual, exactly as the parent QR plan defers the Recorder's live camera
- * wiring): it uses the framework's public **QR-RGBA** capture (`setQrFrameCallback`
- * + `startQrCapture`, B2 — top-left RGBA at the detection cadence, no JPEG
+ * wiring): it uses the framework's public **camera-frame RGBA** capture
+ * (`setCameraFrameCallback` + `startCameraFrameCapture`, B2 — top-left RGBA at
+ * the detection cadence, no JPEG
  * round-trip) and the depth capture callback. The tested demo logic + the faked
  * e2e do not depend on its runtime behaviour. `startFrameSource` stays as the
  * e2e frame-injection seam; in PROD its body just points the framework QR
@@ -27,9 +28,9 @@ import {
   initAR,
   endARSession,
   getArWorldGroup,
-  setQrFrameCallback,
-  startQrCapture,
-  stopQrCapture,
+  setCameraFrameCallback,
+  startCameraFrameCapture,
+  stopCameraFrameCapture,
   setDepthCaptureCallback,
   startDepthCapture,
   stopDepthCapture,
@@ -59,8 +60,15 @@ export interface QrDemoSeams {
   createDetect(): (image: RgbaImage) => Promise<QrDetection | null>;
   /** Latest frame's depth context (unprojector + depth lookup + camera pose). */
   getDepthContext(): DepthContext | null;
-  /** Start delivering frames to `onImage`; returns a stop function. */
-  startFrameSource(onImage: (image: RgbaImage) => void): () => void;
+  /**
+   * Start delivering frames to `onImage` at the given detection cadence
+   * (`intervalMs`); returns a stop function. The frame source is the SINGLE
+   * cadence owner (Option A): the controller it feeds runs `minIntervalMs: 0`.
+   */
+  startFrameSource(
+    onImage: (image: RgbaImage) => void,
+    options?: { intervalMs?: number },
+  ): () => void;
 }
 
 declare global {
@@ -119,7 +127,7 @@ export const realSeams: QrDemoSeams = {
     });
     // The framework now delivers top-left RGBA directly (B2) — no JPEG
     // round-trip. Forward each throttled frame to the active consumer.
-    setQrFrameCallback((image) => qrFrameConsumer?.(image));
+    setCameraFrameCallback((image) => qrFrameConsumer?.(image));
     await initAR(container, {
       enableCameraAccess: true,
       enableDepthSensingFeature: true,
@@ -129,7 +137,7 @@ export const realSeams: QrDemoSeams = {
   },
   async endARSession(): Promise<void> {
     stopDepthCapture();
-    stopQrCapture();
+    stopCameraFrameCapture();
     qrFrameConsumer = null;
     latestDepthSample = null;
     await endARSession();
@@ -155,15 +163,22 @@ export const realSeams: QrDemoSeams = {
       cameraPose: { position: sample.cameraPos, rotation: sample.cameraRot },
     };
   },
-  startFrameSource(onImage: (image: RgbaImage) => void): () => void {
-    // The framework QR callback (wired in initAR) forwards frames to whatever
-    // consumer is active. Point it at this controller and start the throttled
-    // capture; the default ~8 Hz cadence matches the demo's detection throttle.
+  startFrameSource(
+    onImage: (image: RgbaImage) => void,
+    options?: { intervalMs?: number },
+  ): () => void {
+    // The framework camera-frame callback (wired in initAR) forwards frames to
+    // whatever consumer is active. Point it at this controller and start the
+    // throttled capture — the source is the single cadence owner (Option A).
     qrFrameConsumer = onImage;
-    startQrCapture();
+    startCameraFrameCapture(
+      options?.intervalMs !== undefined
+        ? { intervalMs: options.intervalMs }
+        : undefined,
+    );
     return () => {
       qrFrameConsumer = null;
-      stopQrCapture();
+      stopCameraFrameCapture();
     };
   },
 };

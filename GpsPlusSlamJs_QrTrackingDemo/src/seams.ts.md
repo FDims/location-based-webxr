@@ -21,13 +21,15 @@ plan defers the Recorder's live camera wiring).
   from production; unit tests ignore it.
 - PROD `getDepthContext` builds an unprojector + nearest-neighbour depth lookup +
   camera pose from the latest `DepthSample` (`setDepthCaptureCallback`).
-- PROD frames come from the framework's **QR-RGBA capture** (B2): `initAR`
-  registers `setQrFrameCallback` (before the framework `initAR`, like the depth
-  callback) to forward each throttled **top-left RGBA** frame to the active
-  consumer; `startFrameSource(onImage)` sets that consumer and calls
-  `startQrCapture()` (default ~8 Hz, no JPEG round-trip). The old
-  `OffscreenCanvas` JPEG decode (`decodeToRgba`) is gone. `startFrameSource`
-  itself stays as the **e2e frame-injection seam** — only its PROD body changed.
+- PROD frames come from the framework's generic **camera-frame RGBA capture**
+  (B2): `initAR` registers `setCameraFrameCallback` (before the framework
+  `initAR`, like the depth callback) to forward each throttled **top-left RGBA**
+  frame to the active consumer; `startFrameSource(onImage, { intervalMs })` sets
+  that consumer and calls `startCameraFrameCapture({ intervalMs })` — the source
+  is the single cadence owner (Option A; the controller runs `minIntervalMs: 0`).
+  The old `OffscreenCanvas` JPEG decode (`decodeToRgba`) is gone.
+  `startFrameSource` itself stays as the **e2e frame-injection seam** — only its
+  PROD body changed.
 - detect uses `createBarcodeDetectorFrontEnd`.
 
 ## Tests

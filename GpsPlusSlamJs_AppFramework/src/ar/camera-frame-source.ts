@@ -1,6 +1,7 @@
 /**
- * QR frame source — the throttled RGBA capturer that feeds QR detection
- * (framework-wiring-options Part A / B2).
+ * Camera frame source — a GENERIC throttled RGBA camera-frame feed for
+ * computer-vision consumers (QR detection today; object detection / OpenCV
+ * tomorrow). Framework-wiring-options Part A / B2.
  *
  * Mirrors {@link DepthSampler}'s shape: a per-XR-frame `onFrame(timestamp)`
  * tick that, **only when `intervalMs` has elapsed**, performs an injected
@@ -9,19 +10,27 @@
  * — is the efficiency win the in-session wiring unlocks (§A.4): on a 60 fps
  * device the blit runs ~8×/s instead of every render frame.
  *
+ * **Single cadence owner (Option A).** When a {@link createDetectionScheduler}
+ * (QR controller, object detector, …) is driven from this source, the source
+ * should be the ONE place that sets the cadence: give it the detection
+ * `intervalMs` and set the scheduler's own `minIntervalMs` to `0`. The
+ * scheduler's coalescing still prevents overlapping in-flight detects, so every
+ * delivered frame is detected without a second throttle dropping boundary
+ * frames. (Two equal throttles in series let jitter drop ~1 frame per cycle.)
+ *
  * `capture` is injected (not a hard dependency on `CameraBlitCapture` /
  * `WebGLRenderer`) so the throttle is pure-logic unit-testable without a GPU —
- * see `qr-frame-source.test.ts`, which pins the cadence as a performance
+ * see `camera-frame-source.test.ts`, which pins the cadence as a performance
  * regression test.
  *
  * @see camera-blit-capture.ts — `captureToRgba` (the production `capture`).
- * @see webxr-session.ts — owns the 512² QR blit and wires this in the frame loop.
+ * @see webxr-session.ts — owns the camera-frame blit and wires this in the frame loop.
  */
 
 import type { RgbaImage } from './qr-frontend.js';
 
-/** Tuning for the QR frame source. */
-export interface QrFrameSourceConfig {
+/** Tuning for the camera frame source. */
+export interface CameraFrameSourceConfig {
   /**
    * Minimum interval between captures in milliseconds. Default 125 ms (≈ 8 Hz),
    * the plan §9 5–10 Hz detection target. The capture (and therefore the blit)
@@ -30,8 +39,8 @@ export interface QrFrameSourceConfig {
   intervalMs: number;
 }
 
-/** Injected I/O for the QR frame source. */
-export interface QrFrameSourceCallbacks {
+/** Injected I/O for the camera frame source. */
+export interface CameraFrameSourceCallbacks {
   /**
    * Capture the current XR frame as top-left-origin RGBA, or `null` when no
    * frame is available (no camera texture yet, GL failure). This is the GPU
@@ -44,7 +53,7 @@ export interface QrFrameSourceCallbacks {
   onCapture: (image: RgbaImage) => void;
 }
 
-const DEFAULT_CONFIG: QrFrameSourceConfig = {
+const DEFAULT_CONFIG: CameraFrameSourceConfig = {
   intervalMs: 125,
 };
 
@@ -52,16 +61,16 @@ const DEFAULT_CONFIG: QrFrameSourceConfig = {
  * Throttled RGBA capturer. Construct with the injected `capture`/`onCapture`
  * pair, `start()`, then call `onFrame(timestamp)` once per XR frame.
  */
-export class QrFrameSource {
-  private readonly callbacks: QrFrameSourceCallbacks;
-  private readonly config: QrFrameSourceConfig;
+export class CameraFrameSource {
+  private readonly callbacks: CameraFrameSourceCallbacks;
+  private readonly config: CameraFrameSourceConfig;
   private running = false;
   private captureCount = 0;
   private lastCaptureTime = -Infinity;
 
   constructor(
-    callbacks: QrFrameSourceCallbacks,
-    config?: Partial<QrFrameSourceConfig>
+    callbacks: CameraFrameSourceCallbacks,
+    config?: Partial<CameraFrameSourceConfig>
   ) {
     this.callbacks = callbacks;
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -88,7 +97,7 @@ export class QrFrameSource {
     return this.captureCount;
   }
 
-  getConfig(): QrFrameSourceConfig {
+  getConfig(): CameraFrameSourceConfig {
     return { ...this.config };
   }
 
@@ -96,7 +105,7 @@ export class QrFrameSource {
    * Apply partial config (e.g. the app's detection cadence). Invalid values
    * are ignored defensively — `intervalMs` requires a finite positive number.
    */
-  updateConfig(config: Partial<QrFrameSourceConfig>): void {
+  updateConfig(config: Partial<CameraFrameSourceConfig>): void {
     if (
       typeof config.intervalMs === 'number' &&
       Number.isFinite(config.intervalMs) &&

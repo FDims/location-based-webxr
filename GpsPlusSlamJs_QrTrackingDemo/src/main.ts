@@ -37,10 +37,11 @@ import {
 } from "./debug-log.js";
 
 /**
- * Detection cadence (ms between detection STARTS) — ~8 Hz, within the plan §9
- * 5–10 Hz target. NOT per-frame: a phone renders ~30–60 fps and running the
- * detector + depth unproject every frame would waste CPU/battery and never
- * improve a throttled, coalesced pipeline.
+ * Detection cadence (ms between captures) — ~8 Hz, within the plan §9 5–10 Hz
+ * target. NOT per-frame: a phone renders ~30–60 fps and blitting + detecting
+ * every frame would waste CPU/GPU/battery. This is the SINGLE cadence knob — it
+ * drives the framework `CameraFrameSource` (the one throttle, Option A); the
+ * controller then detects every delivered frame (`minIntervalMs: 0`).
  */
 const DETECT_INTERVAL_MS = 125;
 
@@ -172,10 +173,17 @@ async function startAr(): Promise<void> {
       renderDebugLog();
       renderHud();
     },
-    minIntervalMs: DETECT_INTERVAL_MS,
+    // Option A — single cadence owner: the framework CameraFrameSource already
+    // throttles capture to DETECT_INTERVAL_MS, so the controller detects every
+    // delivered frame (its scheduler still coalesces in-flight detects). A
+    // second equal throttle here would just drop the occasional boundary frame.
+    minIntervalMs: 0,
   });
 
-  stopFrames = seams.startFrameSource((image) => controller.offerFrame(image));
+  // The framework CameraFrameSource owns the cadence (Option A).
+  stopFrames = seams.startFrameSource((image) => controller.offerFrame(image), {
+    intervalMs: DETECT_INTERVAL_MS,
+  });
 
   dom.startScreen.hidden = true;
   dom.hud.hidden = false;

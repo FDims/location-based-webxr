@@ -1,28 +1,28 @@
 /**
- * Tests for QrFrameSource — the throttled RGBA capturer.
+ * Tests for CameraFrameSource — the throttled RGBA capturer.
  *
  * Why these tests matter:
- * - The whole point of B2 is that the QR blit runs at the DETECTION cadence,
- *   not per render frame. The "performance regression" test below pins that:
- *   it would fail loudly if a future change reverted to per-frame capturing.
+ * - The whole point of B2 is that the camera-frame blit runs at the DETECTION
+ *   cadence, not per render frame. The "performance regression" test below pins
+ *   that: it would fail loudly if a change reverted to per-frame capturing.
  * - The throttle must be deterministic (driven by the injected frame timestamp)
  *   and a capture failure must degrade gracefully, never throw into the frame
  *   loop.
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { QrFrameSource } from './qr-frame-source';
+import { CameraFrameSource } from './camera-frame-source';
 import type { RgbaImage } from './qr-frontend';
 
 function fakeImage(width = 4, height = 4): RgbaImage {
   return { data: new Uint8ClampedArray(width * height * 4), width, height };
 }
 
-describe('QrFrameSource', () => {
+describe('CameraFrameSource', () => {
   it('does nothing until started', () => {
     const capture = vi.fn(() => fakeImage());
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture });
+    const src = new CameraFrameSource({ capture, onCapture });
 
     src.onFrame(0);
     src.onFrame(1000);
@@ -34,7 +34,10 @@ describe('QrFrameSource', () => {
   it('captures on the first frame after start, then throttles by intervalMs', () => {
     const capture = vi.fn(() => fakeImage());
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture }, { intervalMs: 125 });
+    const src = new CameraFrameSource(
+      { capture, onCapture },
+      { intervalMs: 125 }
+    );
     src.start();
 
     src.onFrame(0); // first tick → capture
@@ -57,7 +60,10 @@ describe('QrFrameSource', () => {
   it('caps captures at the detection cadence, not the frame rate (perf regression)', () => {
     const capture = vi.fn(() => fakeImage());
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture }, { intervalMs: 125 });
+    const src = new CameraFrameSource(
+      { capture, onCapture },
+      { intervalMs: 125 }
+    );
     src.start();
 
     const FRAME_MS = 1000 / 60; // ~16.67 ms — a 60 fps render loop
@@ -81,7 +87,10 @@ describe('QrFrameSource', () => {
       .mockReturnValueOnce(null)
       .mockReturnValue(fakeImage());
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture }, { intervalMs: 125 });
+    const src = new CameraFrameSource(
+      { capture, onCapture },
+      { intervalMs: 125 }
+    );
     src.start();
 
     src.onFrame(0); // attempt → null, slot NOT consumed
@@ -97,7 +106,10 @@ describe('QrFrameSource', () => {
       throw new Error('GL context lost');
     });
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture }, { intervalMs: 125 });
+    const src = new CameraFrameSource(
+      { capture, onCapture },
+      { intervalMs: 125 }
+    );
     src.start();
 
     expect(() => src.onFrame(0)).not.toThrow();
@@ -108,7 +120,10 @@ describe('QrFrameSource', () => {
   it('stops capturing after stop()', () => {
     const capture = vi.fn(() => fakeImage());
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture }, { intervalMs: 125 });
+    const src = new CameraFrameSource(
+      { capture, onCapture },
+      { intervalMs: 125 }
+    );
     src.start();
     src.onFrame(0);
     src.stop();
@@ -121,7 +136,10 @@ describe('QrFrameSource', () => {
   it('start() resets the cadence so the next tick captures', () => {
     const capture = vi.fn(() => fakeImage());
     const onCapture = vi.fn();
-    const src = new QrFrameSource({ capture, onCapture }, { intervalMs: 125 });
+    const src = new CameraFrameSource(
+      { capture, onCapture },
+      { intervalMs: 125 }
+    );
     src.start();
     src.onFrame(1000);
     expect(capture).toHaveBeenCalledTimes(1);
@@ -136,7 +154,7 @@ describe('QrFrameSource', () => {
 
   describe('updateConfig', () => {
     it('applies a valid intervalMs', () => {
-      const src = new QrFrameSource({
+      const src = new CameraFrameSource({
         capture: () => null,
         onCapture: vi.fn(),
       });
@@ -145,7 +163,7 @@ describe('QrFrameSource', () => {
     });
 
     it('ignores non-finite or non-positive intervalMs', () => {
-      const src = new QrFrameSource(
+      const src = new CameraFrameSource(
         { capture: () => null, onCapture: vi.fn() },
         { intervalMs: 125 }
       );
