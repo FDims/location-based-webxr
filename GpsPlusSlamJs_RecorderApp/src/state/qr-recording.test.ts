@@ -19,6 +19,7 @@ import {
   createRecorderStore,
   startSession,
   recordQrDetection,
+  selectLatestQrDetection,
   RECORDER_QR_MAX_HISTORY,
   type RecorderStore,
   type QrDetectionEntry,
@@ -125,5 +126,34 @@ describe('QR detection persistence (recorder store)', () => {
         (a) => (a as RecordedAction).type === 'qrDetected/setQrMaxHistory'
       )
     ).toBe(false);
+  });
+
+  it('round-trips through persistence + replay: the recorded action rebuilds the raw marker (WS-6)', async () => {
+    store.dispatch(
+      startSession({ scenarioName: 'T', sessionName: 't', startTime: 1 })
+    );
+    const entry = rawDetection('https://round/trip', 2000);
+    store.dispatch(recordQrDetection(entry));
+    await flushWrites();
+
+    const recorded = writtenActions.find(
+      (a) => (a as RecordedAction).type === 'qrDetected/recordQrDetection'
+    ) as RecordedAction | undefined;
+    expect(recorded).toBeDefined();
+
+    // Replay = re-dispatch the recorded action into a FRESH store (exactly what
+    // the replay engine does). The raw observation must rebuild intact, so the
+    // derive-on-read viz re-derives on replay (the re-test guarantee).
+    const replayStore = createRecorderStore();
+    replayStore.dispatch(recorded as unknown as { type: string });
+
+    const latest = selectLatestQrDetection(
+      replayStore.getState(),
+      'https://round/trip'
+    );
+    expect(latest?.corners).toEqual(entry.corners);
+    expect(latest?.cameraPose).toEqual(entry.cameraPose);
+    expect(latest?.projectionMatrix).toEqual(entry.projectionMatrix);
+    expect(latest?.qrPoseWorld).toBeUndefined(); // RAW — nothing baked in
   });
 });

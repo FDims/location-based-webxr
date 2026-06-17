@@ -116,6 +116,13 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
       // Mixing clock domains in delay calculation produces garbage. (Risk R4)
       return null;
 
+    case 'qrDetected/recordQrDetection':
+      // EXPLICITLY null — the QR detection timestamp shares the depth sample's
+      // performance.now() domain (the live wiring stamps both from the same
+      // clock so the derive-on-read as-of join aligns), NOT epoch ms. Same
+      // clock-domain reasoning as recordDepthSample above.
+      return null;
+
     case 'recording/endSession':
       // No timestamp in payload
       return null;

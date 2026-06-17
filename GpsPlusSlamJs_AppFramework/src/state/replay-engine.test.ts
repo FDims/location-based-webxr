@@ -184,6 +184,18 @@ describe('extractActionTimestamp', () => {
     expect(extractActionTimestamp(makeMarkRefPointAction(ts))).toBe(ts);
   });
 
+  it('returns null for recordQrDetection (shares depth performance.now domain)', () => {
+    // The QR detection timestamp is in the same performance.now() domain as the
+    // depth sample it pairs with on the derive-on-read as-of join, so it must be
+    // excluded from epoch replay timing — same reasoning as recordDepthSample.
+    expect(
+      extractActionTimestamp({
+        type: 'qrDetected/recordQrDetection',
+        payload: { text: 'x', timestamp: 12345.67, corners: [] },
+      })
+    ).toBeNull();
+  });
+
   it('returns null for depthSample (uses performance.now, not epoch)', () => {
     // Why: Risk R4 — depthSample uses performance.now() which is relative
     // to page load, NOT epoch ms. Mixing these produces garbage delays.
