@@ -59,7 +59,12 @@ export interface RawQrObservation {
   imageWidth: number;
   /** Detector-buffer height in pixels. */
   imageHeight: number;
-  /** Epoch ms (or injected clock) of the detection — the depth as-of join key. */
+  /**
+   * Detection time in the producer's injected clock — the depth as-of join key.
+   * MUST share the depth stream's clock; the RAW recorder path uses
+   * `performance.now()` (NOT epoch ms), or the join in {@link deriveQrSizeM}
+   * silently mis-pairs. See the recorder live-QR plan open topic A.
+   */
   timestamp: number;
 }
 

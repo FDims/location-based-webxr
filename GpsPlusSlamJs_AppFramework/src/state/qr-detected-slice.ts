@@ -68,12 +68,22 @@ export const DEFAULT_QR_MAX_HISTORY = 32;
 /**
  * One detection observation. Detection-agnostic by design (Note 1): `text` is
  * the label/payload, `reprojectionErrorPx` the confidence proxy, the two poses
- * the 3D placement. `timestamp` is epoch ms.
+ * the 3D placement. `timestamp` is whatever clock the PRODUCER injected — see the
+ * field note: the RAW recorder path uses `performance.now()` so the derive-on-read
+ * depth as-of join lines up with the depth stream (clock-domain coupling).
  */
 export interface QrDetectionEntry {
   /** Decoded payload (text/URL) — also the marker key. */
   text: string;
-  /** Epoch ms when the detection locked. */
+  /**
+   * Detection time in the PRODUCER's injected clock. For the RAW recorder path
+   * this MUST be `performance.now()` (the depth stream's clock), because the
+   * size as-of join (`ar/qr-derived-pose`) pairs this with the depth sample
+   * active at this timestamp — an epoch-ms stamp would silently mis-pair. The
+   * legacy geo/demo producer stamps `Date.now()`; both are fine in isolation,
+   * but never mix a recording's QR + depth clocks. See the recorder live-QR plan
+   * open topic A.
+   */
   timestamp: number;
 
   // --- RAW detector output (decision D-A, recorder live-QR plan) -----------
