@@ -28,7 +28,13 @@ import {
   createSlamAppStore,
   type SlamAppStore,
 } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
-import { slicePrefixOf } from 'gps-plus-slam-app-framework/state';
+import {
+  slicePrefixOf,
+  qrDetectedReducer,
+  recordQrDetection,
+  setQrMaxHistory,
+  type QrDetectedState,
+} from 'gps-plus-slam-app-framework/state';
 import {
   addRefPointEntry,
   refPointsReducer,
@@ -62,6 +68,24 @@ export {
   resetCurrentScenarioName,
   type ScenarioState,
 } from './scenario-slice';
+
+// The `qrDetected` slice surface the recorder app (live-QR wiring + tests) needs.
+// Re-exported here so consumers import the QR slice from the same store module as
+// every other recorder action. The slice itself lives in the framework.
+export {
+  recordQrDetection,
+  setQrMaxHistory,
+  selectSolvedQrPose,
+  selectLatestQrDetection,
+  clearQrMarker,
+  clearAllQrMarkers,
+  type QrDetectionEntry,
+  type QrDetectedState,
+} from 'gps-plus-slam-app-framework/state';
+export type {
+  RawQrObservation,
+  DeriveQrPoseDeps,
+} from 'gps-plus-slam-app-framework/ar';
 
 export {
   setZeroPos,
@@ -103,7 +127,16 @@ export interface CombinedRootState extends LibraryRootState {
   refPoints: RefPointsState;
   routing: RoutingState;
   scenario: ScenarioState;
+  qrDetected: QrDetectedState;
 }
+
+/**
+ * Per-marker live-history cap the recorder opts into (D-B refinement): a longer
+ * debug trail than the framework default (32) WITHOUT moving that shared default
+ * for one consumer. The action LOG still captures every detection regardless of
+ * the cap; this only bounds the live reduced state the debug viz reads.
+ */
+export const RECORDER_QR_MAX_HISTORY = 100;
 
 /**
  * Recorder store handle. Same shape as before the Iter 1 split — the
@@ -144,16 +177,28 @@ export function createRecorderStore(
     onWriteFailure: options.onWriteFailure,
     enableDevChecks: options.enableDevChecks,
     licenseKey: options.licenseKey,
-    // Persist the recorder-owned refPoints slice. Derived from the slice's
-    // own action type (never a literal) so a rename can't silently drop
-    // marks from recordings — see the 2026-05-28 refPointsV2/ regression.
-    persistedExtraPrefixes: [slicePrefixOf(addRefPointEntry.type)],
+    // Persist the recorder-owned refPoints slice and the framework qrDetected
+    // slice. Derived from each slice's own action type (never a literal) so a
+    // rename can't silently drop data from recordings — see the 2026-05-28
+    // refPointsV2/ regression. `slicePrefixOf(recordQrDetection.type)` is
+    // `qrDetected`, so every `qrDetected/*` action is whitelisted (matching the
+    // refPoints pattern); only `recordQrDetection` is dispatched during recording.
+    persistedExtraPrefixes: [
+      slicePrefixOf(addRefPointEntry.type),
+      slicePrefixOf(recordQrDetection.type),
+    ],
     extraReducers: {
       refPoints: refPointsReducer,
       routing: routingReducer,
       scenario: scenarioReducer,
+      qrDetected: qrDetectedReducer,
     },
   });
+
+  // Opt into a longer live QR history than the shared framework default (D-B).
+  // Dispatched at setup, BEFORE any recording starts, so it is never persisted;
+  // the replay store (also built here) gets the same cap so live == replay.
+  store.dispatch(setQrMaxHistory(RECORDER_QR_MAX_HISTORY));
 
   return {
     getState: () => store.getState(),
