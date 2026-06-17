@@ -38,14 +38,12 @@ import {
 import {
   createBarcodeDetectorFrontEnd,
   createDepthUnprojector,
+  createDepthGridLookup,
   type RgbaImage,
   type QrDetection,
 } from "gps-plus-slam-app-framework/ar";
 import { checkWebXRSupport } from "gps-plus-slam-app-framework/sensors";
-import type {
-  DepthSample,
-  DepthPoint,
-} from "gps-plus-slam-app-framework/types";
+import type { DepthSample } from "gps-plus-slam-app-framework/types";
 import type { Object3D } from "three";
 import type { DemoCapabilitySupport } from "./capability.js";
 import type { DepthContext } from "./demo-controller.js";
@@ -90,25 +88,15 @@ let latestDepthSample: DepthSample | null = null;
  */
 let qrFrameConsumer: ((image: RgbaImage) => void) | null = null;
 
-/** Nearest-neighbour depth lookup over the sample's grid (screen-space). */
-function nearestDepth(
-  points: readonly DepthPoint[],
-  screenX: number,
-  screenY: number,
-): number | null {
-  let best: number | null = null;
-  let bestDist = Infinity;
-  for (const p of points) {
-    const dx = p.screenX - screenX;
-    const dy = p.screenY - screenY;
-    const d = dx * dx + dy * dy;
-    if (d < bestDist) {
-      bestDist = d;
-      best = p.depthM;
-    }
-  }
-  return best;
-}
+/**
+ * Depth capture tuning for the QR demo (WS-A 2a). A DENSER grid than the SLAM
+ * default (16) so a small QR has several depth nodes across its face, sampled
+ * FASTER than the 1 Hz default so the size correlates with the ~8 Hz detection
+ * cadence. `rgb: false` skips the per-point colour blit (the demo only needs
+ * depth for sizing). The effective resolution is still capped by the native
+ * WebXR depth buffer; `depthAt` bilinearly interpolates this grid.
+ */
+const QR_DEPTH_CONFIG = { gridSize: 64, intervalMs: 250, rgb: false };
 
 /** The production seams — the unmodified framework device wiring. */
 export const realSeams: QrDemoSeams = {
@@ -133,7 +121,7 @@ export const realSeams: QrDemoSeams = {
       enableDepthSensingFeature: true,
       enableCameraTextureAcquisition: true,
     });
-    startDepthCapture();
+    startDepthCapture(QR_DEPTH_CONFIG);
   },
   async endARSession(): Promise<void> {
     stopDepthCapture();
@@ -157,9 +145,12 @@ export const realSeams: QrDemoSeams = {
       sample.projectionMatrix,
     );
     if (!unprojector) return null;
+    // Bilinear interpolation over the depth grid (WS-A): depth varies smoothly
+    // across a small QR face instead of snapping to one nearest node.
+    const lookup = createDepthGridLookup(sample.points);
     return {
       unprojector,
-      depthAt: (x, y) => nearestDepth(sample.points, x, y),
+      depthAt: (x, y) => lookup.depthAt(x, y),
       cameraPose: { position: sample.cameraPos, rotation: sample.cameraRot },
       projectionMatrix: sample.projectionMatrix,
     };

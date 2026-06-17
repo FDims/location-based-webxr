@@ -55,6 +55,12 @@ export {
   type DepthUnprojector,
 } from './depth-unprojection.js';
 
+// --- depth-grid-lookup ---
+export {
+  createDepthGridLookup,
+  type DepthGridLookup,
+} from './depth-grid-lookup.js';
+
 // --- qr-size-from-depth (Note 4 — measure the QR size from the depth map) ---
 export {
   type QrSizeStatus,
