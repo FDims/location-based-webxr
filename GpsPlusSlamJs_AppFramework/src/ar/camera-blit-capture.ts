@@ -89,8 +89,8 @@ export function computeCaptureSize(
  * @returns Integer dimensions, longer edge == `maxEdge`, aspect preserved
  *   (within rounding), each clamped to ≥ 1. When `maxEdge` itself is invalid
  *   (< 1 / NaN) the longer edge falls back to `DEFAULT_BLIT_CONFIG.width` (still
- *   aspect-preserving). When the camera dimensions are invalid (≤ 0) the aspect
- *   is unknown, so it returns a square at the (possibly defaulted) edge.
+ *   aspect-preserving). When the camera dimensions are invalid (≤ 0 or NaN) the
+ *   aspect is unknown, so it returns a square at the (possibly defaulted) edge.
  */
 export function computeAspectFitSize(
   cameraWidth: number,
@@ -101,8 +101,10 @@ export function computeAspectFitSize(
   const safeEdge =
     maxEdge >= 1 ? Math.floor(maxEdge) : DEFAULT_BLIT_CONFIG.width;
 
-  // Guard: invalid camera dimensions → safe square (aspect unknown).
-  if (cameraWidth <= 0 || cameraHeight <= 0) {
+  // Guard: invalid camera dimensions → safe square (aspect unknown). Negated
+  // `> 0` checks so NaN (where `NaN <= 0` is false) is also rejected — a NaN
+  // dimension would otherwise yield {NaN, NaN} and crash render-target alloc.
+  if (!(cameraWidth > 0) || !(cameraHeight > 0)) {
     return { width: safeEdge, height: safeEdge };
   }
 

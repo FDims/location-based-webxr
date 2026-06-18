@@ -984,6 +984,28 @@ describe('camera-blit-capture', () => {
 
     /**
      * Why this test matters:
+     * `NaN <= 0` is false, so a NaN camera dimension would slip past the
+     * `<= 0` guard and produce {NaN, NaN} — which crashes downstream render
+     * target allocation. NaN dimensions are "invalid" exactly like ≤ 0, so they
+     * must take the same safe-square fallback.
+     */
+    it('falls back to a maxEdge square for NaN camera dimensions', () => {
+      expect(computeAspectFitSize(Number.NaN, 480, 512)).toEqual({
+        width: 512,
+        height: 512,
+      });
+      expect(computeAspectFitSize(640, Number.NaN, 512)).toEqual({
+        width: 512,
+        height: 512,
+      });
+      expect(computeAspectFitSize(Number.NaN, Number.NaN, 512)).toEqual({
+        width: 512,
+        height: 512,
+      });
+    });
+
+    /**
+     * Why this test matters:
      * A nonsensical maxEdge must fall back to the default blit EDGE LENGTH (so
      * we never build a 0×0/NaN target) while still preserving the camera aspect
      * — a 4:3 frame stays 4:3 at the default edge, not forced to a square.
