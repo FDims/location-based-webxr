@@ -380,3 +380,55 @@ test.describe('Session Notes Interaction', () => {
     expect(placeholder).toContain('Weather');
   });
 });
+
+// D4 (2026-06-19 round-2 feedback, Finding 4): the setup modal splits into a
+// scrollable content area (#setup-scroll) + a pinned CTA footer, so the primary
+// action (Enter AR) stays visible without scrolling — users were missing it
+// below the fold on short screens. These assert the structural/transitional
+// contract per the UI-feedback rule; the dominant-CTA *styling* is a visual
+// concern checked on-device.
+test.describe('Pinned Enter AR footer', () => {
+  test('Enter AR stays in the viewport without scrolling on a short screen', async ({
+    page,
+  }) => {
+    // Force a short viewport so the modal content genuinely overflows — that is
+    // the exact situation where the old layout pushed Enter AR below the fold.
+    await page.setViewportSize({ width: 390, height: 480 });
+    // Open the help section to guarantee the content area overflows.
+    await page.evaluate(() => {
+      document.getElementById('help-section')?.setAttribute('open', '');
+    });
+
+    // The content area must actually be scrollable (otherwise the test would
+    // pass trivially and prove nothing about pinning).
+    const overflow = await page.evaluate(() => {
+      const s = document.getElementById('setup-scroll');
+      return s ? s.scrollHeight > s.clientHeight + 1 : false;
+    });
+    expect(overflow).toBe(true);
+
+    // The core claim: Enter AR is visible in the viewport without scrolling.
+    const enterButton = page.locator('#btn-enter-ar');
+    await expect(enterButton).toBeVisible();
+    await expect(enterButton).toBeInViewport();
+  });
+
+  test('Enter AR and its hint share the pinned footer (outside the scroll area)', async ({
+    page,
+  }) => {
+    // The hint must travel with the button in the footer, and neither may be a
+    // descendant of the scrollable content area.
+    const shareFooter = await page.evaluate(() => {
+      const btn = document.getElementById('btn-enter-ar');
+      const hint = document.getElementById('enter-ar-hint');
+      const scroll = document.getElementById('setup-scroll');
+      if (!btn || !hint || !scroll) return false;
+      return (
+        btn.parentElement === hint.parentElement &&
+        !scroll.contains(btn) &&
+        !scroll.contains(hint)
+      );
+    });
+    expect(shareFooter).toBe(true);
+  });
+});

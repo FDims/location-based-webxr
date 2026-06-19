@@ -46,9 +46,6 @@ function createReplayHtmlFixture(): string {
       <div id="new-scenario-section">New scenario</div>
       <textarea id="session-notes"></textarea>
       <div id="permission-section">Permissions</div>
-      <button id="btn-enter-ar" disabled>Enter AR</button>
-      <p id="enter-ar-hint">Select a folder</p>
-      <p id="webxr-warning" class="hidden">WebXR not supported</p>
 
       <!-- Replay setup section -->
       <div id="replay-setup" class="hidden space-y-4">
@@ -58,8 +55,17 @@ function createReplayHtmlFixture(): string {
         <div id="replay-session-list">
           <p>Select a scenario</p>
         </div>
-        <button id="btn-start-replay" disabled>▶ Start Replay</button>
-        <p id="replay-hint">Open a folder and select a session</p>
+      </div>
+
+      <!-- Pinned CTA footer (D4): record + replay CTAs share one footer. The
+           replay CTA + hint are hidden by default for the record path and
+           revealed by switchToReplayMode(); mirrors the production index.html. -->
+      <div id="setup-cta-footer">
+        <p id="webxr-warning" class="hidden">WebXR not supported</p>
+        <p id="enter-ar-hint">Select a folder</p>
+        <button id="btn-enter-ar" disabled>Enter AR</button>
+        <p id="replay-hint" class="hidden">Open a folder and select a session</p>
+        <button id="btn-start-replay" class="hidden" disabled>▶ Start Replay</button>
       </div>
     </div>
 
@@ -184,6 +190,32 @@ describe('replay-ui', () => {
       expect(document.getElementById('btn-open-folder')!.textContent).toContain(
         'Recordings'
       );
+    });
+
+    // Why: D4 (2026-06-19) moved the Start Replay CTA + hint into the shared
+    // pinned footer, OUTSIDE #replay-setup, hidden by default for the record
+    // path. switchToReplayMode() must now explicitly reveal them — otherwise the
+    // replay path would have no visible action (regression guard).
+    it('reveals the footer Start Replay button and hint for the replay path', () => {
+      expect(
+        document
+          .getElementById('btn-start-replay')!
+          .classList.contains('hidden')
+      ).toBe(true);
+      expect(
+        document.getElementById('replay-hint')!.classList.contains('hidden')
+      ).toBe(true);
+
+      switchToReplayMode();
+
+      expect(
+        document
+          .getElementById('btn-start-replay')!
+          .classList.contains('hidden')
+      ).toBe(false);
+      expect(
+        document.getElementById('replay-hint')!.classList.contains('hidden')
+      ).toBe(false);
     });
   });
 

@@ -144,6 +144,12 @@ export function switchToReplayMode(): void {
 
   // Show replay setup
   show('replay-setup');
+  // The Start Replay CTA + its hint now live in the pinned footer (D4), outside
+  // #replay-setup, and are hidden by default for the record path — reveal them
+  // for the replay path. enableStartReplay() hides the hint once a session is
+  // picked.
+  show('btn-start-replay');
+  show('replay-hint');
 
   // Update title
   const title = el('setup-title');

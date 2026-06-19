@@ -487,338 +487,394 @@ No errors</pre
         class="absolute inset-0 bg-black/90 flex items-center justify-center z-50"
       >
         <div
-          class="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+          class="bg-gray-800 rounded-xl max-w-md w-full mx-4 shadow-2xl max-h-[90vh] flex flex-col"
         >
-          <div class="flex justify-between items-center mb-4">
-            <h1 id="setup-title" class="text-2xl font-bold">
-              GPS + SLAM Recorder
-            </h1>
-            <button
-              id="btn-settings"
-              class="p-2 text-gray-400 hover:text-white focus:ring-2 focus:ring-blue-400 focus:outline-none rounded"
-              aria-label="Recording Settings"
-              title="Recording Settings"
-            >
-              ⚙️
-            </button>
-          </div>
-
-          <!-- ============================================================ -->
-          <!-- Unsupported-platform notice (D1, 2026-06-16 user feedback,   -->
-          <!-- Finding 1). Hidden by default; revealed by                   -->
-          <!-- showUnsupportedPlatformNotice() when immersive-ar WebXR is   -->
-          <!-- unavailable so the user understands *why* recording is off   -->
-          <!-- (instead of a silent drop into replay mode) and how to fix   -->
-          <!-- it. Prominent on purpose, unlike the tiny #webxr-warning.    -->
-          <!-- ============================================================ -->
+          <!-- Scrollable content (D4, 2026-06-19): everything except the pinned
+               CTA footer scrolls here, so a tall setup screen never pushes the
+               Enter AR / Start Replay action below the fold. -->
           <div
-            id="unsupported-platform-notice"
-            role="alert"
-            class="hidden mb-4 p-4 rounded-lg border border-amber-500 bg-amber-500/15 text-sm text-amber-100"
+            id="setup-scroll"
+            class="overflow-y-auto min-h-0 flex-1 p-6 pb-4"
           >
-            <p class="font-semibold text-base mb-1">
-              ⚠️ This device can’t record
-            </p>
-            <p class="mb-2">
-              Recording needs the AR camera tracking (WebXR
-              <code>immersive-ar</code>) that this browser doesn’t provide —
-              <strong
-                >iOS browsers (Safari, Chrome, Firefox on iPhone/iPad) do not
-                support it at all</strong
-              >. To record, open this app in
-              <strong>Chrome on an Android phone</strong> with AR (ARCore)
-              support.
-            </p>
-            <p>
-              You can still <strong>replay</strong> existing recordings on this
-              device using the recordings folder below.
-            </p>
-          </div>
+            <div class="flex justify-between items-center mb-4">
+              <h1 id="setup-title" class="text-2xl font-bold">
+                GPS + SLAM Recorder
+              </h1>
+              <button
+                id="btn-settings"
+                class="p-2 text-gray-400 hover:text-white focus:ring-2 focus:ring-blue-400 focus:outline-none rounded"
+                aria-label="Recording Settings"
+                title="Recording Settings"
+              >
+                ⚙️
+              </button>
+            </div>
 
-          <!-- Collapsible Help Section (Issue 2 - User Feedback 2026-01-27) -->
-          <details id="help-section" class="mb-4" open>
-            <summary
-              class="cursor-pointer text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1 select-none"
-            >
-              <span class="text-base">ℹ️</span> What is this app?
-            </summary>
+            <!-- ============================================================ -->
+            <!-- Unsupported-platform notice (D1, 2026-06-16 user feedback,   -->
+            <!-- Finding 1). Hidden by default; revealed by                   -->
+            <!-- showUnsupportedPlatformNotice() when immersive-ar WebXR is   -->
+            <!-- unavailable so the user understands *why* recording is off   -->
+            <!-- (instead of a silent drop into replay mode) and how to fix   -->
+            <!-- it. Prominent on purpose, unlike the tiny #webxr-warning.    -->
+            <!-- ============================================================ -->
             <div
-              id="help-section-content"
-              class="mt-2 p-3 bg-gray-700/50 rounded-lg text-sm text-gray-300 space-y-2"
+              id="unsupported-platform-notice"
+              role="alert"
+              class="hidden mb-4 p-4 rounded-lg border border-amber-500 bg-amber-500/15 text-sm text-amber-100"
             >
-              <p>
-                <strong class="text-white">Purpose:</strong> Record synchronized
-                AR + GPS data — camera frames, AR poses, GPS readings and depth.
-                The resulting ZIPs can be used for: Gaussian splatting(they use
-                COLMAP folder structure); evaluating GPS tracking accuracy (test
-                if it works for your use case and locations); re-running
-                sessions in desktop replay; and documenting a site with
-                geo-anchored photos, point clouds and reference markers. Walk
-                around while the app captures everything. Check the settings for
-                more details.
+              <p class="font-semibold text-base mb-1">
+                ⚠️ This device can’t record
+              </p>
+              <p class="mb-2">
+                Recording needs the AR camera tracking (WebXR
+                <code>immersive-ar</code>) that this browser doesn’t provide —
+                <strong
+                  >iOS browsers (Safari, Chrome, Firefox on iPhone/iPad) do not
+                  support it at all</strong
+                >. To record, open this app in
+                <strong>Chrome on an Android phone</strong> with AR (ARCore)
+                support.
               </p>
               <p>
-                <strong class="text-white">Reference Points:</strong> Landmarks
-                you mark during recording for ground-truth validation. Tap "📍
-                Mark Point" when standing at a known location.
+                You can still <strong>replay</strong> existing recordings on
+                this device using the recordings folder below.
               </p>
             </div>
-          </details>
 
-          <div class="space-y-4">
-            <!-- ============================================================ -->
-            <!-- Permission Status Section — moved to the TOP of the setup    -->
-            <!-- flow (D6 item 1, 2026-06-16 user feedback). Permissions are  -->
-            <!-- the upfront gating action; storage / scenario / notes follow.-->
-            <!-- ============================================================ -->
-            <div id="permission-section" class="space-y-2">
-              <label class="block text-sm text-gray-400 mb-1"
-                >Required Permissions</label
+            <!-- Collapsible Help Section (Issue 2 - User Feedback 2026-01-27) -->
+            <details id="help-section" class="mb-4" open>
+              <summary
+                class="cursor-pointer text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1 select-none"
               >
-              <div class="bg-gray-700/50 rounded-lg p-3 space-y-2">
-                <!-- File Storage Status (shown first per user feedback Issue #1) -->
-                <div
-                  id="perm-filestorage"
-                  class="flex items-center justify-between text-sm"
+                <span class="text-base">ℹ️</span> What is this app?
+              </summary>
+              <div
+                id="help-section-content"
+                class="mt-2 p-3 bg-gray-700/50 rounded-lg text-sm text-gray-300 space-y-2"
+              >
+                <p>
+                  <strong class="text-white">Purpose:</strong> Record
+                  synchronized AR + GPS data — camera frames, AR poses, GPS
+                  readings and depth. The resulting ZIPs can be used for:
+                  Gaussian splatting(they use COLMAP folder structure);
+                  evaluating GPS tracking accuracy (test if it works for your
+                  use case and locations); re-running sessions in desktop
+                  replay; and documenting a site with geo-anchored photos, point
+                  clouds and reference markers. Walk around while the app
+                  captures everything. Check the settings for more details.
+                </p>
+                <p>
+                  <strong class="text-white">Reference Points:</strong>
+                  Landmarks you mark during recording for ground-truth
+                  validation. Tap "📍 Mark Point" when standing at a known
+                  location.
+                </p>
+              </div>
+            </details>
+
+            <div class="space-y-4">
+              <!-- ============================================================ -->
+              <!-- Permission Status Section — moved to the TOP of the setup    -->
+              <!-- flow (D6 item 1, 2026-06-16 user feedback). Permissions are  -->
+              <!-- the upfront gating action; storage / scenario / notes follow.-->
+              <!-- ============================================================ -->
+              <div id="permission-section" class="space-y-2">
+                <label class="block text-sm text-gray-400 mb-1"
+                  >Required Permissions</label
                 >
-                  <span class="flex items-center gap-2">
-                    <span class="emoji-icon">📁</span>
-                    <span>File Storage</span>
-                  </span>
-                  <span
-                    id="perm-filestorage-status"
-                    class="text-yellow-400"
-                    aria-live="polite"
-                    >⏳ Pending</span
+                <div class="bg-gray-700/50 rounded-lg p-3 space-y-2">
+                  <!-- File Storage Status (shown first per user feedback Issue #1) -->
+                  <div
+                    id="perm-filestorage"
+                    class="flex items-center justify-between text-sm"
                   >
-                </div>
-                <!-- WebXR/AR Status -->
-                <div
-                  id="perm-webxr"
-                  class="flex items-center justify-between text-sm"
-                >
-                  <span class="flex items-center gap-2">
-                    <span class="emoji-icon">🥽</span>
-                    <span>AR + Depth Sensing</span>
-                  </span>
-                  <span
-                    id="perm-webxr-status"
-                    class="text-yellow-400"
-                    aria-live="polite"
-                    >Checking...</span
+                    <span class="flex items-center gap-2">
+                      <span class="emoji-icon">📁</span>
+                      <span>File Storage</span>
+                    </span>
+                    <span
+                      id="perm-filestorage-status"
+                      class="text-yellow-400"
+                      aria-live="polite"
+                      >⏳ Pending</span
+                    >
+                  </div>
+                  <!-- WebXR/AR Status -->
+                  <div
+                    id="perm-webxr"
+                    class="flex items-center justify-between text-sm"
                   >
-                </div>
-                <!-- Camera Status -->
-                <div
-                  id="perm-camera"
-                  class="flex items-center justify-between text-sm"
-                >
-                  <span class="flex items-center gap-2">
-                    <span class="emoji-icon">📷</span>
-                    <span>Camera</span>
-                  </span>
-                  <span
-                    id="perm-camera-status"
-                    class="text-yellow-400"
-                    aria-live="polite"
-                    >Checking...</span
+                    <span class="flex items-center gap-2">
+                      <span class="emoji-icon">🥽</span>
+                      <span>AR + Depth Sensing</span>
+                    </span>
+                    <span
+                      id="perm-webxr-status"
+                      class="text-yellow-400"
+                      aria-live="polite"
+                      >Checking...</span
+                    >
+                  </div>
+                  <!-- Camera Status -->
+                  <div
+                    id="perm-camera"
+                    class="flex items-center justify-between text-sm"
                   >
-                </div>
-                <!-- Compass/orientation row removed (D3, 2026-06-19 round-2
+                    <span class="flex items-center gap-2">
+                      <span class="emoji-icon">📷</span>
+                      <span>Camera</span>
+                    </span>
+                    <span
+                      id="perm-camera-status"
+                      class="text-yellow-400"
+                      aria-live="polite"
+                      >Checking...</span
+                    >
+                  </div>
+                  <!-- Compass/orientation row removed (D3, 2026-06-19 round-2
                      feedback): on every Android Chrome device — the only
                      platform that can record — DeviceOrientationEvent needs no
                      permission, so the row was permanently green and never
                      actionable. Orientation is still requested by the framework
                      (a no-op on Android) and still used for tracking; we just
                      stop showing a non-actionable "permission". -->
-                <!-- Geolocation Status (requested LAST — D6 item 2) -->
-                <div
-                  id="perm-gps"
-                  class="flex items-center justify-between text-sm"
-                >
-                  <span class="flex items-center gap-2">
-                    <span class="emoji-icon">📍</span>
-                    <span>Location (GPS)</span>
-                  </span>
-                  <span
-                    id="perm-gps-status"
-                    class="text-yellow-400"
-                    aria-live="polite"
-                    >Checking...</span
+                  <!-- Geolocation Status (requested LAST — D6 item 2) -->
+                  <div
+                    id="perm-gps"
+                    class="flex items-center justify-between text-sm"
                   >
+                    <span class="flex items-center gap-2">
+                      <span class="emoji-icon">📍</span>
+                      <span>Location (GPS)</span>
+                    </span>
+                    <span
+                      id="perm-gps-status"
+                      class="text-yellow-400"
+                      aria-live="polite"
+                      >Checking...</span
+                    >
+                  </div>
                 </div>
-              </div>
-              <!-- Request Permissions Button -->
-              <button
-                id="btn-request-permissions"
-                class="w-full bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-400 focus:outline-none disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-all hidden"
-                aria-label="Grant required permissions"
-              >
-                Grant Permissions
-              </button>
-              <!-- Permission error message -->
-              <p
-                id="permission-error"
-                class="text-xs text-red-400 text-center hidden"
-              ></p>
-            </div>
-
-            <!-- Storage Setup - REQUIRED for recording -->
-            <div
-              id="storage-setup"
-              class="bg-gray-700/50 rounded-lg p-3 space-y-3"
-            >
-              <p class="text-xs text-gray-400">
-                Choose where to save this recording. Importing a previous
-                recordings folder is optional — it's only needed to import
-                reference points from previous recordings when the browser cache
-                is no longer available.
-              </p>
-
-              <!-- Choose save location (the only required storage step) -->
-              <div class="space-y-1">
+                <!-- Request Permissions Button -->
                 <button
-                  id="btn-choose-save"
-                  class="w-full bg-blue-600 hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none text-white py-2 px-3 rounded-lg text-left text-sm"
-                  aria-label="Choose where to save new recording"
+                  id="btn-request-permissions"
+                  class="w-full bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-400 focus:outline-none disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-all hidden"
+                  aria-label="Grant required permissions"
                 >
-                  💾 Choose Save Location...
+                  Grant Permissions
                 </button>
-                <!-- Pure status line (D6 item 8): shows the chosen path once
+                <!-- Permission error message -->
+                <p
+                  id="permission-error"
+                  class="text-xs text-red-400 text-center hidden"
+                ></p>
+              </div>
+
+              <!-- Storage Setup - REQUIRED for recording -->
+              <div
+                id="storage-setup"
+                class="bg-gray-700/50 rounded-lg p-3 space-y-3"
+              >
+                <p class="text-xs text-gray-400">
+                  Choose where to save this recording. Importing a previous
+                  recordings folder is optional — it's only needed to import
+                  reference points from previous recordings when the browser
+                  cache is no longer available.
+                </p>
+
+                <!-- Choose save location (the only required storage step) -->
+                <div class="space-y-1">
+                  <button
+                    id="btn-choose-save"
+                    class="w-full bg-blue-600 hover:bg-blue-500 focus:ring-2 focus:ring-blue-400 focus:outline-none text-white py-2 px-3 rounded-lg text-left text-sm"
+                    aria-label="Choose where to save new recording"
+                  >
+                    💾 Choose Save Location...
+                  </button>
+                  <!-- Pure status line (D6 item 8): shows the chosen path once
                      selected. The "no location yet" blocker is stated ONCE, on
                      the disabled Enter AR button's #enter-ar-hint, so it is not
                      duplicated here. -->
-                <p id="save-status" class="text-xs text-gray-500 truncate"></p>
-              </div>
+                  <p
+                    id="save-status"
+                    class="text-xs text-gray-500 truncate"
+                  ></p>
+                </div>
 
-              <!-- Optional: import previous recordings to recover ref points.
+                <!-- Optional: import previous recordings to recover ref points.
                    Collapsed by default; auto-expanded by the app when the
                    chosen scenario has no saved reference points in OPFS. -->
-              <details id="folder-import-section" class="space-y-1">
-                <!-- De-emphasised optional/secondary action (D6 item 10): a
+                <details id="folder-import-section" class="space-y-1">
+                  <!-- De-emphasised optional/secondary action (D6 item 10): a
                      muted grey summary so this optional import never competes
                      with the primary save-location + Enter AR actions. -->
-                <summary
-                  class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 select-none"
-                >
-                  📂 Import previous recordings / recover reference points
-                  (optional)
-                </summary>
-                <div class="space-y-1 mt-2">
-                  <p
-                    id="folder-import-hint"
-                    class="text-xs text-yellow-400 hidden"
-                  ></p>
-                  <button
-                    id="btn-open-folder"
-                    class="w-full bg-gray-600 hover:bg-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none text-white py-2 px-3 rounded-lg text-left text-sm"
-                    aria-label="Open folder with previous recordings"
+                  <summary
+                    class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 select-none"
                   >
-                    📂 Open Previous Recordings Folder...
-                  </button>
-                  <p id="folder-status" class="text-xs text-gray-500 truncate">
-                    ❌ No folder selected
-                  </p>
-                </div>
-              </details>
-            </div>
+                    📂 Import previous recordings / recover reference points
+                    (optional)
+                  </summary>
+                  <div class="space-y-1 mt-2">
+                    <p
+                      id="folder-import-hint"
+                      class="text-xs text-yellow-400 hidden"
+                    ></p>
+                    <button
+                      id="btn-open-folder"
+                      class="w-full bg-gray-600 hover:bg-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none text-white py-2 px-3 rounded-lg text-left text-sm"
+                      aria-label="Open folder with previous recordings"
+                    >
+                      📂 Open Previous Recordings Folder...
+                    </button>
+                    <p
+                      id="folder-status"
+                      class="text-xs text-gray-500 truncate"
+                    >
+                      ❌ No folder selected
+                    </p>
+                  </div>
+                </details>
+              </div>
 
-            <!-- ============================================================ -->
-            <!-- Scenario & session controls — collapsed by default (D6      -->
-            <!-- item 3, 2026-06-16 user feedback). Most recordings use the  -->
-            <!-- default/first scenario, so this is tucked out of the way    -->
-            <!-- with its own explanation (the "Scenario"/"Session"          -->
-            <!-- paragraphs were moved here from "What is this app?"). The    -->
-            <!-- scenario <select> change handler and the D5 folder           -->
-            <!-- auto-expand are unaffected — that lives in the separate      -->
-            <!-- #folder-import-section above.                                -->
-            <!-- ============================================================ -->
-            <details
-              id="scenario-section"
-              class="bg-gray-700/50 rounded-lg p-3"
-            >
-              <summary
-                class="cursor-pointer text-sm text-gray-300 hover:text-white select-none"
+              <!-- ============================================================ -->
+              <!-- Scenario & session controls — collapsed by default (D6      -->
+              <!-- item 3, 2026-06-16 user feedback). Most recordings use the  -->
+              <!-- default/first scenario, so this is tucked out of the way    -->
+              <!-- with its own explanation (the "Scenario"/"Session"          -->
+              <!-- paragraphs were moved here from "What is this app?"). The    -->
+              <!-- scenario <select> change handler and the D5 folder           -->
+              <!-- auto-expand are unaffected — that lives in the separate      -->
+              <!-- #folder-import-section above.                                -->
+              <!-- ============================================================ -->
+              <details
+                id="scenario-section"
+                class="bg-gray-700/50 rounded-lg p-3"
               >
-                🗂️ Scenario &amp; session (optional)
-              </summary>
-              <div class="mt-3 space-y-3">
-                <p class="text-xs text-gray-400">
-                  <strong class="text-gray-200">Scenario:</strong> A named
-                  physical area you'll revisit for multiple recordings (e.g.,
-                  "Paris Eiffeltower"). Scenarios group related sessions and
-                  share reference points. Leave the default to just start
-                  recording.
-                </p>
-                <p class="text-xs text-gray-400">
-                  <strong class="text-gray-200">Session:</strong> A single
-                  recording within a scenario, named automatically by timestamp.
-                </p>
-
-                <!-- Scenario Selection -->
-                <div>
-                  <label class="block text-sm text-gray-400 mb-1"
-                    >Scenario</label
-                  >
-                  <select
-                    id="scenario-select"
-                    class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                  >
-                    <option value="">-- Loading scenarios... --</option>
-                  </select>
-                </div>
-
-                <!-- New Scenario Name -->
-                <div
-                  id="new-scenario-section"
-                  class="hidden transition-all duration-300 ease-in-out opacity-0"
+                <summary
+                  class="cursor-pointer text-sm text-gray-300 hover:text-white select-none"
                 >
-                  <label class="block text-sm text-gray-400 mb-1"
-                    >New Scenario Name</label
-                  >
-                  <input
-                    type="text"
-                    id="new-scenario-name"
-                    class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                    placeholder="e.g., Paris Eiffeltower"
-                  />
-                </div>
+                  🗂️ Scenario &amp; session (optional)
+                </summary>
+                <div class="mt-3 space-y-3">
+                  <p class="text-xs text-gray-400">
+                    <strong class="text-gray-200">Scenario:</strong> A named
+                    physical area you'll revisit for multiple recordings (e.g.,
+                    "Paris Eiffeltower"). Scenarios group related sessions and
+                    share reference points. Leave the default to just start
+                    recording.
+                  </p>
+                  <p class="text-xs text-gray-400">
+                    <strong class="text-gray-200">Session:</strong> A single
+                    recording within a scenario, named automatically by
+                    timestamp.
+                  </p>
 
-                <!-- Notes (D2, 2026-06-19 round-2 feedback): moved INSIDE the
+                  <!-- Scenario Selection -->
+                  <div>
+                    <label class="block text-sm text-gray-400 mb-1"
+                      >Scenario</label
+                    >
+                    <select
+                      id="scenario-select"
+                      class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    >
+                      <option value="">-- Loading scenarios... --</option>
+                    </select>
+                  </div>
+
+                  <!-- New Scenario Name -->
+                  <div
+                    id="new-scenario-section"
+                    class="hidden transition-all duration-300 ease-in-out opacity-0"
+                  >
+                    <label class="block text-sm text-gray-400 mb-1"
+                      >New Scenario Name</label
+                    >
+                    <input
+                      type="text"
+                      id="new-scenario-name"
+                      class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                      placeholder="e.g., Paris Eiffeltower"
+                    />
+                  </div>
+
+                  <!-- Notes (D2, 2026-06-19 round-2 feedback): moved INSIDE the
                      collapsed scenario/session <details> so this optional,
                      session-level field is hidden by default with the rest of
                      the advanced grouping config, instead of always-visible
                      above Enter AR. Rendered as a plain sub-section (no nested
                      card) to match the Scenario <select> block above it. -->
+                  <div>
+                    <label class="block text-sm text-gray-400 mb-1"
+                      >Session Notes (optional)</label
+                    >
+                    <textarea
+                      id="session-notes"
+                      class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg resize-none focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                      rows="2"
+                      placeholder="Weather, device, etc..."
+                      disabled
+                    ></textarea>
+                  </div>
+                </div>
+              </details>
+
+              <!-- ========================================== -->
+              <!-- Replay Setup (hidden by default, shown     -->
+              <!-- when WebXR is not supported — Issue 1      -->
+              <!-- replay-mode design doc 2026-02-19)         -->
+              <!-- ========================================== -->
+              <div id="replay-setup" class="hidden space-y-4">
+                <!-- Replay Scenario Selection -->
+                <div>
+                  <label
+                    class="block text-sm text-gray-400 mb-1"
+                    for="replay-scenario-select"
+                    >Scenario</label
+                  >
+                  <select
+                    id="replay-scenario-select"
+                    class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    disabled
+                  >
+                    <option value="">-- Open a folder first --</option>
+                  </select>
+                </div>
+
+                <!-- Session List -->
                 <div>
                   <label class="block text-sm text-gray-400 mb-1"
-                    >Session Notes (optional)</label
+                    >Sessions</label
                   >
-                  <textarea
-                    id="session-notes"
-                    class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg resize-none focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                    rows="2"
-                    placeholder="Weather, device, etc..."
-                    disabled
-                  ></textarea>
+                  <div
+                    id="replay-session-list"
+                    class="bg-gray-700/50 rounded-lg p-2 max-h-40 overflow-y-auto space-y-1"
+                  >
+                    <p class="text-xs text-gray-500 text-center py-2">
+                      Select a scenario to see sessions
+                    </p>
+                  </div>
                 </div>
+
+                <!-- GPS Path Preview Map (Issue #1, 2026-03-23 user feedback) -->
+                <div
+                  id="replay-preview-map"
+                  class="hidden h-48 rounded-lg overflow-hidden"
+                ></div>
               </div>
-            </details>
+            </div>
+          </div>
+          <!-- /#setup-scroll -->
 
-            <!-- Start Button -->
-            <button
-              id="btn-enter-ar"
-              class="w-full bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-400 focus:outline-none disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-all"
-              disabled
-            >
-              Enter AR
-            </button>
-
-            <!-- Enter AR Hint - explains why button is disabled -->
-            <p id="enter-ar-hint" class="text-xs text-yellow-400 text-center">
-              Select a folder to continue
-            </p>
-
+          <!-- Pinned CTA footer (D4 + D6 item 9, 2026-06-19 round-2 feedback):
+               the primary action stays visible without scrolling the modal.
+               Record path shows Enter AR; switchToReplayMode() swaps in Start
+               Replay for the WebXR-unsupported path. Both hints live here too so
+               the "why disabled" copy travels with its button. -->
+          <div
+            class="flex-shrink-0 border-t border-gray-700 bg-gray-800 rounded-b-xl p-4 space-y-2"
+          >
             <!-- WebXR Support Warning -->
             <p
               id="webxr-warning"
@@ -827,61 +883,36 @@ No errors</pre
               WebXR is not supported on this device/browser.
             </p>
 
-            <!-- ========================================== -->
-            <!-- Replay Setup (hidden by default, shown     -->
-            <!-- when WebXR is not supported — Issue 1      -->
-            <!-- replay-mode design doc 2026-02-19)         -->
-            <!-- ========================================== -->
-            <div id="replay-setup" class="hidden space-y-4">
-              <!-- Replay Scenario Selection -->
-              <div>
-                <label
-                  class="block text-sm text-gray-400 mb-1"
-                  for="replay-scenario-select"
-                  >Scenario</label
-                >
-                <select
-                  id="replay-scenario-select"
-                  class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                  disabled
-                >
-                  <option value="">-- Open a folder first --</option>
-                </select>
-              </div>
+            <!-- Enter AR Hint - explains why the button is disabled -->
+            <p id="enter-ar-hint" class="text-xs text-yellow-400 text-center">
+              Select a folder to continue
+            </p>
 
-              <!-- Session List -->
-              <div>
-                <label class="block text-sm text-gray-400 mb-1">Sessions</label>
-                <div
-                  id="replay-session-list"
-                  class="bg-gray-700/50 rounded-lg p-2 max-h-40 overflow-y-auto space-y-1"
-                >
-                  <p class="text-xs text-gray-500 text-center py-2">
-                    Select a scenario to see sessions
-                  </p>
-                </div>
-              </div>
+            <!-- Primary action (D6 item 9: dominant CTA — larger, bold). -->
+            <button
+              id="btn-enter-ar"
+              class="w-full bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-400 focus:outline-none disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-lg text-lg transition-all"
+              disabled
+            >
+              Enter AR
+            </button>
 
-              <!-- GPS Path Preview Map (Issue #1, 2026-03-23 user feedback) -->
-              <div
-                id="replay-preview-map"
-                class="hidden h-48 rounded-lg overflow-hidden"
-              ></div>
+            <!-- Replay Hint (replay path; revealed by switchToReplayMode). -->
+            <p
+              id="replay-hint"
+              class="text-xs text-yellow-400 text-center hidden"
+            >
+              Open a folder and select a session to begin
+            </p>
 
-              <!-- Start Replay Button -->
-              <button
-                id="btn-start-replay"
-                class="w-full bg-green-600 hover:bg-green-700 focus:ring-2 focus:ring-green-400 focus:outline-none disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-all"
-                disabled
-              >
-                ▶ Start Replay
-              </button>
-
-              <!-- Replay Hint -->
-              <p id="replay-hint" class="text-xs text-yellow-400 text-center">
-                Open a folder and select a session to begin
-              </p>
-            </div>
+            <!-- Start Replay (replay path; revealed by switchToReplayMode). -->
+            <button
+              id="btn-start-replay"
+              class="hidden w-full bg-green-600 hover:bg-green-700 focus:ring-2 focus:ring-green-400 focus:outline-none disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-lg text-lg transition-all"
+              disabled
+            >
+              ▶ Start Replay
+            </button>
           </div>
         </div>
       </div>
