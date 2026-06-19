@@ -1203,9 +1203,21 @@ function initHelpSection(): void {
     return;
   }
 
-  const explicitlyCollapsed =
-    localStorage.getItem(HELP_COLLAPSED_KEY) === 'true';
-  const seenBefore = localStorage.getItem(HELP_SEEN_KEY) === 'true';
+  // `localStorage` can throw on ANY access (not just writes) in private-browsing
+  // modes, sandboxed iframes without allow-same-origin, or when storage is
+  // disabled by policy. `initHelpSection` runs synchronously inside `initUI`,
+  // which `main.ts` calls unguarded during bootstrap, so an escaping throw would
+  // crash the whole app at startup. Guard every access (mirroring the
+  // recording-options load/save/reset helpers): on failure we keep index.html's
+  // shipped `open` default and skip the read-once "seen" write.
+  let explicitlyCollapsed = false;
+  let seenBefore = false;
+  try {
+    explicitlyCollapsed = localStorage.getItem(HELP_COLLAPSED_KEY) === 'true';
+    seenBefore = localStorage.getItem(HELP_SEEN_KEY) === 'true';
+  } catch {
+    // Storage unavailable — degrade to the first-time-user default (open).
+  }
 
   // Collapse for everyone except a genuine first-time user (no prior visit and
   // no explicit preference). `index.html` ships the section with a static
@@ -1216,18 +1228,27 @@ function initHelpSection(): void {
 
   // Remember that this user has now seen the help, so the next start defaults
   // to collapsed even if they never explicitly close it.
-  localStorage.setItem(HELP_SEEN_KEY, 'true');
+  try {
+    localStorage.setItem(HELP_SEEN_KEY, 'true');
+  } catch {
+    // Persisting the "seen" flag is best-effort; ignore storage failures.
+  }
 
   // Persist an explicit user toggle (so a deliberate expand/collapse is honoured
   // over the returning-user default).
   helpSection.addEventListener('toggle', () => {
     const isNowOpen = helpSection.open;
-    if (isNowOpen) {
-      // User expanded - remove the collapsed flag
-      localStorage.removeItem(HELP_COLLAPSED_KEY);
-    } else {
-      // User collapsed - remember this preference
-      localStorage.setItem(HELP_COLLAPSED_KEY, 'true');
+    try {
+      if (isNowOpen) {
+        // User expanded - remove the collapsed flag
+        localStorage.removeItem(HELP_COLLAPSED_KEY);
+      } else {
+        // User collapsed - remember this preference
+        localStorage.setItem(HELP_COLLAPSED_KEY, 'true');
+      }
+    } catch {
+      // Persisting the toggle preference is best-effort; a storage failure must
+      // not propagate out of the DOM event handler.
     }
   });
 }

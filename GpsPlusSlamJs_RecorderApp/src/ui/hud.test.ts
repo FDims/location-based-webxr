@@ -2944,6 +2944,56 @@ describe('help section collapse persistence', () => {
     initUI(createMockCallbacks());
     expect(help().open).toBe(false);
   });
+
+  // Why this test matters: `initHelpSection` runs synchronously inside `initUI`,
+  // which `main.ts` calls unguarded during UI bootstrap. Some environments
+  // (private browsing in certain browsers, sandboxed iframes without
+  // allow-same-origin, storage disabled by policy) throw a SecurityError /
+  // DOMException on ANY `localStorage` access — including reads. Without a guard
+  // that throw escapes `initUI` and crashes the entire app at startup. Every
+  // other localStorage site in the project (recording-options load/save/reset)
+  // already wraps access in try/catch; this pins that the help section degrades
+  // the same way (keeps the shipped `open` default instead of crashing).
+  it('degrades gracefully when localStorage access throws (private mode / sandboxed iframe)', () => {
+    setupWithHelp();
+    const getItem = vi
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new DOMException('localStorage is disabled', 'SecurityError');
+      });
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new DOMException('localStorage is disabled', 'SecurityError');
+      });
+    try {
+      expect(() => initUI(createMockCallbacks())).not.toThrow();
+      // With no readable preference we keep index.html's shipped default (open).
+      expect(help().open).toBe(true);
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
+  });
+
+  // A user-toggle after init must also survive a throwing localStorage: the
+  // `toggle` listener persists the collapse preference, but a write failure
+  // (quota, disabled storage) must not propagate out of the DOM event handler.
+  it('does not throw from the toggle handler when persisting the preference fails', () => {
+    setupWithHelp();
+    initUI(createMockCallbacks());
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new DOMException('quota exceeded', 'QuotaExceededError');
+      });
+    try {
+      help().open = false;
+      expect(() => help().dispatchEvent(new Event('toggle'))).not.toThrow();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
 });
 
 /**
