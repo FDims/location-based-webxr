@@ -494,6 +494,38 @@ No errors</pre
             </button>
           </div>
 
+          <!-- ============================================================ -->
+          <!-- Unsupported-platform notice (D1, 2026-06-16 user feedback,   -->
+          <!-- Finding 1). Hidden by default; revealed by                   -->
+          <!-- showUnsupportedPlatformNotice() when immersive-ar WebXR is   -->
+          <!-- unavailable so the user understands *why* recording is off   -->
+          <!-- (instead of a silent drop into replay mode) and how to fix   -->
+          <!-- it. Prominent on purpose, unlike the tiny #webxr-warning.    -->
+          <!-- ============================================================ -->
+          <div
+            id="unsupported-platform-notice"
+            role="alert"
+            class="hidden mb-4 p-4 rounded-lg border border-amber-500 bg-amber-500/15 text-sm text-amber-100"
+          >
+            <p class="font-semibold text-base mb-1">
+              ⚠️ This device can’t record
+            </p>
+            <p class="mb-2">
+              Recording needs the AR camera tracking (WebXR
+              <code>immersive-ar</code>) that this browser doesn’t provide —
+              <strong
+                >iOS browsers (Safari, Chrome, Firefox on iPhone/iPad) do not
+                support it at all</strong
+              >. To record, open this app in
+              <strong>Chrome on an Android phone</strong> with AR (ARCore)
+              support.
+            </p>
+            <p>
+              You can still <strong>replay</strong> existing recordings on this
+              device using the recordings folder below.
+            </p>
+          </div>
+
           <!-- Collapsible Help Section (Issue 2 - User Feedback 2026-01-27) -->
           <details id="help-section" class="mb-4" open>
             <summary

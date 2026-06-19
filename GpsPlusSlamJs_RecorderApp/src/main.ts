@@ -45,6 +45,7 @@ import {
   updateRefPointButtonLabel,
   setNewRefPointButtonVisible,
   updateTrackingQuality,
+  showUnsupportedPlatformNotice,
 } from './ui/hud';
 import {
   initSessionSummary,
@@ -988,6 +989,10 @@ async function main(): Promise<void> {
     stopGpsWatch(); // Clean up any GPS warm-up watch (Bug 5)
     replayHandlers.setIsReplayMode(true);
     switchToReplayMode();
+    // D1 (2026-06-16 user feedback, Finding 1): explain *why* recording is
+    // unavailable on this platform (typically iOS, which lacks immersive-ar)
+    // instead of silently landing on the replay screen with no guidance.
+    showUnsupportedPlatformNotice();
     initReplayUI({
       onScenarioChange: (name: string) =>
         void replayHandlers.handleReplayScenarioChange(name),

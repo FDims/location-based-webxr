@@ -31,9 +31,14 @@ import {
   updatePermissionStatus,
   updateTrackingQuality,
   hideTrackingQuality,
+  showUnsupportedPlatformNotice,
   type UICallbacks,
 } from './hud.js';
 import type { PermissionCheckResult } from 'gps-plus-slam-app-framework/sensors/permission-checker';
+import {
+  extractElementById,
+  loadFullIndexHtml,
+} from '../test-utils/html-fixtures.js';
 
 /**
  * Creates a minimal DOM structure for testing.
@@ -2865,5 +2870,66 @@ describe('hideTrackingQuality', () => {
     updateTrackingQuality(makeReport());
     const details = document.getElementById('tracking-quality-details')!;
     expect(details.classList.contains('hidden')).toBe(true);
+  });
+});
+
+/**
+ * Tests for the unsupported-platform notice (D1, 2026-06-16 user feedback,
+ * Finding 1).
+ *
+ * Why these tests matter: when `immersive-ar` WebXR is unavailable (the common
+ * case being iOS, whose browsers do not provide browser AR tracking) the app
+ * silently dropped into replay mode — the field tester read this as "the app
+ * only works on Chrome on Android" with no in-app explanation. The setup UI is
+ * already suppressed by `switchToReplayMode`, but the *why* was hidden too.
+ * `showUnsupportedPlatformNotice` surfaces a prominent, plain-language
+ * explanation of the cause and the fix (Chrome on Android), while keeping
+ * replay available.
+ */
+describe('showUnsupportedPlatformNotice', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('reveals the hidden platform notice', () => {
+    document.body.innerHTML =
+      '<div id="unsupported-platform-notice" class="hidden"></div>';
+
+    showUnsupportedPlatformNotice();
+
+    const notice = document.getElementById('unsupported-platform-notice')!;
+    expect(notice.classList.contains('hidden')).toBe(false);
+  });
+
+  it('does not throw when the notice element is absent (defensive)', () => {
+    expect(() => showUnsupportedPlatformNotice()).not.toThrow();
+  });
+
+  it('the production notice explains the cause and points to Chrome on Android', () => {
+    // Guard the actual user-facing copy in index.html so a future edit cannot
+    // silently strip the explanation. It must name: the cause (AR tracking the
+    // browser lacks, with iOS as the example), the fix (Chrome on Android), and
+    // that replay is still available.
+    const noticeHtml = extractElementById('unsupported-platform-notice');
+    expect(noticeHtml).toMatch(/iOS/i);
+    expect(noticeHtml).toMatch(/Chrome/i);
+    expect(noticeHtml).toMatch(/Android/i);
+    expect(noticeHtml).toMatch(/AR/);
+    expect(noticeHtml).toMatch(/replay/i);
+  });
+
+  it('the production notice is prominent (not the tiny webxr-warning styling)', () => {
+    // D1 asks for a *prominent* explanation, unlike the pre-existing
+    // text-xs #webxr-warning line. Assert the banner does not use text-xs and
+    // starts hidden (revealed only on unsupported platforms).
+    const noticeHtml = extractElementById('unsupported-platform-notice');
+    expect(noticeHtml).toContain('hidden');
+    expect(noticeHtml).not.toMatch(/class="[^"]*\btext-xs\b/);
+  });
+
+  it('index.html keeps the notice inside the setup modal so it shows at startup', () => {
+    // The notice must live where the user lands (the setup modal), not buried.
+    const full = loadFullIndexHtml();
+    expect(full).toContain('id="unsupported-platform-notice"');
   });
 });

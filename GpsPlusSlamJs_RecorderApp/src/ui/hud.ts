@@ -300,6 +300,27 @@ export function showError(message: string): void {
 }
 
 /**
+ * Reveal the prominent unsupported-platform notice in the setup modal.
+ *
+ * D1 (2026-06-16 user feedback, Finding 1): when `immersive-ar` WebXR is
+ * unavailable the app drops into replay mode (see `switchToReplayMode`), which
+ * suppresses the recording setup UI but previously left the *reason* unexplained
+ * — the field tester experienced this as "the app only works on Chrome on
+ * Android" with no in-app guidance. This banner states the cause (the browser
+ * lacks the AR tracking the recorder needs — typically iOS) and the fix (open it
+ * in Chrome on Android), while noting replay still works. The copy itself lives
+ * in `index.html` (`#unsupported-platform-notice`); this only unhides it.
+ *
+ * Defensive: a no-op when the element is absent (e.g. trimmed test fixtures).
+ */
+export function showUnsupportedPlatformNotice(): void {
+  const notice = document.getElementById('unsupported-platform-notice');
+  if (notice) {
+    notice.classList.remove('hidden');
+  }
+}
+
+/**
  * Update GPS accuracy display
  */
 export function updateGpsInfo(accuracy: number): void {

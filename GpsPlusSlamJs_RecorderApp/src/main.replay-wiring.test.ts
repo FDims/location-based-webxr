@@ -80,6 +80,7 @@ vi.mock('./ui/hud', () => ({
   setNewRefPointButtonVisible: vi.fn(),
   updateTrackingQuality: vi.fn(),
   hideTrackingQuality: vi.fn(),
+  showUnsupportedPlatformNotice: vi.fn(),
 }));
 vi.mock('./ui/toast', () => ({
   initToast: vi.fn(),
@@ -278,7 +279,7 @@ vi.mock('gps-plus-slam-app-framework', () => ({
 import { checkAllPermissions } from 'gps-plus-slam-app-framework/sensors/permission-checker';
 import { stopGpsWatch } from 'gps-plus-slam-app-framework/sensors/gps';
 import { initReplayUI, switchToReplayMode } from './ui/replay-ui';
-import { updateStatus } from './ui/hud';
+import { updateStatus, showUnsupportedPlatformNotice } from './ui/hud';
 
 describe('main.ts replay mode wiring', () => {
   beforeEach(() => {
@@ -331,6 +332,11 @@ describe('main.ts replay mode wiring', () => {
     expect(updateStatus).toHaveBeenCalledWith(
       expect.stringContaining('Replay Mode')
     );
+
+    // D1 (2026-06-16 user feedback, Finding 1): the prominent unsupported-platform
+    // notice must be revealed so the user understands *why* recording is off
+    // (typically iOS) instead of a silent drop into replay mode.
+    expect(showUnsupportedPlatformNotice).toHaveBeenCalled();
 
     // Bug 5 (SPA audit): GPS warm-up watch must be stopped when entering
     // replay mode to avoid draining battery on mobile devices.
