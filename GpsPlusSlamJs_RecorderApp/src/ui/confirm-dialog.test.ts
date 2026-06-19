@@ -347,4 +347,57 @@ describe('Confirm Dialog', () => {
       expect(isConfirmDialogVisible()).toBe(true);
     });
   });
+
+  describe('AR DOM-overlay nesting (2026-06-19)', () => {
+    // Why these tests matter: this dialog explicitly exists to replace native
+    // confirm() *inside WebXR DOM overlays* — yet it appended to document.body,
+    // a SIBLING of the `#app` overlay root (the element passed to `initAR`,
+    // bound as `domOverlay = { root: container }`). Under DOM Overlay only the
+    // overlay root and its descendants composite over the AR camera, so the
+    // back-during-recording prompt (shown while an XR session is active) would
+    // be INVISIBLE — the same bug class as the toast (2026-06-16 Finding 4 / D4;
+    // 2026-06-05 HUD-stacking ancestor rule). The dialog + backdrop must mount
+    // INSIDE `#app`.
+
+    it('mounts the dialog and backdrop inside the #app overlay root', () => {
+      const app = document.createElement('div');
+      app.id = 'app';
+      document.body.appendChild(app);
+
+      void showConfirmDialog({ message: 'Stop recording and go back?' });
+
+      const dialog = document.getElementById('confirm-dialog');
+      const backdrop = document.querySelector(
+        '[data-testid="confirm-dialog-backdrop"]'
+      );
+      expect(dialog).not.toBeNull();
+      expect(backdrop).not.toBeNull();
+      // Descendant-of-`#app` is the invariant that makes them visible in AR.
+      expect(app.contains(dialog)).toBe(true);
+      expect(app.contains(backdrop)).toBe(true);
+    });
+
+    it('falls back to document.body when no #app overlay root exists', () => {
+      expect(document.getElementById('app')).toBeNull();
+
+      void showConfirmDialog({ message: 'Stop?' });
+
+      const dialog = document.getElementById('confirm-dialog');
+      expect(dialog?.parentElement).toBe(document.body);
+    });
+
+    it('still removes the dialog and backdrop after the re-parent (cleanup)', () => {
+      const app = document.createElement('div');
+      app.id = 'app';
+      document.body.appendChild(app);
+
+      void showConfirmDialog({ message: 'Stop?' });
+      destroyConfirmDialog();
+
+      expect(document.getElementById('confirm-dialog')).toBeNull();
+      expect(
+        document.querySelector('[data-testid="confirm-dialog-backdrop"]')
+      ).toBeNull();
+    });
+  });
 });

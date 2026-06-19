@@ -32,6 +32,17 @@ const BACKDROP_TESTID = 'confirm-dialog-backdrop';
 const CONFIRM_TESTID = 'confirm-dialog-confirm';
 const CANCEL_TESTID = 'confirm-dialog-cancel';
 
+/**
+ * Id of the AR DOM-overlay root — the element handed to `initAR` and bound as
+ * `domOverlay = { root: container }`. Under WebXR DOM Overlay only this element
+ * and its descendants composite over the camera feed, so the dialog + backdrop
+ * must mount INSIDE it (not as siblings on `document.body`) to be visible during
+ * an immersive-ar session — exactly what this component exists for (the
+ * back-during-recording prompt fires while the XR session is active). Same rule
+ * as `toast.ts`; see the 2026-06-05 HUD-stacking finding and 2026-06-16 D4.
+ */
+const AR_OVERLAY_ROOT_ID = 'app';
+
 // --- State ---
 
 let dialogElement: HTMLElement | null = null;
@@ -110,8 +121,13 @@ export function showConfirmDialog(
     dialogElement.appendChild(messageEl);
     dialogElement.appendChild(btnContainer);
 
-    document.body.appendChild(backdrop);
-    document.body.appendChild(dialogElement);
+    // Mount inside the AR DOM-overlay root (`#app`) so the dialog composites
+    // over the camera feed during an immersive-ar session; fall back to
+    // `document.body` defensively when the overlay root is absent.
+    const overlayRoot =
+      document.getElementById(AR_OVERLAY_ROOT_ID) ?? document.body;
+    overlayRoot.appendChild(backdrop);
+    overlayRoot.appendChild(dialogElement);
     log.info(`Confirm dialog shown: "${message}"`);
   });
 }
@@ -152,9 +168,9 @@ function removeDialog(): void {
     dialogElement.remove();
     dialogElement = null;
   }
-  const backdrop = document.body.querySelector(
-    `[data-testid="${BACKDROP_TESTID}"]`
-  );
+  // Query the whole document: the backdrop may live under `#app` (overlay root)
+  // or `document.body` (fallback), so don't scope the lookup to either.
+  const backdrop = document.querySelector(`[data-testid="${BACKDROP_TESTID}"]`);
   if (backdrop) {
     backdrop.remove();
   }
