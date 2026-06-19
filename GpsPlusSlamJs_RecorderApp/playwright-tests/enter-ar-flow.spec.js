@@ -33,6 +33,15 @@ test.beforeEach(async ({ page }) => {
   // Ensure all testHooks are available before any test runs.
   // This replaces per-test waitForFunction calls for individual hooks.
   await waitForTestHooks(page);
+  // D6 item 3 (2026-06-16 user feedback): scenario/session controls now live in
+  // a collapsed <details id="scenario-section">. These flow tests drive the
+  // scenario dropdown + new-scenario name input, so open the section up front to
+  // keep those elements actionable (the dropdown is the focus here, not the
+  // collapse behaviour — that is covered in setup-modal.spec.js).
+  await page.evaluate(() => {
+    const section = document.getElementById('scenario-section');
+    if (section) section.open = true;
+  });
 });
 
 test.describe('Permission Verification', () => {

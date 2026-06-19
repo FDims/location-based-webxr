@@ -18,6 +18,16 @@ import {
  * with, and proper flow is critical for a good user experience.
  */
 
+// D6 item 3 (2026-06-16 user feedback): the scenario/session controls now live
+// in a collapsed <details id="scenario-section">. Open it so the <select> is
+// actionable for tests that interact with the dropdown.
+async function expandScenarioSection(page) {
+  await page.evaluate(() => {
+    const section = document.getElementById('scenario-section');
+    if (section) section.open = true;
+  });
+}
+
 // Shared setup for all tests - wait for app to be ready
 test.beforeEach(async ({ page }) => {
   // Fake WebXR so app stays in recording mode (Playwright has no WebXR)
@@ -54,10 +64,27 @@ test.describe('Setup Modal Flow', () => {
   test('scenario dropdown is populated after OPFS auto-init', async ({
     page,
   }) => {
+    // Scenario controls are collapsed by default (D6 item 3); expand to view.
+    await expandScenarioSection(page);
     const scenarioSelect = page.locator('#scenario-select');
     // After OPFS auto-initialization, dropdown should be enabled (not disabled)
     // It may have "Loading..." initially then switch to available scenarios
     await expect(scenarioSelect).toBeVisible();
+  });
+
+  // D6 item 3 (2026-06-16 user feedback): the scenario/session controls are
+  // tucked into a self-contained <details> that is COLLAPSED by default so the
+  // first viewport shows the real actions, not advanced grouping config.
+  test('scenario section is a collapsed details by default', async ({
+    page,
+  }) => {
+    const section = page.locator('#scenario-section');
+    await expect(section).toBeVisible(); // the <summary> chevron is shown
+    // The <details> must NOT be open on first paint.
+    const isOpen = await section.evaluate((el) => el.open);
+    expect(isOpen).toBe(false);
+    // Consequently the dropdown inside it is hidden until expanded.
+    await expect(page.locator('#scenario-select')).toBeHidden();
   });
 
   test('enter AR button is disabled before scenario selection', async ({
@@ -200,6 +227,7 @@ test.describe('Setup Modal Flow', () => {
 
 test.describe('Scenario Dropdown Interaction', () => {
   test('dropdown has options after storage is selected', async ({ page }) => {
+    await expandScenarioSection(page);
     const scenarioSelect = page.locator('#scenario-select');
     // Simulate mandatory storage selection
     await setStorageReady(page);
@@ -218,6 +246,8 @@ test.describe('Scenario Dropdown Interaction', () => {
     // Set permissions as ready (required for Enter AR button to be enabled)
     await setPermissionsReady(page);
 
+    // Expand the collapsed scenario controls (D6 item 3) before selecting.
+    await expandScenarioSection(page);
     // Select the existing scenario to enable the Enter AR button
     const scenarioSelect = page.locator('#scenario-select');
     await scenarioSelect.selectOption('Test Scenario');
@@ -241,6 +271,7 @@ test.describe('Scenario Dropdown Interaction', () => {
 
     // Select the new scenario option - this triggers the real change handler
     // which was attached by initUI (now called before WebXR check)
+    await expandScenarioSection(page);
     const scenarioSelect = page.locator('#scenario-select');
     await scenarioSelect.selectOption('__new__');
 
@@ -254,6 +285,7 @@ test.describe('Scenario Dropdown Interaction', () => {
     await callRealPopulateScenarios(page, ['Existing']);
 
     // Select "__new__" to trigger the real change handler and show the section
+    await expandScenarioSection(page);
     const scenarioSelect = page.locator('#scenario-select');
     await scenarioSelect.selectOption('__new__');
 
@@ -269,6 +301,7 @@ test.describe('Scenario Dropdown Interaction', () => {
     // Populate the dropdown with options using real app function
     await callRealPopulateScenarios(page, ['Existing Scenario']);
 
+    await expandScenarioSection(page);
     const scenarioSelect = page.locator('#scenario-select');
     const newScenarioSection = page.locator('#new-scenario-section');
 

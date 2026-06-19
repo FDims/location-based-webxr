@@ -24,6 +24,12 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.locator('#setup-modal').waitFor({ state: 'visible' });
   await waitForTestHooks(page);
+  // D6 item 3: scenario/session controls are in a collapsed <details>; open it
+  // so the dropdown + new-scenario name input are actionable in these tests.
+  await page.evaluate(() => {
+    const section = document.getElementById('scenario-section');
+    if (section) section.open = true;
+  });
 });
 
 test.describe('Test Hooks Match Real Behavior', () => {

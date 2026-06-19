@@ -104,8 +104,14 @@ test.describe('Recorder App Smoke Tests', () => {
     await expect(chooseSaveBtn).toBeVisible();
     await expect(chooseSaveBtn).toContainText('Choose Save Location');
 
-    // Scenario dropdown
+    // Scenario dropdown lives in the collapsed scenario/session section (D6
+    // item 3), so it is present but hidden until the section is expanded.
     const scenarioSelect = page.locator('#scenario-select');
+    await expect(scenarioSelect).toBeAttached();
+    await page.evaluate(() => {
+      const section = document.getElementById('scenario-section');
+      if (section) section.open = true;
+    });
     await expect(scenarioSelect).toBeVisible();
 
     // Enter AR button (initially disabled)

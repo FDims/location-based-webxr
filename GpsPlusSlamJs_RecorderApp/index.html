@@ -557,16 +557,6 @@ No errors</pre
                 everything.
               </p>
               <p>
-                <strong class="text-white">Scenario:</strong> A named physical
-                area you'll revisit for multiple recordings (e.g., "Paris
-                Eiffeltower"). Scenarios group related sessions together.
-              </p>
-              <p>
-                <strong class="text-white">Session:</strong> A single recording
-                within a scenario, automatically named by timestamp. Each
-                session captures one walk-through.
-              </p>
-              <p>
                 <strong class="text-white">Reference Points:</strong> Landmarks
                 you mark during recording for ground-truth validation. Tap "📍
                 Mark Point" when standing at a known location.
@@ -737,32 +727,68 @@ No errors</pre
               </details>
             </div>
 
-            <!-- Scenario Selection -->
-            <div>
-              <label class="block text-sm text-gray-400 mb-1">Scenario</label>
-              <select
-                id="scenario-select"
-                class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
-              >
-                <option value="">-- Loading scenarios... --</option>
-              </select>
-            </div>
-
-            <!-- New Scenario Name -->
-            <div
-              id="new-scenario-section"
-              class="hidden transition-all duration-300 ease-in-out opacity-0"
+            <!-- ============================================================ -->
+            <!-- Scenario & session controls — collapsed by default (D6      -->
+            <!-- item 3, 2026-06-16 user feedback). Most recordings use the  -->
+            <!-- default/first scenario, so this is tucked out of the way    -->
+            <!-- with its own explanation (the "Scenario"/"Session"          -->
+            <!-- paragraphs were moved here from "What is this app?"). The    -->
+            <!-- scenario <select> change handler and the D5 folder           -->
+            <!-- auto-expand are unaffected — that lives in the separate      -->
+            <!-- #folder-import-section above.                                -->
+            <!-- ============================================================ -->
+            <details
+              id="scenario-section"
+              class="bg-gray-700/50 rounded-lg p-3"
             >
-              <label class="block text-sm text-gray-400 mb-1"
-                >New Scenario Name</label
+              <summary
+                class="cursor-pointer text-sm text-gray-300 hover:text-white select-none"
               >
-              <input
-                type="text"
-                id="new-scenario-name"
-                class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                placeholder="e.g., Paris Eiffeltower"
-              />
-            </div>
+                🗂️ Scenario &amp; session (optional)
+              </summary>
+              <div class="mt-3 space-y-3">
+                <p class="text-xs text-gray-400">
+                  <strong class="text-gray-200">Scenario:</strong> A named
+                  physical area you'll revisit for multiple recordings (e.g.,
+                  "Paris Eiffeltower"). Scenarios group related sessions and
+                  share reference points. Leave the default to just start
+                  recording.
+                </p>
+                <p class="text-xs text-gray-400">
+                  <strong class="text-gray-200">Session:</strong> A single
+                  recording within a scenario, named automatically by timestamp.
+                </p>
+
+                <!-- Scenario Selection -->
+                <div>
+                  <label class="block text-sm text-gray-400 mb-1"
+                    >Scenario</label
+                  >
+                  <select
+                    id="scenario-select"
+                    class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                  >
+                    <option value="">-- Loading scenarios... --</option>
+                  </select>
+                </div>
+
+                <!-- New Scenario Name -->
+                <div
+                  id="new-scenario-section"
+                  class="hidden transition-all duration-300 ease-in-out opacity-0"
+                >
+                  <label class="block text-sm text-gray-400 mb-1"
+                    >New Scenario Name</label
+                  >
+                  <input
+                    type="text"
+                    id="new-scenario-name"
+                    class="w-full bg-gray-700 text-white py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    placeholder="e.g., Paris Eiffeltower"
+                  />
+                </div>
+              </div>
+            </details>
 
             <!-- Notes -->
             <div>

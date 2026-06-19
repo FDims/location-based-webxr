@@ -88,14 +88,25 @@ test.describe('Help Section', () => {
     // synchronized AR + GPS data …" spans several source lines.
     await expect(helpContent).toContainText(/record[\s\S]*AR[\s\S]*GPS/i);
 
-    // Should explain what a Scenario is
-    await expect(helpContent).toContainText(/scenario/i);
-
-    // Should explain what a Session is
-    await expect(helpContent).toContainText(/session/i);
-
     // Should explain what Reference Points are
     await expect(helpContent).toContainText(/reference point/i);
+  });
+
+  // D6 item 3 (2026-06-16 user feedback): the Scenario/Session explanations were
+  // moved OUT of the top "What is this app?" help and into the self-contained
+  // (collapsed) scenario/session section, so the manual no longer dominates the
+  // first viewport. The explanations must still exist — just in their new home.
+  test('scenario/session explanations live in the scenario section', async ({
+    page,
+  }) => {
+    const scenarioSection = page.locator('#scenario-section');
+    // toContainText reads textContent, so it works even while collapsed.
+    await expect(scenarioSection).toContainText(/scenario/i);
+    await expect(scenarioSection).toContainText(/session/i);
+    // And they are no longer duplicated in the help text.
+    await expect(page.locator('#help-section-content')).not.toContainText(
+      /A named[\s\S]*physical area/i
+    );
   });
 
   test('help section can be collapsed by clicking', async ({ page }) => {
