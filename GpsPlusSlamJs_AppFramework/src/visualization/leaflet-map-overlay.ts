@@ -52,7 +52,7 @@ export const DEFAULT_LEAFLET_MAP_SIZE_PX = 600;
  * bigger dot plus a thicker white halo and a drop shadow makes them the most
  * prominent feature on the minimap (the user-position marker stays 14 px).
  */
-export const REF_POINT_MARKER_SIZE_PX = 20;
+const REF_POINT_MARKER_SIZE_PX = 20;
 
 /** Default world-space size in meters (matches old MapOverlay) */
 export const DEFAULT_WORLD_SIZE = 10;
