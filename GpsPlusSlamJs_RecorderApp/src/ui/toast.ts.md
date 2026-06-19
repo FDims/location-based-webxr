@@ -10,7 +10,9 @@ A simple toast notification system for displaying temporary messages to users. P
 
 ### `initToast(): void`
 
-Initialize the toast notification system. Creates the toast container element in the DOM. Safe to call multiple times (idempotent).
+Initialize the toast notification system. Creates the toast container element and mounts it **inside the AR DOM-overlay root** (`#app`), falling back to `document.body` when that root is absent. Safe to call multiple times (idempotent).
+
+**Why `#app` and not `document.body`:** under WebXR DOM Overlay only the element passed to `initAR` (bound as `domOverlay = { root: container }` — the recorder's `#app`) and its descendants composite over the camera feed. The toast previously appended to `document.body`, a _sibling_ of `#app`, so the "Re-observed '\<name>'" confirmation fired but was invisible during an immersive-ar session (2026-06-16 user-feedback Finding 4 / D4; same ancestor-of-`initAR` rule as the 2026-06-05 HUD-stacking finding). `#app` is also the persistent page root hosting the setup + replay UI, so non-AR toasts (replay "✅ Replay complete", setup/save failures) remain visible.
 
 **Example:**
 
@@ -73,11 +75,12 @@ Remove the toast system from DOM. Primarily for testing cleanup.
 - Toast auto-hides after duration expires
 - Container is positioned at bottom-center of viewport
 - z-index 100 ensures visibility over most content
+- **AR overlay nesting:** the container is a descendant of the `#app` overlay root so it composites over the AR camera in immersive-ar; it degrades to `document.body` only when `#app` is absent.
 - **Tailwind utility classes:** All styling (layout + severity colors) uses Tailwind utility classes via `classList`, consistent with the rest of the Recorder App UI. Severity-specific classes are declared in the `SEVERITY_CLASSES` constant map.
 
 ## Tests
 
-Located in [toast.test.ts](toast.test.ts) (14 tests):
+Located in [toast.test.ts](toast.test.ts):
 
 - Container creation and visibility
 - Message display and replacement
@@ -86,3 +89,4 @@ Located in [toast.test.ts](toast.test.ts) (14 tests):
 - Severity styling (warning/error)
 - Manual hide functionality
 - Tailwind class assertions for container layout and severity colors
+- AR DOM-overlay nesting (D4 F4-A): container mounts inside `#app`; non-AR toast still visible after re-parent; `document.body` fallback when `#app` absent

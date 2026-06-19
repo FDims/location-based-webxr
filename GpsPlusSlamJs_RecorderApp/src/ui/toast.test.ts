@@ -211,4 +211,57 @@ describe('Toast Notification', () => {
       expect(container).toBeNull();
     });
   });
+
+  describe('AR DOM-overlay nesting (D4 F4-A)', () => {
+    // Why these tests matter (2026-06-16 user feedback, Finding 4 / D4):
+    // Under WebXR DOM Overlay, ONLY the element passed to `initAR` (the recorder's
+    // `#app`, bound as `domOverlay = { root: container }`) and its descendants are
+    // composited over the AR camera feed. The toast container was appended to
+    // `document.body` — a SIBLING of `#app` — so the "Re-observed '<name>'"
+    // confirmation fired but was never visible during a recording session. The
+    // toast container MUST be a descendant of the `#app` overlay root.
+    // See 2026-06-05 HUD-stacking finding (the same ancestor-of-`initAR` rule).
+
+    it('mounts the toast container inside the #app overlay root so it composites over the AR camera', () => {
+      const app = document.createElement('div');
+      app.id = 'app';
+      document.body.appendChild(app);
+
+      initToast();
+
+      const container = document.getElementById('toast-container');
+      expect(container).not.toBeNull();
+      // Descendant-of-`#app` is the invariant that makes the toast visible in AR.
+      expect(app.contains(container)).toBe(true);
+    });
+
+    it('keeps a non-AR toast visible after the re-parent (replay/setup multi-context regression)', () => {
+      // `showToast` is also used on the replay screen ("✅ Replay complete") and
+      // for setup/save failures (main.ts). Re-parenting into `#app` must NOT
+      // regress those non-AR toasts: `#app` is the persistent page root that also
+      // hosts the setup + replay UI, so a toast shown outside AR is still in the
+      // DOM and visible.
+      const app = document.createElement('div');
+      app.id = 'app';
+      document.body.appendChild(app);
+
+      initToast();
+      showToast('✅ Replay complete', { severity: 'info' });
+
+      const container = document.getElementById('toast-container');
+      expect(app.contains(container)).toBe(true);
+      expect(container?.classList.contains('hidden')).toBe(false);
+    });
+
+    it('falls back to document.body when no #app overlay root exists', () => {
+      // Defensive: in non-recorder/test contexts where `#app` is absent the toast
+      // must still mount somewhere rather than throwing.
+      expect(document.getElementById('app')).toBeNull();
+
+      initToast();
+
+      const container = document.getElementById('toast-container');
+      expect(container?.parentElement).toBe(document.body);
+    });
+  });
 });

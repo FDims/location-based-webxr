@@ -26,6 +26,16 @@ const DEFAULT_DURATION = 5000;
 export const TOAST_DURATION_ERROR = 8000;
 const TOAST_CONTAINER_ID = 'toast-container';
 
+/**
+ * Id of the AR DOM-overlay root — the element handed to `initAR` and bound as
+ * `domOverlay = { root: container }`. Under WebXR DOM Overlay only this element
+ * and its descendants composite over the camera feed, so the toast container
+ * must mount INSIDE it (not as a sibling on `document.body`) to be visible in
+ * an immersive-ar session. See 2026-06-05 HUD-stacking finding (Finding 3) and
+ * 2026-06-16 user-feedback Finding 4 / D4.
+ */
+const AR_OVERLAY_ROOT_ID = 'app';
+
 // --- State ---
 
 let containerElement: HTMLElement | null = null;
@@ -71,7 +81,14 @@ export function initToast(): void {
     'text-center'
   );
 
-  document.body.appendChild(containerElement);
+  // Mount inside the AR DOM-overlay root (`#app`) so the toast composites over
+  // the camera feed during an immersive-ar session. `#app` is also the
+  // persistent page root that hosts the setup + replay UI, so non-AR toasts
+  // (replay "✅ Replay complete", setup/save failures) stay visible too. Fall
+  // back to `document.body` defensively when the overlay root is absent (e.g.
+  // isolated test contexts) rather than throwing.
+  const overlayRoot = document.getElementById(AR_OVERLAY_ROOT_ID);
+  (overlayRoot ?? document.body).appendChild(containerElement);
 }
 
 // Severity-specific Tailwind classes
