@@ -84,7 +84,7 @@ type SyncFunction = () => Promise<void>;
  * @example
  * ```ts
  * const manager = createSyncManager(
- *   () => syncToExternalZip(handle, scenarioName, sessionName),
+ *   () => syncScenarioSessionToExternalZip(handle, scenarioName, sessionName),
  *   { intervalMs: 60_000 }
  * );
  * manager.start();

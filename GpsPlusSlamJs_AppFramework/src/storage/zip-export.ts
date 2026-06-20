@@ -159,7 +159,7 @@ async function streamDirectoryToZip(
  * - images/frame-000001.jpg, images/frame-000002.jpg, ... (legacy: frames/)
  *
  * Uses "store" mode (compression level 0) for fast packaging. Consumers with a
- * different on-disk layout (e.g. the recorder's `scenarios/{name}/` nesting)
+ * different on-disk layout (one that nests sessions under a named bucket)
  * resolve their own session handle and call {@link exportSessionHandleAsZip}.
  *
  * @param sessionName - Name of the session folder under `sessions/`.

@@ -117,7 +117,7 @@ const { available, used } = await checkStorageQuota();
 
 ### Soft Reset (Issue 4)
 
-- `resetSessionHandles(): void` — Clears session-level handles (`currentScenarioHandle`, `currentSessionHandle`, `actionsHandle`, `framesHandle`) while preserving directory-level handles (`opfsRoot`, `gpsPlusSlamDir`, `scenariosDir`). Called by `file-system.ts:resetForNewSession()` as part of the soft-reset flow.
+- `resetSessionHandles(): void` — Clears session-level handles (`currentSessionHandle`, `actionsHandle`, `framesHandle`) while preserving directory-level handles (`opfsRoot`, `gpsPlusSlamDir`, `sessionsDir`). Called by a wrapping backend's soft-reset flow (e.g. the recorder's `scenario-storage.resetForNewSession()`) so a new recording can start without re-initializing OPFS.
 
 Write failures (e.g., disk full, quota exceeded) will propagate the error to the caller after safely aborting the writable stream to release file locks.
 

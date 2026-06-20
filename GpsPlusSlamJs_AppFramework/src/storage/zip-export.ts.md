@@ -31,16 +31,31 @@ interface ZipExportResult {
 }
 ```
 
-### Export Session
+### Export Session (flat layout)
 
 ```typescript
 import { exportSessionAsZip } from './zip-export';
 
-// Export a specific session — returns blob + file count
+// Export a flat-layout session under sessions/ — returns blob + file count
 const { blob, fileCount } = await exportSessionAsZip(
-  'my-scenario',
   'recording-2026-01-26_10-00-00utc'
 );
+```
+
+### Export an already-resolved session handle
+
+`exportSessionHandleAsZip(sessionHandle, options?)` is the layout-agnostic core.
+Consumers with their own on-disk layout (e.g. the recorder, which nests sessions
+under a named bucket) resolve their session directory handle themselves and call
+this directly, so the framework owns the ZIP schema without knowing how the
+handle was located.
+
+```typescript
+import { exportSessionHandleAsZip } from './zip-export';
+
+const { blob, fileCount } = await exportSessionHandleAsZip(sessionHandle, {
+  contributors: [myRefPointsContributor], // app-specific subdir, optional
+});
 ```
 
 ### Download ZIP
@@ -49,19 +64,7 @@ const { blob, fileCount } = await exportSessionAsZip(
 import { downloadZip } from './zip-export';
 
 // Trigger browser download
-await downloadZip(zipBlob, 'my-scenario-2026-01-26.zip');
-```
-
-### Combined Export + Download
-
-```typescript
-import { exportAndDownloadSession } from './zip-export';
-
-// One-step export and download
-await exportAndDownloadSession(
-  'my-scenario',
-  'recording-2026-01-26_10-00-00utc'
-);
+await downloadZip(zipBlob, 'recording-2026-01-26.zip');
 ```
 
 ### Sync to External File Handle
@@ -69,34 +72,36 @@ await exportAndDownloadSession(
 ```typescript
 import { syncToExternalZip } from './zip-export';
 
-// Sync OPFS data to user's chosen file — returns blob + file count
+// Sync a flat-layout session to the user's chosen file — returns blob + file count
 const handle = await window.showSaveFilePicker({ ... });
-const { blob, fileCount } = await syncToExternalZip(handle, 'my-scenario', 'recording-...');
+const { blob, fileCount } = await syncToExternalZip(handle, 'recording-...');
 ```
 
 This is used by [sync-manager.ts](sync-manager.ts) for periodic crash-safe syncing.
 
 ## ZIP Structure
 
-The exported ZIP mirrors the OPFS session structure, plus per-session ref points:
+The exported ZIP mirrors the framework-owned OPFS session structure, plus any
+subdirs written by caller-supplied extension contributors:
 
 ```
-{scenario}-{session}.zip
+{session}.zip
 ├── session.json          # Session metadata
 ├── actions/
 │   ├── 000001.json       # Redux actions
 │   ├── 000002.json
 │   └── ...
-├── frames/
-│   ├── frame-000001.jpg  # Captured images
+├── images/               # Captured images (legacy recordings: frames/)
+│   ├── frame-000001.jpg
 │   ├── frame-000002.jpg
 │   └── ...
-└── refPoints/            # Ref points observed in THIS session only
-    ├── {h3-cell-a}.json  # Filtered RefPointDefinition (per-session observations)
-    └── {h3-cell-b}.json
+└── {contributor-subdir}/ # e.g. the recorder's refPoints/ — see ZipExportContributor
+    └── ...
 ```
 
-The `refPoints/` folder contains only observations where `sessionId` matches the current session. Ref points not observed in this session are omitted. The full scenario-level ref point state is reconstructed by merging `refPoints/` from all session ZIPs (see `ref-point-importer.ts`).
+App-specific sections (e.g. the recorder's `refPoints/`) are written through the
+`ZipExportContributor` seam (`options.contributors`), so the framework's ZIP code
+never needs to know about them.
 
 ## Invariants
 
@@ -106,15 +111,14 @@ The `refPoints/` folder contains only observations where `sessionId` matches the
 4. Download uses `showSaveFilePicker` when available, falls back to `<a download>`
 5. `syncToExternalZip` writes to external file handle via `createWritable()`
 6. Files are streamed one at a time into the ZipWriter (not accumulated in memory first). This keeps peak memory proportional to a single file, avoiding OOM on large recordings with many frames.
-7. Ref points are filtered per-session before inclusion — only observations where `sessionId` matches the exported session appear in the ZIP. If the `refPoints/` directory doesn't exist yet, it is silently skipped.
+7. App-specific subdirs are appended via the `ZipExportContributor` seam after the framework-owned files; each contributor is confined to its declared subdir.
 
 ## Error Modes
 
-| Error                | Cause                      | Recovery                  |
-| -------------------- | -------------------------- | ------------------------- |
-| "Scenario not found" | Invalid scenario name      | Check scenario exists     |
-| "Session not found"  | Invalid session name       | Check session exists      |
-| AbortError           | User cancelled save dialog | Normal - no action needed |
+| Error               | Cause                      | Recovery                  |
+| ------------------- | -------------------------- | ------------------------- |
+| "Session not found" | Invalid session name       | Check session exists      |
+| AbortError          | User cancelled save dialog | Normal - no action needed |
 
 ## Dependencies
 

@@ -269,10 +269,11 @@ export function getSessionHandle(): FileSystemDirectoryHandle | null {
 /**
  * Set the active session handles externally.
  *
- * Used by file-system.ts's scenario-based path to reuse opfs-storage's
- * write infrastructure for sessions created outside the flat layout.
- * This is a temporary bridge until the recorder migrates to
- * ScenarioWrappingStorageBackend.
+ * Lets a wrapping StorageBackend that creates sessions outside the flat layout
+ * (e.g. the recorder's `ScenarioWrappingStorageBackend`, which nests sessions
+ * under a named bucket) reuse opfs-storage's write infrastructure: it creates
+ * the session directory itself, then hands the handles here so subsequent
+ * `writeAction` / `writeFrame` / `writeSessionMetadata` calls target them.
  *
  * @internal
  */
