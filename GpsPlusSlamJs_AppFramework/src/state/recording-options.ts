@@ -8,6 +8,10 @@
  */
 
 import { createLogger } from '../utils/logger';
+import {
+  DEFAULT_MOTION_FILTER,
+  type MotionFilterConfig,
+} from '../ar/capture-motion-gate';
 
 const log = createLogger('RecordingOptions');
 
@@ -91,6 +95,15 @@ export interface ImageCaptureOptions {
   quality: number;
   /** Resolution divisor: 1 = full native resolution, 2 = half, 4 = quarter. Default: 1 */
   resolutionDivisor: number;
+  /**
+   * Motion gate — skip motion-blurred frames by deferring a due capture until
+   * device motion settles. Mirrors `ImageCaptureConfig.motionFilter` (the type
+   * the capture manager consumes); the recorder destructures `images` and flows
+   * the rest, including this group, through the capture seam. Default: enabled.
+   * See `ar/capture-motion-gate.ts` and
+   * `GpsPlusSlamJs_Docs/docs/2026-06-23-blurry-frame-motion-gating-plan.md`.
+   */
+  motionFilter: MotionFilterConfig;
 }
 
 /**
@@ -247,6 +260,10 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     intervalMs: 2000, // 1 image every 2 seconds
     quality: 0.7, // 70% JPEG quality
     resolutionDivisor: 1, // Full native camera resolution
+    // Spread so this default object does not ALIAS DEFAULT_MOTION_FILTER /
+    // DEFAULT_CAPTURE_CONFIG.motionFilter — each default group must be its own
+    // object so an accidental in-place mutation cannot leak across them.
+    motionFilter: { ...DEFAULT_MOTION_FILTER }, // blurry-frame motion gate (on)
   },
   arCrashIsolation: {
     enableDomOverlay: true,
@@ -296,6 +313,23 @@ export const IMAGE_CONSTRAINTS = {
   intervalMs: { min: 1000, max: 10000, step: 500 },
   quality: { min: 0.3, max: 1.0, step: 0.1 },
   resolutionDivisor: { min: 1, max: 8, step: 1 },
+} as const;
+
+/**
+ * Validation constraints for the motion-filter (blurry-frame gate) thresholds.
+ *
+ * The velocity ranges (0.05–5) bracket the plausible scanning regime: below
+ * ~0.05 the gate would reject almost everything; above ~5 rad/s ≈ 286°/s (or
+ * 5 m/s) it would never reject, so the gate would be inert. `maxWaitMs` is
+ * clamped to 0.5–20 s — the never-calm fallback must always be able to fire.
+ * All three back a (currently advanced/hidden) settings slider, so a corrupt
+ * stored value can never disable capture. The default thresholds themselves are
+ * placeholders pending on-device field tuning (plan §7).
+ */
+export const MOTION_FILTER_CONSTRAINTS = {
+  maxAngularVelocity: { min: 0.05, max: 5, step: 0.05 },
+  maxLinearVelocity: { min: 0.05, max: 5, step: 0.05 },
+  maxWaitMs: { min: 500, max: 20000, step: 500 },
 } as const;
 
 /**
@@ -487,6 +521,48 @@ export function validateDepthOptions(
 }
 
 /**
+ * Validate and normalize the motion-filter (blurry-frame gate) options.
+ * `enabled` is boolean-or-default; the three numeric thresholds are clamped to
+ * {@link MOTION_FILTER_CONSTRAINTS} with a `Number.isFinite` guard (a stored
+ * `NaN` is `typeof 'number'` and would survive `clamp`). A missing group
+ * default-fills entirely — a pre-feature persisted options object that lacks
+ * `motionFilter` therefore loads with the gate enabled rather than crashing.
+ */
+export function validateMotionFilterOptions(
+  options: Partial<MotionFilterConfig>
+): MotionFilterConfig {
+  const defaults = DEFAULT_RECORDING_OPTIONS.images.motionFilter;
+  return {
+    enabled:
+      typeof options.enabled === 'boolean' ? options.enabled : defaults.enabled,
+    maxAngularVelocity: clamp(
+      typeof options.maxAngularVelocity === 'number' &&
+        Number.isFinite(options.maxAngularVelocity)
+        ? options.maxAngularVelocity
+        : defaults.maxAngularVelocity,
+      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min,
+      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.max
+    ),
+    maxLinearVelocity: clamp(
+      typeof options.maxLinearVelocity === 'number' &&
+        Number.isFinite(options.maxLinearVelocity)
+        ? options.maxLinearVelocity
+        : defaults.maxLinearVelocity,
+      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.min,
+      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.max
+    ),
+    maxWaitMs: clamp(
+      typeof options.maxWaitMs === 'number' &&
+        Number.isFinite(options.maxWaitMs)
+        ? options.maxWaitMs
+        : defaults.maxWaitMs,
+      MOTION_FILTER_CONSTRAINTS.maxWaitMs.min,
+      MOTION_FILTER_CONSTRAINTS.maxWaitMs.max
+    ),
+  };
+}
+
+/**
  * Validate and normalize image options.
  * Invalid values are clamped to valid ranges.
  */
@@ -516,6 +592,7 @@ export function validateImageOptions(
       IMAGE_CONSTRAINTS.resolutionDivisor.min,
       IMAGE_CONSTRAINTS.resolutionDivisor.max
     ),
+    motionFilter: validateMotionFilterOptions(options.motionFilter ?? {}),
   };
 }
 
@@ -668,7 +745,18 @@ export function cloneRecordingOptions(
 ): RecordingOptions {
   return {
     depth: { ...options.depth },
-    images: { ...options.images },
+    // `images` carries a NESTED object (`motionFilter`) — the only group that
+    // does — so it needs a deeper clone than the other flat-primitive groups.
+    // A shallow `{ ...options.images }` would share the same `motionFilter`
+    // reference, and the settings modal mutates it in place
+    // (`workingOptions.images.motionFilter.enabled = …`); without this the
+    // write would reach straight back into DEFAULT_RECORDING_OPTIONS on the
+    // no-storage / reset path (DEFAULT → clone → clone), poisoning the default
+    // for the session.
+    images: {
+      ...options.images,
+      motionFilter: { ...options.images.motionFilter },
+    },
     arCrashIsolation: { ...options.arCrashIsolation },
     occupancy: { ...options.occupancy },
     frameTileDisplay: { ...options.frameTileDisplay },

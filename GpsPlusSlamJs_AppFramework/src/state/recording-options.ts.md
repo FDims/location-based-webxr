@@ -8,43 +8,45 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ### Types
 
-| Type                      | Description                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `DepthCaptureOptions`     | Config for depth sampling: `enabled`, `intervalMs`, `gridSize`, `rgb`                                              |
-| `ImageCaptureOptions`     | Config for image capture: `enabled`, `intervalMs`, `quality`, `resolutionDivisor`                                  |
-| `OccupancyOptions`        | Config for the derived occupancy grid: `cellSizeM` (voxel edge length, metres), `minConfidence` (noise filter, min observations to render)                                     |
-| `FrameTileDisplayOptions` | Frame-tile display-texture resolution: `divisor` (1=full…8=eighth, default 2). Display-only, distinct from capture |
-| `VisualizationOptions`    | Live debug-overlay toggles: `frameTiles`, `occupancyCubes`, `gpsAlignmentMarkers`, `compassCubes` (all default ON) |
-| `QrCaptureOptions`        | Live QR detection + RAW recording: `enabled` (default **OFF**, opt-in), `intervalMs`, `captureSize`                |
-| `RecordingOptions`        | Combined config: `depth`, `images`, `arCrashIsolation`, `occupancy`, `frameTileDisplay`, `visualization`, `qr`     |
+| Type                      | Description                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DepthCaptureOptions`     | Config for depth sampling: `enabled`, `intervalMs`, `gridSize`, `rgb`                                                                                         |
+| `ImageCaptureOptions`     | Config for image capture: `enabled`, `intervalMs`, `quality`, `resolutionDivisor`, `motionFilter` (nested blurry-frame gate, see `ar/capture-motion-gate.ts`) |
+| `OccupancyOptions`        | Config for the derived occupancy grid: `cellSizeM` (voxel edge length, metres), `minConfidence` (noise filter, min observations to render)                    |
+| `FrameTileDisplayOptions` | Frame-tile display-texture resolution: `divisor` (1=full…8=eighth, default 2). Display-only, distinct from capture                                            |
+| `VisualizationOptions`    | Live debug-overlay toggles: `frameTiles`, `occupancyCubes`, `gpsAlignmentMarkers`, `compassCubes` (all default ON)                                            |
+| `QrCaptureOptions`        | Live QR detection + RAW recording: `enabled` (default **OFF**, opt-in), `intervalMs`, `captureSize`                                                           |
+| `RecordingOptions`        | Combined config: `depth`, `images`, `arCrashIsolation`, `occupancy`, `frameTileDisplay`, `visualization`, `qr`                                                |
 
 ### Functions
 
-| Function                                   | Input                              | Output                    | Description                                                                               |
-| ------------------------------------------ | ---------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
-| `loadRecordingOptions(key?)`               | `key?: string`                     | `RecordingOptions`        | Loads from localStorage, returns defaults if not found                                    |
-| `saveRecordingOptions(options, key?)`      | `RecordingOptions, key?: string`   | `void`                    | Validates and saves to localStorage                                                       |
-| `resetRecordingOptions(key?)`              | `key?: string`                     | `RecordingOptions`        | Clears storage, returns defaults                                                          |
-| `cloneRecordingOptions(options)`           | `RecordingOptions`                 | `RecordingOptions`        | Deep copy                                                                                 |
-| `validateDepthOptions(partial)`            | `Partial<DepthCaptureOptions>`     | `DepthCaptureOptions`     | Validates and clamps; rounds `gridSize` to an integer (N×N grid) so it applies downstream |
-| `validateImageOptions(partial)`            | `Partial<ImageCaptureOptions>`     | `ImageCaptureOptions`     | Validates and clamps values                                                               |
-| `validateOccupancyOptions(partial)`        | `Partial<OccupancyOptions>`        | `OccupancyOptions`        | Clamps `cellSizeM`; rounds + clamps `minConfidence` (1–10); rejects NaN/Infinity to default                                       |
-| `validateFrameTileDisplayOptions(partial)` | `Partial<FrameTileDisplayOptions>` | `FrameTileDisplayOptions` | Clamps `divisor` to 1–8 + rounds to integer; rejects NaN/Infinity to default              |
-| `validateVisualizationOptions(partial)`    | `Partial<VisualizationOptions>`    | `VisualizationOptions`    | Boolean-or-default per field (missing/corrupted → ON)                                     |
-| `validateQrOptions(partial)`               | `Partial<QrCaptureOptions>`        | `QrCaptureOptions`        | `enabled` boolean-or-default (→ OFF); clamps `intervalMs`/`captureSize`, NaN → default    |
-| `validateRecordingOptions(partial)`        | `Partial<RecordingOptions>`        | `RecordingOptions`        | Validates full options object                                                             |
+| Function                                   | Input                              | Output                    | Description                                                                                                                                                                       |
+| ------------------------------------------ | ---------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loadRecordingOptions(key?)`               | `key?: string`                     | `RecordingOptions`        | Loads from localStorage, returns defaults if not found                                                                                                                            |
+| `saveRecordingOptions(options, key?)`      | `RecordingOptions, key?: string`   | `void`                    | Validates and saves to localStorage                                                                                                                                               |
+| `resetRecordingOptions(key?)`              | `key?: string`                     | `RecordingOptions`        | Clears storage, returns defaults                                                                                                                                                  |
+| `cloneRecordingOptions(options)`           | `RecordingOptions`                 | `RecordingOptions`        | Deep copy. **`images.motionFilter` is deep-cloned** (the only nested-in-group object) so the settings modal's in-place mutation cannot leak back into `DEFAULT_RECORDING_OPTIONS` |
+| `validateDepthOptions(partial)`            | `Partial<DepthCaptureOptions>`     | `DepthCaptureOptions`     | Validates and clamps; rounds `gridSize` to an integer (N×N grid) so it applies downstream                                                                                         |
+| `validateImageOptions(partial)`            | `Partial<ImageCaptureOptions>`     | `ImageCaptureOptions`     | Validates and clamps values; default-fills the `motionFilter` group via `validateMotionFilterOptions`                                                                             |
+| `validateMotionFilterOptions(partial)`     | `Partial<MotionFilterConfig>`      | `MotionFilterConfig`      | `enabled` boolean-or-default (→ ON); clamps the three thresholds to `MOTION_FILTER_CONSTRAINTS`, NaN → default                                                                    |
+| `validateOccupancyOptions(partial)`        | `Partial<OccupancyOptions>`        | `OccupancyOptions`        | Clamps `cellSizeM`; rounds + clamps `minConfidence` (1–10); rejects NaN/Infinity to default                                                                                       |
+| `validateFrameTileDisplayOptions(partial)` | `Partial<FrameTileDisplayOptions>` | `FrameTileDisplayOptions` | Clamps `divisor` to 1–8 + rounds to integer; rejects NaN/Infinity to default                                                                                                      |
+| `validateVisualizationOptions(partial)`    | `Partial<VisualizationOptions>`    | `VisualizationOptions`    | Boolean-or-default per field (missing/corrupted → ON)                                                                                                                             |
+| `validateQrOptions(partial)`               | `Partial<QrCaptureOptions>`        | `QrCaptureOptions`        | `enabled` boolean-or-default (→ OFF); clamps `intervalMs`/`captureSize`, NaN → default                                                                                            |
+| `validateRecordingOptions(partial)`        | `Partial<RecordingOptions>`        | `RecordingOptions`        | Validates full options object                                                                                                                                                     |
 
 ### Constants
 
-| Constant                         | Description                                           |
-| -------------------------------- | ----------------------------------------------------- |
-| `STORAGE_KEY`                    | localStorage key: `'gps-plus-slam-recorder-options'`  |
-| `DEFAULT_RECORDING_OPTIONS`      | Default values (all enabled)                          |
-| `DEPTH_CONSTRAINTS`              | Min/max/step for depth options                        |
-| `IMAGE_CONSTRAINTS`              | Min/max/step for image options                        |
-| `OCCUPANCY_CONSTRAINTS`          | Min/max/step for `cellSizeM` (metres) and `minConfidence` (count) |
-| `FRAME_TILE_DISPLAY_CONSTRAINTS` | Min/max/step for `frameTileDisplay.divisor`           |
-| `QR_CONSTRAINTS`                 | Min/max/step for `qr.intervalMs` and `qr.captureSize` |
+| Constant                         | Description                                                                |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `STORAGE_KEY`                    | localStorage key: `'gps-plus-slam-recorder-options'`                       |
+| `DEFAULT_RECORDING_OPTIONS`      | Default values (all enabled)                                               |
+| `DEPTH_CONSTRAINTS`              | Min/max/step for depth options                                             |
+| `IMAGE_CONSTRAINTS`              | Min/max/step for image options                                             |
+| `MOTION_FILTER_CONSTRAINTS`      | Min/max/step for `motionFilter` thresholds (angular/linear vel, maxWaitMs) |
+| `OCCUPANCY_CONSTRAINTS`          | Min/max/step for `cellSizeM` (metres) and `minConfidence` (count)          |
+| `FRAME_TILE_DISPLAY_CONSTRAINTS` | Min/max/step for `frameTileDisplay.divisor`                                |
+| `QR_CONSTRAINTS`                 | Min/max/step for `qr.intervalMs` and `qr.captureSize`                      |
 
 ## Invariants & Assumptions
 
@@ -58,7 +60,8 @@ User-configurable recording options for controlling high-frequency data streams 
 ```typescript
 {
   depth: { enabled: true, intervalMs: 1000, gridSize: 16, rgb: true },
-  images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1 },
+  images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
+            motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 0.5, maxWaitMs: 4000 } },
   occupancy: { cellSizeM: 0.15, minConfidence: 3 },
   frameTileDisplay: { divisor: 2 },
   visualization: { frameTiles: true, occupancyCubes: true, gpsAlignmentMarkers: true, compassCubes: true },

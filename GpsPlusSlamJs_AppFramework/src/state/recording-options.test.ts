@@ -19,12 +19,14 @@ import {
   validateFrameTileDisplayOptions,
   validateVisualizationOptions,
   validateQrOptions,
+  validateMotionFilterOptions,
   validateRecordingOptions,
   cloneRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
   STORAGE_KEY,
   DEPTH_CONSTRAINTS,
   IMAGE_CONSTRAINTS,
+  MOTION_FILTER_CONSTRAINTS,
   OCCUPANCY_CONSTRAINTS,
   FRAME_TILE_DISPLAY_CONSTRAINTS,
   QR_CONSTRAINTS,
@@ -177,7 +179,56 @@ describe('recording-options', () => {
         intervalMs: 5000,
         quality: 0.5,
         resolutionDivisor: 2,
+        // motionFilter not supplied → default-filled (backward compat).
+        motionFilter: DEFAULT_RECORDING_OPTIONS.images.motionFilter,
       });
+    });
+
+    it('default-fills motionFilter when missing (pre-feature persisted options)', () => {
+      // A persisted options object from before this feature lacks motionFilter
+      // entirely; it must load with the gate enabled rather than crash.
+      const result = validateImageOptions({ quality: 0.5 });
+      expect(result.motionFilter).toEqual(
+        DEFAULT_RECORDING_OPTIONS.images.motionFilter
+      );
+      expect(result.motionFilter.enabled).toBe(true);
+    });
+
+    it('preserves a valid motionFilter group', () => {
+      const result = validateImageOptions({
+        motionFilter: {
+          enabled: false,
+          maxAngularVelocity: 1.2,
+          maxLinearVelocity: 0.8,
+          maxWaitMs: 3000,
+        },
+      });
+      expect(result.motionFilter).toEqual({
+        enabled: false,
+        maxAngularVelocity: 1.2,
+        maxLinearVelocity: 0.8,
+        maxWaitMs: 3000,
+      });
+    });
+
+    it('clamps out-of-range motionFilter thresholds and rejects NaN', () => {
+      const result = validateImageOptions({
+        motionFilter: {
+          enabled: true,
+          maxAngularVelocity: 999, // above max
+          maxLinearVelocity: Number.NaN, // -> default
+          maxWaitMs: 1, // below min
+        },
+      });
+      expect(result.motionFilter.maxAngularVelocity).toBe(
+        MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.max
+      );
+      expect(result.motionFilter.maxLinearVelocity).toBe(
+        DEFAULT_RECORDING_OPTIONS.images.motionFilter.maxLinearVelocity
+      );
+      expect(result.motionFilter.maxWaitMs).toBe(
+        MOTION_FILTER_CONSTRAINTS.maxWaitMs.min
+      );
     });
 
     it('clamps quality below minimum to minimum', () => {
@@ -607,6 +658,7 @@ describe('recording-options', () => {
           intervalMs: 3000,
           quality: 0.8,
           resolutionDivisor: 2,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         },
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
@@ -699,6 +751,7 @@ describe('recording-options', () => {
           intervalMs: 4000,
           quality: 0.6,
           resolutionDivisor: 1,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         },
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
@@ -723,6 +776,7 @@ describe('recording-options', () => {
           intervalMs: 500,
           quality: 0.1,
           resolutionDivisor: 0,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         }, // invalid
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
@@ -838,6 +892,54 @@ describe('recording-options', () => {
           }
         ).arCrashIsolation.enableCss3dRenderer
       ).toBe(true);
+    });
+
+    /**
+     * Why this test matters: `images.motionFilter` is the FIRST nested object
+     * inside a group, so the shallow `{ ...options.images }` clone used for the
+     * flat groups would share its reference. The settings modal mutates it in
+     * place, which on the DEFAULT → clone → clone (no-storage/reset) path would
+     * otherwise poison DEFAULT_RECORDING_OPTIONS for the whole session. This
+     * pins that the clone owns an independent motionFilter.
+     */
+    it('deep-clones the nested images.motionFilter (no shared reference)', () => {
+      const original = cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
+      const clone = cloneRecordingOptions(original);
+
+      expect(clone.images.motionFilter).not.toBe(original.images.motionFilter);
+
+      clone.images.motionFilter.enabled = false;
+      clone.images.motionFilter.maxAngularVelocity = 99;
+
+      expect(original.images.motionFilter.enabled).toBe(true);
+      expect(original.images.motionFilter.maxAngularVelocity).toBe(
+        DEFAULT_RECORDING_OPTIONS.images.motionFilter.maxAngularVelocity
+      );
+      // And the module-level default itself is untouched.
+      expect(DEFAULT_RECORDING_OPTIONS.images.motionFilter.enabled).toBe(true);
+    });
+  });
+
+  describe('validateMotionFilterOptions', () => {
+    it('returns defaults (gate enabled) for an empty object', () => {
+      expect(validateMotionFilterOptions({})).toEqual(
+        DEFAULT_RECORDING_OPTIONS.images.motionFilter
+      );
+    });
+
+    it('honors an explicit enabled=false', () => {
+      expect(validateMotionFilterOptions({ enabled: false }).enabled).toBe(
+        false
+      );
+    });
+
+    it('clamps thresholds to MOTION_FILTER_CONSTRAINTS', () => {
+      const tooLow = validateMotionFilterOptions({ maxAngularVelocity: 0 });
+      expect(tooLow.maxAngularVelocity).toBe(
+        MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min
+      );
+      const tooHigh = validateMotionFilterOptions({ maxWaitMs: 999999 });
+      expect(tooHigh.maxWaitMs).toBe(MOTION_FILTER_CONSTRAINTS.maxWaitMs.max);
     });
   });
 
@@ -969,6 +1071,7 @@ describe('recording-options', () => {
           intervalMs: 5000,
           quality: 0.85,
           resolutionDivisor: 2,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         },
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { cellSizeM: 0.1, minConfidence: 3 },
@@ -991,6 +1094,7 @@ describe('recording-options', () => {
           intervalMs: 2000,
           quality: 0.5,
           resolutionDivisor: 1,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         },
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
@@ -1022,6 +1126,7 @@ describe('recording-options', () => {
           intervalMs: 10000,
           quality: 0.3,
           resolutionDivisor: 4,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         },
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
@@ -1081,6 +1186,7 @@ describe('recording-options', () => {
           intervalMs: 3000,
           quality: 0.5,
           resolutionDivisor: 2,
+          motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
         },
         arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
         occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
