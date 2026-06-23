@@ -36,6 +36,41 @@ export const ANGULAR_GLITCH_CEILING_RAD_S = 50;
  */
 export const LINEAR_GLITCH_CEILING_M_S = 20;
 
+/**
+ * User-/consumer-facing motion-filter configuration. Shared by both config
+ * shapes that carry it — `ImageCaptureConfig` (what `ImageCaptureManager`
+ * consumes) and `ImageCaptureOptions` (the persisted recorder options) — so the
+ * one definition cannot drift between them. The window size and glitch ceilings
+ * are deliberately NOT here: they are internal tuning constants, not exposed.
+ */
+export interface MotionFilterConfig {
+  /** Master switch for the motion gate. Default `true`. */
+  enabled: boolean;
+  /** Angular-velocity threshold (rad/s); at/below this a frame is "calm". */
+  maxAngularVelocity: number;
+  /** Linear-velocity threshold (m/s); at/below this a frame is "calm". */
+  maxLinearVelocity: number;
+  /**
+   * Never-calm safety fallback: once a due capture has waited this many ms it
+   * fires regardless of motion, so an interval is never silently lost. A
+   * sensible value is ~2× the capture interval.
+   */
+  maxWaitMs: number;
+}
+
+/**
+ * Default motion-filter configuration. Enabled by default (plan §1). Thresholds
+ * are PLACEHOLDERS pending on-device field tuning (plan §7) — record measured
+ * values in implementation-progress.md once known. `maxWaitMs` of 4000 ms is
+ * 2× the default 2000 ms image interval.
+ */
+export const DEFAULT_MOTION_FILTER: MotionFilterConfig = {
+  enabled: true,
+  maxAngularVelocity: 0.6,
+  maxLinearVelocity: 0.5,
+  maxWaitMs: 4000,
+};
+
 /** Inputs to the stateless capture decision. */
 export interface CaptureDecisionInput {
   /** Max angular velocity (rad/s) over the recent window. `Infinity` if empty. */
@@ -113,6 +148,11 @@ export class MotionWindow {
     if (this.angular.length > this.size) this.angular.shift();
     if (this.linear.length > this.size) this.linear.shift();
     return true;
+  }
+
+  /** Whether the window holds at least one valid (non-glitch) sample yet. */
+  hasSamples(): boolean {
+    return this.angular.length > 0;
   }
 
   /** Max angular velocity over the retained window, or `Infinity` if empty. */

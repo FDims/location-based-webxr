@@ -162,6 +162,7 @@ describe('image-capture', () => {
         quality: 0.8,
         captureTimeoutMs: 5000,
         resolutionDivisor: 1,
+        motionFilter: DEFAULT_CAPTURE_CONFIG.motionFilter,
       };
       manager = new ImageCaptureManager(mockCanvas, mockCallbacks, config);
       manager.start();
@@ -196,6 +197,7 @@ describe('image-capture', () => {
         quality: 0.6,
         captureTimeoutMs: 5000,
         resolutionDivisor: 1,
+        motionFilter: DEFAULT_CAPTURE_CONFIG.motionFilter,
       };
       manager = new ImageCaptureManager(mockCanvas, mockCallbacks, config);
       manager.start();

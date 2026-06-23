@@ -16,6 +16,7 @@ import {
   decideCapture,
   MotionWindow,
   DEFAULT_MOTION_WINDOW_SIZE,
+  DEFAULT_MOTION_FILTER,
 } from './capture-motion-gate.js';
 
 const THRESHOLDS = {
@@ -99,6 +100,17 @@ describe('MotionWindow', () => {
     expect(w.maxLinear()).toBe(Number.POSITIVE_INFINITY);
   });
 
+  it('hasSamples() reflects whether any valid sample was recorded', () => {
+    const w = new MotionWindow(3);
+    expect(w.hasSamples()).toBe(false);
+    w.push(1000, 1000); // glitch — rejected, still no samples
+    expect(w.hasSamples()).toBe(false);
+    w.push(0.2, 0.1);
+    expect(w.hasSamples()).toBe(true);
+    w.reset();
+    expect(w.hasSamples()).toBe(false);
+  });
+
   it('returns the max over the retained window', () => {
     const w = new MotionWindow(3);
     w.push(0.1, 0.05);
@@ -145,5 +157,15 @@ describe('MotionWindow', () => {
   it('exposes a sane default window size', () => {
     expect(DEFAULT_MOTION_WINDOW_SIZE).toBeGreaterThanOrEqual(2);
     expect(DEFAULT_MOTION_WINDOW_SIZE).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('DEFAULT_MOTION_FILTER', () => {
+  it('is enabled by default with sane placeholder thresholds', () => {
+    expect(DEFAULT_MOTION_FILTER.enabled).toBe(true);
+    expect(DEFAULT_MOTION_FILTER.maxAngularVelocity).toBeGreaterThan(0);
+    expect(DEFAULT_MOTION_FILTER.maxLinearVelocity).toBeGreaterThan(0);
+    // maxWaitMs ~ 2x the default 2000ms image interval.
+    expect(DEFAULT_MOTION_FILTER.maxWaitMs).toBeGreaterThanOrEqual(2000);
   });
 });

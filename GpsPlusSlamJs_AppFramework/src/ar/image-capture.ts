@@ -10,6 +10,13 @@
 
 import { createLogger } from '../utils/logger';
 import type { ARPose, WebXRVec3, WebXRQuaternion } from '../types/ar-types';
+import { angularVelocity, linearVelocity } from './pose-motion';
+import {
+  decideCapture,
+  MotionWindow,
+  DEFAULT_MOTION_FILTER,
+  type MotionFilterConfig,
+} from './capture-motion-gate';
 
 const log = createLogger('ImageCapture');
 
@@ -39,6 +46,11 @@ export interface ImageCaptureConfig {
    *  into this config so the whole user options section can flow through the
    *  capture seam as one object (see the field-drop audit, F3). */
   resolutionDivisor: number;
+  /** Motion gate: skip motion-blurred frames by deferring a due capture until
+   *  device motion settles (or `maxWaitMs` elapses). Mirrored in the persisted
+   *  `ImageCaptureOptions.motionFilter` and flowed through the same capture
+   *  seam as `resolutionDivisor`. See `capture-motion-gate.ts`. */
+  motionFilter: MotionFilterConfig;
 }
 
 /**
@@ -49,6 +61,7 @@ export const DEFAULT_CAPTURE_CONFIG: ImageCaptureConfig = {
   quality: 0.7,
   captureTimeoutMs: 5000,
   resolutionDivisor: 1,
+  motionFilter: DEFAULT_MOTION_FILTER,
 };
 
 /**
@@ -154,6 +167,19 @@ export class ImageCaptureManager {
   private captureInProgress = false;
   private captureTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+  // --- Motion-gate state (see capture-motion-gate.ts) ---
+  /** Sliding window of recent per-frame velocities for the motion gate. */
+  private readonly motionWindow = new MotionWindow();
+  /** Previous frame's pose, for the per-frame velocity delta. */
+  private prevPose: ARPose | null = null;
+  /** Previous frame's timestamp (ms), for the per-frame velocity delta. */
+  private prevTime = 0;
+  /** Whether THIS frame's velocity sample was rejected as a tracking glitch. */
+  private lastSampleWasGlitch = false;
+  /** When the current capture first became due (ms); null while not due. The
+   *  `maxWaitMs` fallback measures from here, not from `lastCaptureTime`. */
+  private dueTime: number | null = null;
+
   constructor(
     canvas: HTMLCanvasElement,
     callbacks: ImageCaptureCallbacks,
@@ -172,6 +198,12 @@ export class ImageCaptureManager {
     this.capturing = true;
     this.lastCaptureTime = 0;
     this.frameCount = 0;
+    // Reset motion-gate state so a new session never inherits stale poses.
+    this.motionWindow.reset();
+    this.prevPose = null;
+    this.prevTime = 0;
+    this.lastSampleWasGlitch = false;
+    this.dueTime = null;
   }
 
   /**
@@ -207,6 +239,15 @@ export class ImageCaptureManager {
     if (!this.capturing) {
       return;
     }
+
+    // Per-frame motion sampling MUST run above the in-progress / interval
+    // guards so the motion gate judges INSTANTANEOUS motion (~one frame) at the
+    // decision frame, not a multi-second straight-line average (which nets to
+    // ≈0 for in-place shake and lets blur through — plan §4.3).
+    // getCurrentPose() is a trivial field read, so sampling every frame is free.
+    const pose = this.callbacks.getCurrentPose();
+    this.updateMotionWindow(time, pose);
+
     if (this.captureInProgress) {
       return;
     }
@@ -214,18 +255,32 @@ export class ImageCaptureManager {
     // Check if enough time has passed since last capture
     const elapsed = time - this.lastCaptureTime;
     if (this.lastCaptureTime > 0 && elapsed < this.config.intervalMs) {
+      this.dueTime = null; // not due yet — reset the fallback clock
       return;
     }
 
     // Get current pose - skip if not available
-    const pose = this.callbacks.getCurrentPose();
     if (!pose) {
       return;
     }
 
-    // Mark capture in progress (prevents overlapping captures)
+    // A capture is now due. Record WHEN it first became due so the never-calm
+    // maxWaitMs fallback measures from the due time, not from lastCaptureTime.
+    if (this.dueTime === null) {
+      this.dueTime = time;
+    }
+
+    // Motion gate: defer the due capture while the device is moving too fast.
+    if (!this.shouldCaptureNow(time)) {
+      return;
+    }
+
+    // Mark capture in progress (prevents overlapping captures). lastCaptureTime
+    // is set to the ACTUAL capture time so subsequent intervals are measured
+    // from real captures (avoids bunching after a long deferral — plan §4.5).
     this.captureInProgress = true;
     this.lastCaptureTime = time;
+    this.dueTime = null;
 
     // Derive the timestamp from the XR frame time (a DOMHighResTimeStamp) so it
     // shares the exact epoch-ms time domain as the AR pose and the other
@@ -291,6 +346,83 @@ export class ImageCaptureManager {
         this.config.quality
       );
     }
+  }
+
+  /**
+   * Sample per-frame device motion into the sliding window. Called every frame
+   * (even during an in-flight capture or before the interval elapses) so the
+   * window reflects truly instantaneous motion the moment a capture becomes
+   * due. A frame with no pose, or a non-positive dt (duplicate timestamp),
+   * records no sample and is treated as "not a glitch".
+   */
+  private updateMotionWindow(time: number, pose: ARPose | null): void {
+    if (!pose) {
+      this.lastSampleWasGlitch = false;
+      return;
+    }
+    if (this.prevPose && this.prevTime > 0) {
+      const dt = (time - this.prevTime) / 1000;
+      if (dt > 0) {
+        const angVel = angularVelocity(
+          this.prevPose.orientation,
+          pose.orientation,
+          dt
+        );
+        const linVel = linearVelocity(
+          this.prevPose.position,
+          pose.position,
+          dt
+        );
+        // push() returns false for a glitch/non-finite sample (not stored).
+        this.lastSampleWasGlitch = !this.motionWindow.push(angVel, linVel);
+      } else {
+        this.lastSampleWasGlitch = false;
+      }
+    } else {
+      this.lastSampleWasGlitch = false;
+    }
+    this.prevPose = pose;
+    this.prevTime = time;
+  }
+
+  /**
+   * Apply the motion gate to a due capture. Returns `true` to capture now,
+   * `false` to defer to a later frame.
+   *
+   * - Filter disabled → always `true` (legacy behavior).
+   * - `maxWaitMs` elapsed → always `true` (never-calm safety fallback; an
+   *   interval is never silently lost).
+   * - Current frame's sample was a tracking glitch → `false` (don't grab a
+   *   relocalization-teleport frame; the fallback still guarantees progress).
+   * - No measurable motion yet (first capture / all-glitch) → `true` (the very
+   *   first capture is never blocked; only measurable motion defers).
+   * - Otherwise → defer to {@link decideCapture} over the windowed maxima.
+   */
+  private shouldCaptureNow(time: number): boolean {
+    const mf = this.config.motionFilter;
+    if (!mf || !mf.enabled) {
+      return true;
+    }
+    const msSinceDue = this.dueTime === null ? 0 : time - this.dueTime;
+    if (msSinceDue >= mf.maxWaitMs) {
+      return true;
+    }
+    if (this.lastSampleWasGlitch) {
+      return false;
+    }
+    if (!this.motionWindow.hasSamples()) {
+      return true;
+    }
+    return (
+      decideCapture({
+        windowMaxAngular: this.motionWindow.maxAngular(),
+        windowMaxLinear: this.motionWindow.maxLinear(),
+        maxAngularVelocity: mf.maxAngularVelocity,
+        maxLinearVelocity: mf.maxLinearVelocity,
+        msSinceDue,
+        maxWaitMs: mf.maxWaitMs,
+      }) === 'capture'
+    );
   }
 
   /**
