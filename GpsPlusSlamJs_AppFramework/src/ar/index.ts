@@ -303,6 +303,7 @@ export {
   initAR,
   endARSession,
   setImageCaptureCallback,
+  setImageQualityAnalyzer,
   startImageCapture,
   stopImageCapture,
   getImageCaptureFrameCount,
