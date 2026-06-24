@@ -434,6 +434,7 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   getCurrentArPose: vi.fn().mockReturnValue(null),
   applyAlignmentMatrix: vi.fn(),
   setImageCaptureCallback: vi.fn(),
+  setImageQualityAnalyzer: vi.fn(),
   startImageCapture: vi.fn(),
   stopImageCapture: vi.fn(),
   setDepthCaptureCallback: vi.fn(),

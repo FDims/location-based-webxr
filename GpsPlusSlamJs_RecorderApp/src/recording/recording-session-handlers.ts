@@ -56,11 +56,16 @@ import {
   getCurrentArPose,
   startImageCapture,
   stopImageCapture,
+  setImageQualityAnalyzer,
   startDepthCapture,
   stopDepthCapture,
   getImageCaptureFrameCount,
   getDepthSampleCount,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
+import {
+  createImageQualityAnalyzer,
+  type ImageQualityClient,
+} from './image-quality-client';
 import {
   createWriteFailureTracker,
   type WriteFailureTracker,
@@ -231,6 +236,9 @@ export function createRecordingSessionHandlers(
   let stopInProgress = false;
   let unsubscribeStore: (() => void) | null = null;
   let unsubscribeRefPoints: (() => void) | null = null;
+  /** Off-thread blur/blackness analyzer worker for this recording (null when the
+   *  quality gate is disabled). Owned here: created on start, disposed on stop. */
+  let imageQualityClient: ImageQualityClient | null = null;
 
   // --- Internal helpers ---
 
@@ -427,6 +435,20 @@ export function createRecordingSessionHandlers(
     if (recordingOptions.images.enabled) {
       const { enabled: _imagesEnabled, ...imageConfig } =
         recordingOptions.images;
+      // Off-thread blur/blackness gate (opt-in). Spawn the worker-backed
+      // analyzer ONLY when enabled — a disabled session never creates a worker —
+      // and inject it BEFORE startImageCapture (the manager reads the analyzer
+      // when constructed). Always (re)set the analyzer so a previous recording's
+      // worker can't leak into this one.
+      if (imageConfig.qualityFilter.enabled) {
+        imageQualityClient = createImageQualityAnalyzer(
+          imageConfig.qualityFilter
+        );
+        setImageQualityAnalyzer(imageQualityClient.analyze);
+        log.info('Image-quality gate enabled (off-thread blur/blackness)');
+      } else {
+        setImageQualityAnalyzer(null);
+      }
       startImageCapture(imageConfig);
       log.info(
         `Image capture started (interval: ${imageConfig.intervalMs}ms, quality: ${imageConfig.quality}, resolutionDivisor: ${imageConfig.resolutionDivisor})`
@@ -529,6 +551,11 @@ export function createRecordingSessionHandlers(
     const depthSampleCount = getDepthSampleCount();
 
     stopImageCapture();
+    // Tear down the off-thread quality analyzer (worker) for this recording and
+    // clear the injected callback so the next recording starts clean.
+    setImageQualityAnalyzer(null);
+    imageQualityClient?.dispose();
+    imageQualityClient = null;
     hideFrameCount();
     hideTrackingQuality();
     stopDepthCapture();

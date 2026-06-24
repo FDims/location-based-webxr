@@ -47,6 +47,9 @@ const {
   mockEndSession,
   mockStartImageCapture,
   mockStopImageCapture,
+  mockSetImageQualityAnalyzer,
+  mockCreateImageQualityAnalyzer,
+  mockImageQualityClientInstance,
   mockStartDepthCapture,
   mockStopDepthCapture,
   mockGetImageCaptureFrameCount,
@@ -106,7 +109,17 @@ const {
 
   const mockUnsubscribe = vi.fn();
 
+  const mockImageQualityClientInstance = {
+    analyze: vi.fn().mockResolvedValue({ accept: true, reason: null }),
+    dispose: vi.fn(),
+  };
+
   return {
+    mockSetImageQualityAnalyzer: vi.fn(),
+    mockCreateImageQualityAnalyzer: vi
+      .fn()
+      .mockReturnValue(mockImageQualityClientInstance),
+    mockImageQualityClientInstance,
     mockResetCoordinatorState: vi.fn(),
     mockCreateGpsPositionHandler: vi.fn().mockReturnValue(() => {}),
     mockUpdateDeviceOrientation: vi.fn(),
@@ -238,11 +251,16 @@ vi.mock('gps-plus-slam-app-framework/ar/capture-failure-tracker', () => ({
 vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   startImageCapture: mockStartImageCapture,
   stopImageCapture: mockStopImageCapture,
+  setImageQualityAnalyzer: mockSetImageQualityAnalyzer,
   startDepthCapture: mockStartDepthCapture,
   stopDepthCapture: mockStopDepthCapture,
   getImageCaptureFrameCount: mockGetImageCaptureFrameCount,
   getDepthSampleCount: mockGetDepthSampleCount,
   getCurrentArPose: mockGetCurrentArPose,
+}));
+
+vi.mock('./image-quality-client', () => ({
+  createImageQualityAnalyzer: mockCreateImageQualityAnalyzer,
 }));
 
 vi.mock('../storage/external-file-storage', () => ({
@@ -368,6 +386,7 @@ const defaultOptions: RecordingOptions = {
     quality: 0.8,
     resolutionDivisor: 1,
     motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+    qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
   },
   depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
   arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
@@ -685,6 +704,7 @@ describe('handleStartRecording', () => {
         quality: 0.9,
         resolutionDivisor: 2,
         motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+        qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
       },
       depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
@@ -700,11 +720,107 @@ describe('handleStartRecording', () => {
       intervalMs: 500,
       quality: 0.9,
       resolutionDivisor: 2,
-      // motionFilter must forward through the seam too (the same "no dropped
-      // knobs" guarantee that resolutionDivisor pins) so the gate the user
-      // toggled actually reaches ImageCaptureManager.
+      // motionFilter AND qualityFilter must forward through the seam too (the
+      // same "no dropped knobs" guarantee that resolutionDivisor pins) so the
+      // gates the user toggled actually reach ImageCaptureManager.
       motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+      qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
     });
+  });
+
+  it('spawns + injects the off-thread quality analyzer only when qualityFilter is enabled', async () => {
+    // Why: the blur/blackness gate is opt-in and worker-backed. When enabled the
+    // recorder must create the analyzer and inject it via setImageQualityAnalyzer
+    // BEFORE startImageCapture (the manager reads it on construction); when
+    // disabled it must spawn no worker and clear the analyzer (so a previous
+    // recording's worker can't leak in).
+    const opts: RecordingOptions = {
+      images: {
+        enabled: true,
+        intervalMs: 2000,
+        quality: 0.7,
+        resolutionDivisor: 1,
+        motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+        qualityFilter: {
+          ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
+          enabled: true,
+        },
+      },
+      depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
+      arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
+      occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
+      frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
+      visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
+      qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+    };
+    deps = createMockDeps({ getRecordingOptions: () => opts });
+    handlers = createRecordingSessionHandlers(deps);
+    await handlers.handleStartRecording();
+
+    expect(mockCreateImageQualityAnalyzer).toHaveBeenCalledWith(
+      opts.images.qualityFilter
+    );
+    expect(mockSetImageQualityAnalyzer).toHaveBeenCalledWith(
+      mockImageQualityClientInstance.analyze
+    );
+  });
+
+  it('disposes the quality analyzer and clears the callback on stop', async () => {
+    const opts: RecordingOptions = {
+      images: {
+        enabled: true,
+        intervalMs: 2000,
+        quality: 0.7,
+        resolutionDivisor: 1,
+        motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+        qualityFilter: {
+          ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
+          enabled: true,
+        },
+      },
+      depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
+      arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
+      occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
+      frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
+      visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
+      qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+    };
+    deps = createMockDeps({ getRecordingOptions: () => opts });
+    handlers = createRecordingSessionHandlers(deps);
+    await handlers.handleStartRecording();
+    await handlers.handleStopRecording();
+
+    expect(mockImageQualityClientInstance.dispose).toHaveBeenCalledTimes(1);
+    // Cleared on stop (null), in addition to being set on start.
+    expect(mockSetImageQualityAnalyzer).toHaveBeenCalledWith(null);
+  });
+
+  it('does NOT spawn the analyzer when qualityFilter is disabled, but still clears it', async () => {
+    // Image capture ON but the quality gate OFF (the default): no worker is
+    // spawned, and the analyzer is explicitly cleared so a previous recording's
+    // worker can't leak into this one.
+    const opts: RecordingOptions = {
+      images: {
+        enabled: true,
+        intervalMs: 2000,
+        quality: 0.7,
+        resolutionDivisor: 1,
+        motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+        qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
+      },
+      depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
+      arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
+      occupancy: { ...DEFAULT_RECORDING_OPTIONS.occupancy },
+      frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
+      visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
+      qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+    };
+    deps = createMockDeps({ getRecordingOptions: () => opts });
+    handlers = createRecordingSessionHandlers(deps);
+    await handlers.handleStartRecording();
+
+    expect(mockCreateImageQualityAnalyzer).not.toHaveBeenCalled();
+    expect(mockSetImageQualityAnalyzer).toHaveBeenCalledWith(null);
   });
 
   it('should NOT start image capture when disabled in options', async () => {
@@ -728,6 +844,7 @@ describe('handleStartRecording', () => {
         quality: 0.8,
         resolutionDivisor: 1,
         motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
+        qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
       },
       depth: { enabled: true, intervalMs: 500, gridSize: 3, rgb: false },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
