@@ -976,6 +976,31 @@ No errors</pre
                   >Skip blurry frames (motion)</span
                 >
               </label>
+              <!-- Motion-gate thresholds (for on-device field tuning). Stored  -->
+              <!-- in rad/s and m/s; the rotation label also shows deg/s. Lower -->
+              <!-- = stricter (defer more / sharper); higher = looser.          -->
+              <div class="space-y-1">
+                <div class="flex justify-between text-xs text-gray-400">
+                  <span>Max rotation speed</span>
+                  <span id="images-max-angular-value">0.60 rad/s (≈34°/s)</span>
+                </div>
+                <input
+                  type="range"
+                  id="images-max-angular"
+                  class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex justify-between text-xs text-gray-400">
+                  <span>Max move speed</span>
+                  <span id="images-max-linear-value">0.50 m/s</span>
+                </div>
+                <input
+                  type="range"
+                  id="images-max-linear"
+                  class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
               <div class="space-y-1">
                 <div class="flex justify-between text-xs text-gray-400">
                   <span>Interval</span>

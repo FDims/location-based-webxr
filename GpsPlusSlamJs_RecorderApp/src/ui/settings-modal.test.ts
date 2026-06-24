@@ -116,6 +116,8 @@ describe('settings-modal', () => {
       expect(html).toContain('id="depth-rgb"');
       expect(html).toContain('id="images-enabled"');
       expect(html).toContain('id="images-motion-filter"');
+      expect(html).toContain('id="images-max-angular"');
+      expect(html).toContain('id="images-max-linear"');
       expect(html).toContain('id="images-interval"');
       expect(html).toContain('id="images-quality"');
     });
@@ -631,6 +633,73 @@ describe('settings-modal', () => {
       imagesEnabled.checked = true;
       imagesEnabled.dispatchEvent(new Event('change'));
       expect(motionFilter.disabled).toBe(false);
+    });
+
+    it('exposes the threshold sliders, populated from the defaults', () => {
+      const angular = document.getElementById(
+        'images-max-angular'
+      ) as HTMLInputElement | null;
+      const linear = document.getElementById(
+        'images-max-linear'
+      ) as HTMLInputElement | null;
+      expect(angular).not.toBeNull();
+      expect(linear).not.toBeNull();
+      // Defaults from DEFAULT_MOTION_FILTER (0.6 rad/s, 0.5 m/s).
+      expect(parseFloat(angular!.value)).toBeCloseTo(0.6, 6);
+      expect(parseFloat(linear!.value)).toBeCloseTo(0.5, 6);
+    });
+
+    it('persists edited threshold values through save/load', () => {
+      const angular = document.getElementById(
+        'images-max-angular'
+      ) as HTMLInputElement;
+      const linear = document.getElementById(
+        'images-max-linear'
+      ) as HTMLInputElement;
+
+      angular.value = '1.2';
+      angular.dispatchEvent(new Event('input'));
+      linear.value = '0.8';
+      linear.dispatchEvent(new Event('input'));
+
+      document.getElementById('btn-settings-save')?.click();
+
+      const saved = loadRecordingOptions().images.motionFilter;
+      expect(saved.maxAngularVelocity).toBeCloseTo(1.2, 6);
+      expect(saved.maxLinearVelocity).toBeCloseTo(0.8, 6);
+    });
+
+    it('disables the threshold sliders when the gate (or capture) is off', () => {
+      const imagesEnabled = document.getElementById(
+        'images-enabled'
+      ) as HTMLInputElement;
+      const motionFilter = document.getElementById(
+        'images-motion-filter'
+      ) as HTMLInputElement;
+      const angular = document.getElementById(
+        'images-max-angular'
+      ) as HTMLInputElement;
+      const linear = document.getElementById(
+        'images-max-linear'
+      ) as HTMLInputElement;
+
+      // Gate off → sliders disabled.
+      motionFilter.checked = false;
+      motionFilter.dispatchEvent(new Event('change'));
+      expect(angular.disabled).toBe(true);
+      expect(linear.disabled).toBe(true);
+
+      // Gate back on → sliders enabled.
+      motionFilter.checked = true;
+      motionFilter.dispatchEvent(new Event('change'));
+      expect(angular.disabled).toBe(false);
+      expect(linear.disabled).toBe(false);
+
+      // Capture off overrides → sliders disabled regardless of the gate.
+      imagesEnabled.checked = false;
+      imagesEnabled.dispatchEvent(new Event('change'));
+      expect(angular.disabled).toBe(true);
+      expect(linear.disabled).toBe(true);
     });
   });
 

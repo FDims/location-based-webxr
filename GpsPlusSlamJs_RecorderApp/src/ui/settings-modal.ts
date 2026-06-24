@@ -12,6 +12,7 @@ import {
   cloneRecordingOptions,
   DEPTH_CONSTRAINTS,
   IMAGE_CONSTRAINTS,
+  MOTION_FILTER_CONSTRAINTS,
   OCCUPANCY_CONSTRAINTS,
   FRAME_TILE_DISPLAY_CONSTRAINTS,
   QR_CONSTRAINTS,
@@ -51,6 +52,10 @@ let imagesQualityValue: HTMLElement | null = null;
 let imagesResolutionDivisorSlider: HTMLInputElement | null = null;
 let imagesResolutionDivisorValue: HTMLElement | null = null;
 let imagesMotionFilterCheckbox: HTMLInputElement | null = null;
+let imagesMaxAngularSlider: HTMLInputElement | null = null;
+let imagesMaxAngularValue: HTMLElement | null = null;
+let imagesMaxLinearSlider: HTMLInputElement | null = null;
+let imagesMaxLinearValue: HTMLElement | null = null;
 let arDomOverlayEnabledCheckbox: HTMLInputElement | null = null;
 let arCameraAccessEnabledCheckbox: HTMLInputElement | null = null;
 let arDepthSensingEnabledCheckbox: HTMLInputElement | null = null;
@@ -137,6 +142,14 @@ export function initSettingsModal(
   imagesMotionFilterCheckbox = document.getElementById(
     'images-motion-filter'
   ) as HTMLInputElement;
+  imagesMaxAngularSlider = document.getElementById(
+    'images-max-angular'
+  ) as HTMLInputElement;
+  imagesMaxAngularValue = document.getElementById('images-max-angular-value');
+  imagesMaxLinearSlider = document.getElementById(
+    'images-max-linear'
+  ) as HTMLInputElement;
+  imagesMaxLinearValue = document.getElementById('images-max-linear-value');
   arDomOverlayEnabledCheckbox = document.getElementById(
     'ar-dom-overlay-enabled'
   ) as HTMLInputElement;
@@ -253,6 +266,24 @@ export function initSettingsModal(
     }
   });
 
+  // Motion-gate thresholds: stored in rad/s and m/s (the units the gate
+  // compares against), so the slider value IS the stored value.
+  imagesMaxAngularSlider?.addEventListener('input', () => {
+    if (workingOptions && imagesMaxAngularSlider && imagesMaxAngularValue) {
+      const value = parseFloat(imagesMaxAngularSlider.value);
+      workingOptions.images.motionFilter.maxAngularVelocity = value;
+      imagesMaxAngularValue.textContent = formatAngularVelocity(value);
+    }
+  });
+
+  imagesMaxLinearSlider?.addEventListener('input', () => {
+    if (workingOptions && imagesMaxLinearSlider && imagesMaxLinearValue) {
+      const value = parseFloat(imagesMaxLinearSlider.value);
+      workingOptions.images.motionFilter.maxLinearVelocity = value;
+      imagesMaxLinearValue.textContent = `${value.toFixed(2)} m/s`;
+    }
+  });
+
   // Voxel size slider operates in centimetres for readability; the stored
   // option (`occupancy.cellSizeM`) is in metres, so divide by 100 on the way in.
   occupancyCellSizeSlider?.addEventListener('input', () => {
@@ -318,6 +349,8 @@ export function initSettingsModal(
     if (workingOptions && imagesMotionFilterCheckbox) {
       workingOptions.images.motionFilter.enabled =
         imagesMotionFilterCheckbox.checked;
+      // The threshold sliders only matter while the gate is on.
+      updateImageControlsState();
     }
   });
 
@@ -569,6 +602,44 @@ function populateForm(options: RecordingOptions): void {
       options.images.resolutionDivisor
     );
   }
+  if (imagesMaxAngularSlider) {
+    imagesMaxAngularSlider.min = String(
+      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min
+    );
+    imagesMaxAngularSlider.max = String(
+      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.max
+    );
+    imagesMaxAngularSlider.step = String(
+      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.step
+    );
+    imagesMaxAngularSlider.value = String(
+      options.images.motionFilter.maxAngularVelocity
+    );
+  }
+  if (imagesMaxAngularValue) {
+    imagesMaxAngularValue.textContent = formatAngularVelocity(
+      options.images.motionFilter.maxAngularVelocity
+    );
+  }
+  if (imagesMaxLinearSlider) {
+    imagesMaxLinearSlider.min = String(
+      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.min
+    );
+    imagesMaxLinearSlider.max = String(
+      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.max
+    );
+    imagesMaxLinearSlider.step = String(
+      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.step
+    );
+    imagesMaxLinearSlider.value = String(
+      options.images.motionFilter.maxLinearVelocity
+    );
+  }
+  if (imagesMaxLinearValue) {
+    imagesMaxLinearValue.textContent = `${options.images.motionFilter.maxLinearVelocity.toFixed(
+      2
+    )} m/s`;
+  }
 
   if (arDomOverlayEnabledCheckbox) {
     arDomOverlayEnabledCheckbox.checked =
@@ -729,6 +800,25 @@ function updateImageControlsState(): void {
     // when capture is off — disable it alongside the other image sub-controls.
     imagesMotionFilterCheckbox.disabled = !enabled;
   }
+  // The threshold sliders require BOTH capture and the gate to be on.
+  const motionEnabled =
+    enabled && (imagesMotionFilterCheckbox?.checked ?? true);
+  if (imagesMaxAngularSlider) {
+    imagesMaxAngularSlider.disabled = !motionEnabled;
+  }
+  if (imagesMaxLinearSlider) {
+    imagesMaxLinearSlider.disabled = !motionEnabled;
+  }
+}
+
+/**
+ * Format an angular-velocity threshold (rad/s) for display, adding the
+ * equivalent in deg/s in parentheses since degrees-per-second is the more
+ * intuitive unit for "how fast am I turning the phone".
+ */
+function formatAngularVelocity(radPerSec: number): string {
+  const degPerSec = Math.round((radPerSec * 180) / Math.PI);
+  return `${radPerSec.toFixed(2)} rad/s (≈${degPerSec}°/s)`;
 }
 
 function updateQrControlsState(): void {
