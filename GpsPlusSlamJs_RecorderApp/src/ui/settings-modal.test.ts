@@ -116,6 +116,7 @@ describe('settings-modal', () => {
       expect(html).toContain('id="depth-rgb"');
       expect(html).toContain('id="images-enabled"');
       expect(html).toContain('id="images-motion-filter"');
+      expect(html).toContain('id="images-quality-filter"');
       expect(html).toContain('id="images-max-angular"');
       expect(html).toContain('id="images-max-linear"');
       expect(html).toContain('id="images-interval"');
@@ -700,6 +701,51 @@ describe('settings-modal', () => {
       imagesEnabled.dispatchEvent(new Event('change'));
       expect(angular.disabled).toBe(true);
       expect(linear.disabled).toBe(true);
+    });
+  });
+
+  describe('image-quality gate toggle (blur/blackness)', () => {
+    beforeEach(() => {
+      initSettingsModal();
+      showSettingsModal();
+    });
+
+    it('is present and defaults to OFF (opt-in until field-tuned)', () => {
+      const cb = document.getElementById(
+        'images-quality-filter'
+      ) as HTMLInputElement | null;
+      expect(cb).not.toBeNull();
+      expect(cb!.checked).toBe(false);
+    });
+
+    it('persists qualityFilter.enabled = true when checked', () => {
+      const cb = document.getElementById(
+        'images-quality-filter'
+      ) as HTMLInputElement;
+
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change'));
+
+      document.getElementById('btn-settings-save')?.click();
+
+      expect(loadRecordingOptions().images.qualityFilter.enabled).toBe(true);
+    });
+
+    it('disables the quality-filter checkbox while image capture is off', () => {
+      const imagesEnabled = document.getElementById(
+        'images-enabled'
+      ) as HTMLInputElement;
+      const qualityFilter = document.getElementById(
+        'images-quality-filter'
+      ) as HTMLInputElement;
+
+      imagesEnabled.checked = false;
+      imagesEnabled.dispatchEvent(new Event('change'));
+      expect(qualityFilter.disabled).toBe(true);
+
+      imagesEnabled.checked = true;
+      imagesEnabled.dispatchEvent(new Event('change'));
+      expect(qualityFilter.disabled).toBe(false);
     });
   });
 

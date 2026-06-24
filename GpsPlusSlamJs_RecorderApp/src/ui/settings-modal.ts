@@ -52,6 +52,7 @@ let imagesQualityValue: HTMLElement | null = null;
 let imagesResolutionDivisorSlider: HTMLInputElement | null = null;
 let imagesResolutionDivisorValue: HTMLElement | null = null;
 let imagesMotionFilterCheckbox: HTMLInputElement | null = null;
+let imagesQualityFilterCheckbox: HTMLInputElement | null = null;
 let imagesMaxAngularSlider: HTMLInputElement | null = null;
 let imagesMaxAngularValue: HTMLElement | null = null;
 let imagesMaxLinearSlider: HTMLInputElement | null = null;
@@ -141,6 +142,9 @@ export function initSettingsModal(
   );
   imagesMotionFilterCheckbox = document.getElementById(
     'images-motion-filter'
+  ) as HTMLInputElement;
+  imagesQualityFilterCheckbox = document.getElementById(
+    'images-quality-filter'
   ) as HTMLInputElement;
   imagesMaxAngularSlider = document.getElementById(
     'images-max-angular'
@@ -354,6 +358,13 @@ export function initSettingsModal(
     }
   });
 
+  imagesQualityFilterCheckbox?.addEventListener('change', () => {
+    if (workingOptions && imagesQualityFilterCheckbox) {
+      workingOptions.images.qualityFilter.enabled =
+        imagesQualityFilterCheckbox.checked;
+    }
+  });
+
   arDomOverlayEnabledCheckbox?.addEventListener('change', () => {
     if (workingOptions && arDomOverlayEnabledCheckbox) {
       workingOptions.arCrashIsolation.enableDomOverlay =
@@ -564,6 +575,9 @@ function populateForm(options: RecordingOptions): void {
   }
   if (imagesMotionFilterCheckbox) {
     imagesMotionFilterCheckbox.checked = options.images.motionFilter.enabled;
+  }
+  if (imagesQualityFilterCheckbox) {
+    imagesQualityFilterCheckbox.checked = options.images.qualityFilter.enabled;
   }
   if (imagesIntervalSlider) {
     imagesIntervalSlider.min = String(IMAGE_CONSTRAINTS.intervalMs.min);
@@ -799,6 +813,11 @@ function updateImageControlsState(): void {
     // The motion gate only applies to captured images, so it is meaningless
     // when capture is off — disable it alongside the other image sub-controls.
     imagesMotionFilterCheckbox.disabled = !enabled;
+  }
+  if (imagesQualityFilterCheckbox) {
+    // Same rationale as the motion gate — the image-quality gate only acts on
+    // captured frames, so it is disabled when capture is off.
+    imagesQualityFilterCheckbox.disabled = !enabled;
   }
   // The threshold sliders require BOTH capture and the gate to be on.
   const motionEnabled =

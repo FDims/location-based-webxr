@@ -1001,6 +1001,19 @@ No errors</pre
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
+              <!-- Image-content gate (defocus / low-light blur + black frames),  -->
+              <!-- off by default until field-tuned. Runs off-thread on frames     -->
+              <!-- that already passed the motion gate.                            -->
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="images-quality-filter"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Skip blurry/black frames (image)</span
+                >
+              </label>
               <div class="space-y-1">
                 <div class="flex justify-between text-xs text-gray-400">
                   <span>Interval</span>
