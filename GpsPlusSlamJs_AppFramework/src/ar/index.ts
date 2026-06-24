@@ -255,6 +255,20 @@ export {
   createEnableGpsArController,
 } from './enable-gps-ar.js';
 
+// --- image-quality (pure blur/blackness metrics + drop/retry verdict policy) ---
+export {
+  type QualityFilterConfig,
+  DEFAULT_QUALITY_FILTER,
+  DEFAULT_SHARPNESS_HISTORY_SIZE,
+  DEFAULT_SHARPNESS_MIN_SAMPLES,
+  type QualityRejectReason,
+  type QualityVerdict,
+  sharpnessScore,
+  rgbaToGrayscale,
+  meanLuminance,
+  ImageQualityGate,
+} from './image-quality.js';
+
 // --- image-capture ---
 export {
   MIN_VALID_IMAGE_BYTES,
