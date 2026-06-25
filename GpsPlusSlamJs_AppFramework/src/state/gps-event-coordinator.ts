@@ -18,9 +18,17 @@
 
 import type { ReducersMapObject } from '@reduxjs/toolkit';
 import type { SlamAppStore } from './create-slam-app-store';
-import type { LatLong, RecordGpsEventPayload } from 'gps-plus-slam-js';
+import type {
+  LatLong,
+  RecordGpsEventPayload,
+  RawAbsoluteOrientation,
+} from 'gps-plus-slam-js';
 import { recordGpsEvent, setZeroPos } from 'gps-plus-slam-js';
 import type { GpsPosition, RawDeviceOrientation } from '../sensors/gps';
+import {
+  getLatestAbsoluteOrientation,
+  type AbsoluteOrientationReading,
+} from '../sensors/absolute-orientation';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('RecordingCoordinator');
@@ -134,6 +142,24 @@ export function buildRawGpsPoint(
 }
 
 /**
+ * Map a capture-module {@link AbsoluteOrientationReading} to the library's
+ * {@link RawAbsoluteOrientation} payload shape (the only difference is the
+ * timestamp field name: capture `timestamp` → payload `sampleTimestamp`).
+ * Returns `undefined` when the sensor produced no reading (most non-Chrome).
+ */
+export function toRawAbsoluteOrientation(
+  reading: AbsoluteOrientationReading | null
+): RawAbsoluteOrientation | undefined {
+  if (!reading) return undefined;
+  return {
+    quaternion: reading.quaternion,
+    referenceFrame: reading.referenceFrame,
+    screenAngleDeg: reading.screenAngleDeg,
+    sampleTimestamp: reading.timestamp,
+  };
+}
+
+/**
  * Build a RecordGpsEventPayload from GPS position and AR pose.
  * This is a pure function for testability.
  *
@@ -144,12 +170,14 @@ export function buildRawGpsPoint(
  * @param gpsPosition - GPS position from Geolocation API
  * @param arPose - AR pose from WebXR
  * @param deviceOrientation - Optional device orientation from sensors
+ * @param absoluteOrientation - Optional AbsoluteOrientationSensor reading
  * @returns RecordGpsEventPayload ready for dispatch
  */
 export function buildRecordGpsEventPayload(
   gpsPosition: GpsPosition,
   arPose: ARPose,
-  deviceOrientation: RawDeviceOrientation | null
+  deviceOrientation: RawDeviceOrientation | null,
+  absoluteOrientation: AbsoluteOrientationReading | null = null
 ): RecordGpsEventPayload {
   // Convert nullable sensor orientation to library's non-nullable type,
   // only when all Euler angles are available.
@@ -170,6 +198,7 @@ export function buildRecordGpsEventPayload(
     odomRotation: extractOdomRotation(arPose),
     rawGpsPoint: buildRawGpsPoint(gpsPosition, deviceOrientation),
     rawDeviceOrientation,
+    rawAbsoluteOrientation: toRawAbsoluteOrientation(absoluteOrientation),
   };
 }
 
@@ -221,11 +250,14 @@ export function createGpsPositionHandler(
       return;
     }
 
-    // Build and dispatch the library's recordGpsEvent action
+    // Build and dispatch the library's recordGpsEvent action. The absolute
+    // orientation (if the AbsoluteOrientationSensor is active) is snapshotted
+    // here so it pairs exactly with this event's AR pose.
     const payload = buildRecordGpsEventPayload(
       position,
       arPose,
-      lastDeviceOrientation
+      lastDeviceOrientation,
+      getLatestAbsoluteOrientation()
     );
     store.dispatch(recordGpsEvent(payload));
 

@@ -70,6 +70,7 @@ const entryFiles = [
   'src/sensors/gps.ts',
   'src/sensors/gps-error-handler.ts',
   'src/sensors/permission-checker.ts',
+  'src/sensors/absolute-orientation.ts',
 
   // state/
   'src/state/index.ts',
