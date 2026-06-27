@@ -87,6 +87,60 @@ describe('createSlamAppStore', () => {
     });
   });
 
+  describe('enableCompassRotationPrior (Stage-C debug opt-in)', () => {
+    it('enables the rotation prior once gpsData exists (after the first setZeroPos)', () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassRotationPrior: true,
+      });
+      expect(store.getState().gpsData).toBeNull();
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      expect(store.getState().gpsData?.compassRotationPriorEnabled).toBe(true);
+    });
+
+    it('leaves it off by default', () => {
+      const store = createSlamAppStore({ storageBackend: backend });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      expect(store.getState().gpsData?.compassRotationPriorEnabled).toBeFalsy();
+    });
+  });
+
+  describe('enableCompassWebXRConsistency (GPS-free trust gate debug opt-in)', () => {
+    it('enables the consistency gate once gpsData exists', () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassWebXRConsistency: true,
+      });
+      expect(store.getState().gpsData).toBeNull();
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      expect(store.getState().gpsData?.compassWebXRConsistencyEnabled).toBe(
+        true
+      );
+    });
+
+    it('leaves it off by default', () => {
+      const store = createSlamAppStore({ storageBackend: backend });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      expect(
+        store.getState().gpsData?.compassWebXRConsistencyEnabled
+      ).toBeFalsy();
+    });
+
+    it('all three compass opt-ins can be enabled together', () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassColdStartOverride: true,
+        enableCompassRotationPrior: true,
+        enableCompassWebXRConsistency: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      const s = store.getState().gpsData;
+      expect(s?.coldStartOverrideEnabled).toBe(true);
+      expect(s?.compassRotationPriorEnabled).toBe(true);
+      expect(s?.compassWebXRConsistencyEnabled).toBe(true);
+    });
+  });
+
   describe('lifecycle dispatch', () => {
     it('handles startSession / endSession through the recording slice', () => {
       const store = createSlamAppStore({ storageBackend: backend });

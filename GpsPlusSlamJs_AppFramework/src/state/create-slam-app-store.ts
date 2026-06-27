@@ -30,6 +30,8 @@ import {
   validateLicenseKey,
   setZeroPos,
   setColdStartOverrideEnabled,
+  setCompassRotationPriorEnabled,
+  setCompassWebXRConsistencyEnabled,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
@@ -157,6 +159,24 @@ export interface SlamAppStoreOptions<
    * @see GpsPlusSlamJs_Docs/docs/2026-06-26-stage0-field-collection-and-enablement.md
    */
   enableCompassColdStartOverride?: boolean;
+
+  /**
+   * **Debug/experiment flag** — enable the library's Phase-4 **Stage-C**
+   * trust-gated compass rotation prior (keeps a steady compass vote once GPS yaw
+   * is observable + the compass is trusted; supersedes Stage 0). Dispatches
+   * `setCompassRotationPriorEnabled(true)` once `gpsData` exists. Default `false`
+   * ⇒ byte-identical. Like the Stage-0 flag, the action persists into recordings.
+   */
+  enableCompassRotationPrior?: boolean;
+
+  /**
+   * **Debug/experiment flag** — enable the library's GPS-free compass↔WebXR
+   * consistency gate. When on, the compass override (Stage 0 / Stage C) abstains
+   * unless the compass is rotating in lock-step with the WebXR pose. Dispatches
+   * `setCompassWebXRConsistencyEnabled(true)` once `gpsData` exists. Default
+   * `false` ⇒ byte-identical. The action persists into recordings.
+   */
+  enableCompassWebXRConsistency?: boolean;
 }
 
 /**
@@ -208,6 +228,8 @@ export function createSlamAppStore<
     licenseKey = COMMUNITY_LICENSE_KEY,
     trackingQualityOptions,
     enableCompassColdStartOverride = false,
+    enableCompassRotationPrior = false,
+    enableCompassWebXRConsistency = false,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -251,11 +273,27 @@ export function createSlamAppStore<
     },
   });
 
-  // Debug/experiment opt-in for the Stage-0 cold-start override. The flag lives
-  // on the `gpsData` slice, which is `null` until the first `setZeroPos`, so we
-  // enable it once that slice exists. A self-removing subscription keeps this a
-  // one-shot with no lingering listener.
+  // Debug/experiment opt-ins for the compass alignment flags. They live on the
+  // `gpsData` slice, which is `null` until the first `setZeroPos`, so we enable
+  // them once that slice exists. A single self-removing subscription dispatches
+  // every requested opt-in as a one-shot (no lingering listener).
+  const onGpsDataReady: Array<() => void> = [];
   if (enableCompassColdStartOverride) {
+    onGpsDataReady.push(() =>
+      store.dispatch(setColdStartOverrideEnabled(true))
+    );
+  }
+  if (enableCompassRotationPrior) {
+    onGpsDataReady.push(() =>
+      store.dispatch(setCompassRotationPriorEnabled(true))
+    );
+  }
+  if (enableCompassWebXRConsistency) {
+    onGpsDataReady.push(() =>
+      store.dispatch(setCompassWebXRConsistencyEnabled(true))
+    );
+  }
+  if (onGpsDataReady.length > 0) {
     let enabled = false;
     const tryEnable = (): void => {
       if (enabled) return;
@@ -263,7 +301,7 @@ export function createSlamAppStore<
         // Set the guard BEFORE dispatching: the dispatch notifies subscribers
         // synchronously and would otherwise re-enter this and recurse.
         enabled = true;
-        store.dispatch(setColdStartOverrideEnabled(true));
+        for (const dispatchOptIn of onGpsDataReady) dispatchOptIn();
       }
     };
     tryEnable();
