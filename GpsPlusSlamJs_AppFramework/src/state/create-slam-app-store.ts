@@ -277,40 +277,44 @@ export function createSlamAppStore<
   // `gpsData` slice, which is `null` until the first `setZeroPos`, so we enable
   // them once that slice exists. A single self-removing subscription dispatches
   // every requested opt-in as a one-shot (no lingering listener).
-  const onGpsDataReady: Array<() => void> = [];
+  // Each opt-in: a predicate reading whether the flag is already set on gpsData,
+  // and the action that sets it. We RE-APPLY (idempotently) rather than fire
+  // once: in the recorder the flag could land against a gpsData that is then
+  // recreated (store swap / origin reset), and a one-shot would never re-apply
+  // it (field bug 2026-06-27). Dispatching only when a flag is unset means each
+  // settles after one dispatch (no loop), but re-fires if gpsData is recreated.
+  const optIns: Array<{
+    isSet: (s: LibraryRootState) => boolean;
+    apply: () => void;
+  }> = [];
   if (enableCompassColdStartOverride) {
-    onGpsDataReady.push(() =>
-      store.dispatch(setColdStartOverrideEnabled(true))
-    );
+    optIns.push({
+      isSet: (s) => s.gpsData?.coldStartOverrideEnabled === true,
+      apply: () => store.dispatch(setColdStartOverrideEnabled(true)),
+    });
   }
   if (enableCompassRotationPrior) {
-    onGpsDataReady.push(() =>
-      store.dispatch(setCompassRotationPriorEnabled(true))
-    );
+    optIns.push({
+      isSet: (s) => s.gpsData?.compassRotationPriorEnabled === true,
+      apply: () => store.dispatch(setCompassRotationPriorEnabled(true)),
+    });
   }
   if (enableCompassWebXRConsistency) {
-    onGpsDataReady.push(() =>
-      store.dispatch(setCompassWebXRConsistencyEnabled(true))
-    );
+    optIns.push({
+      isSet: (s) => s.gpsData?.compassWebXRConsistencyEnabled === true,
+      apply: () => store.dispatch(setCompassWebXRConsistencyEnabled(true)),
+    });
   }
-  if (onGpsDataReady.length > 0) {
-    let enabled = false;
-    const tryEnable = (): void => {
-      if (enabled) return;
-      if ((store.getState() as LibraryRootState).gpsData !== null) {
-        // Set the guard BEFORE dispatching: the dispatch notifies subscribers
-        // synchronously and would otherwise re-enter this and recurse.
-        enabled = true;
-        for (const dispatchOptIn of onGpsDataReady) dispatchOptIn();
+  if (optIns.length > 0) {
+    const ensureApplied = (): void => {
+      const s = store.getState() as LibraryRootState;
+      if (s.gpsData === null) return; // flags live on gpsData; nothing to set yet
+      for (const optIn of optIns) {
+        if (!optIn.isSet(s)) optIn.apply();
       }
     };
-    tryEnable();
-    if (!enabled) {
-      const unsubscribe = store.subscribe(() => {
-        tryEnable();
-        if (enabled) unsubscribe();
-      });
-    }
+    ensureApplied(); // apply now if gpsData already exists
+    store.subscribe(ensureApplied); // re-apply whenever gpsData (re)exists with a flag unset
   }
 
   return {

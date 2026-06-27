@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSlice } from '@reduxjs/toolkit';
-import { setZeroPos } from 'gps-plus-slam-js';
+import { setZeroPos, setColdStartOverrideEnabled } from 'gps-plus-slam-js';
 import { createSlamAppStore } from './create-slam-app-store';
 import { startSession, endSession } from './recording-slice';
 import type { StorageBackend } from '../storage/storage-backend';
@@ -138,6 +138,22 @@ describe('createSlamAppStore', () => {
       expect(s?.coldStartOverrideEnabled).toBe(true);
       expect(s?.compassRotationPriorEnabled).toBe(true);
       expect(s?.compassWebXRConsistencyEnabled).toBe(true);
+    });
+
+    it('RE-APPLIES the opt-in if the flag is later cleared (robust to the recorder gpsData-recreation race)', () => {
+      // Field bug (2026-06-27): in the recorder the opt-in ended up dropped — the
+      // flag fired against a gpsData that was then recreated (store swap / origin
+      // reset), and a one-shot subscription never re-applied it. The opt-in must
+      // therefore be idempotently re-applied whenever gpsData exists with the flag
+      // unset, not fired exactly once. Modelled here by clearing it directly.
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassColdStartOverride: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
+      store.dispatch(setColdStartOverrideEnabled(false)); // simulate the drop
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
     });
   });
 
