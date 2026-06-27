@@ -18,6 +18,7 @@ import {
   validateOccupancyOptions,
   validateFrameTileDisplayOptions,
   validateVisualizationOptions,
+  validateCompassDebugOptions,
   validateQrOptions,
   validateMotionFilterOptions,
   validateQualityFilterOptions,
@@ -476,6 +477,62 @@ describe('recording-options', () => {
     });
   });
 
+  describe('validateCompassDebugOptions', () => {
+    // Why: the compass alignment debug flags (Stage 0 / Stage C / consistency
+    // gate) must default OFF (byte-identical / no override) and validate
+    // boolean-or-default, so a corrupted or pre-feature persisted value can never
+    // silently turn an alignment override ON.
+    it('returns all-false defaults when given empty object', () => {
+      const result = validateCompassDebugOptions({});
+      expect(result).toEqual(DEFAULT_RECORDING_OPTIONS.compassDebug);
+      expect(result).toEqual({
+        coldStartOverride: false,
+        rotationPrior: false,
+        webXRConsistency: false,
+      });
+    });
+
+    it('preserves valid boolean values', () => {
+      expect(
+        validateCompassDebugOptions({
+          coldStartOverride: true,
+          rotationPrior: true,
+          webXRConsistency: true,
+        })
+      ).toEqual({
+        coldStartOverride: true,
+        rotationPrior: true,
+        webXRConsistency: true,
+      });
+    });
+
+    it('falls back to the OFF default for non-boolean values per field', () => {
+      expect(
+        validateCompassDebugOptions({
+          coldStartOverride: 'yes' as unknown as boolean,
+        }).coldStartOverride
+      ).toBe(false);
+      expect(
+        validateCompassDebugOptions({ rotationPrior: 1 as unknown as boolean })
+          .rotationPrior
+      ).toBe(false);
+    });
+
+    it('validateRecordingOptions + cloneRecordingOptions carry compassDebug (deep-cloned)', () => {
+      const opts = validateRecordingOptions({
+        compassDebug: { coldStartOverride: true },
+      });
+      expect(opts.compassDebug).toEqual({
+        coldStartOverride: true,
+        rotationPrior: false,
+        webXRConsistency: false,
+      });
+      const clone = cloneRecordingOptions(opts);
+      expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing
+      expect(clone.compassDebug).toEqual(opts.compassDebug);
+    });
+  });
+
   describe('validateVisualizationOptions', () => {
     /**
      * Why these tests matter (Finding B / DB-1b of
@@ -716,6 +773,7 @@ describe('recording-options', () => {
         frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       };
       localStorageMock.getItem.mockReturnValueOnce(JSON.stringify(stored));
 
@@ -810,6 +868,7 @@ describe('recording-options', () => {
         frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       };
 
       saveRecordingOptions(options);
@@ -836,6 +895,7 @@ describe('recording-options', () => {
         frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       };
 
       saveRecordingOptions(options);
@@ -1188,6 +1248,7 @@ describe('recording-options', () => {
         frameTileDisplay: { divisor: 4 },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       };
 
       saveRecordingOptions(customOptions);
@@ -1212,6 +1273,7 @@ describe('recording-options', () => {
         frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       };
 
       saveRecordingOptions(options1);
@@ -1245,6 +1307,7 @@ describe('recording-options', () => {
         frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       });
 
       // Reset
@@ -1306,6 +1369,7 @@ describe('recording-options', () => {
         frameTileDisplay: { ...DEFAULT_RECORDING_OPTIONS.frameTileDisplay },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
+        compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       };
       localStorageMock.setItem(CUSTOM_KEY, JSON.stringify(custom));
 

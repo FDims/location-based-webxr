@@ -33,6 +33,26 @@ export interface RecordingOptionsInput {
   frameTileDisplay?: Partial<FrameTileDisplayOptions>;
   visualization?: Partial<VisualizationOptions>;
   qr?: Partial<QrCaptureOptions>;
+  compassDebug?: Partial<CompassDebugOptions>;
+}
+
+/**
+ * Debug/experiment toggles for the library's Phase-4 compass alignment features
+ * (closed/internal `AlignmentConfig` flags exposed via narrow boolean actions).
+ * They change how the LIVE alignment is computed, so they belong with the other
+ * debug groups (`arCrashIsolation`, `visualization`). All default **OFF** ⇒
+ * byte-identical core solve until the operator opts in.
+ *
+ * On-device caveat: the resulting `gpsData` actions persist into the recording,
+ * so a replay re-enables them. Record field-calibration sets with these OFF.
+ */
+export interface CompassDebugOptions {
+  /** Stage 0 — cold-start compass yaw override (`setColdStartOverrideEnabled`). */
+  coldStartOverride: boolean;
+  /** Stage C — trust-gated compass rotation prior (`setCompassRotationPriorEnabled`). */
+  rotationPrior: boolean;
+  /** GPS-free compass↔WebXR consistency gate (`setCompassWebXRConsistencyEnabled`). */
+  webXRConsistency: boolean;
 }
 
 /**
@@ -246,6 +266,8 @@ export interface RecordingOptions {
   visualization: VisualizationOptions;
   /** Live QR detection + RAW recording configuration (opt-in) */
   qr: QrCaptureOptions;
+  /** Compass alignment debug toggles (Stage 0 / Stage C / consistency gate) */
+  compassDebug: CompassDebugOptions;
 }
 
 // --- Constants ---
@@ -312,6 +334,12 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     enabled: false,
     intervalMs: 125, // ~8 Hz — the QR demo's DETECT_INTERVAL_MS
     captureSize: 1024, // long-edge px — the on-device-verified default
+  },
+  compassDebug: {
+    // All OFF ⇒ byte-identical core solve. Operator opts in to test on-device.
+    coldStartOverride: false,
+    rotationPrior: false,
+    webXRConsistency: false,
   },
 };
 
@@ -446,6 +474,31 @@ export function validateArCrashIsolationOptions(
       typeof options.applyChromiumProjectionLayerWorkaround === 'boolean'
         ? options.applyChromiumProjectionLayerWorkaround
         : defaults.applyChromiumProjectionLayerWorkaround,
+  };
+}
+
+/**
+ * Validate and normalize the compass alignment debug toggles. Boolean-or-default
+ * per field; a missing/corrupted/pre-feature value falls back to the OFF default
+ * so a bad persisted value can never silently turn an alignment override ON.
+ */
+export function validateCompassDebugOptions(
+  options: Partial<CompassDebugOptions>
+): CompassDebugOptions {
+  const defaults = DEFAULT_RECORDING_OPTIONS.compassDebug;
+  return {
+    coldStartOverride:
+      typeof options.coldStartOverride === 'boolean'
+        ? options.coldStartOverride
+        : defaults.coldStartOverride,
+    rotationPrior:
+      typeof options.rotationPrior === 'boolean'
+        ? options.rotationPrior
+        : defaults.rotationPrior,
+    webXRConsistency:
+      typeof options.webXRConsistency === 'boolean'
+        ? options.webXRConsistency
+        : defaults.webXRConsistency,
   };
 }
 
@@ -753,6 +806,7 @@ export function validateRecordingOptions(
     ),
     visualization: validateVisualizationOptions(options.visualization ?? {}),
     qr: validateQrOptions(options.qr ?? {}),
+    compassDebug: validateCompassDebugOptions(options.compassDebug ?? {}),
   };
 }
 
@@ -843,5 +897,6 @@ export function cloneRecordingOptions(
     frameTileDisplay: { ...options.frameTileDisplay },
     visualization: { ...options.visualization },
     qr: { ...options.qr },
+    compassDebug: { ...options.compassDebug },
   };
 }
