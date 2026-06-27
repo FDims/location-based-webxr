@@ -66,7 +66,7 @@ describe('createSlamAppStore', () => {
   });
 
   describe('enableCompassColdStartOverride (Stage-0 debug opt-in)', () => {
-    it('enables the override once gpsData exists (after the first setZeroPos)', () => {
+    it('enables the override once gpsData exists (after the first setZeroPos)', async () => {
       // Why: the flag lives on the gpsData slice, which is null until the first
       // setZeroPos; the factory must defer the opt-in until that slice exists.
       const store = createSlamAppStore({
@@ -75,8 +75,10 @@ describe('createSlamAppStore', () => {
       });
       // Before any GPS fix: gpsData is null, nothing to enable.
       expect(store.getState().gpsData).toBeNull();
-      // First fix creates the slice; the one-shot subscription flips the flag.
+      // First fix creates the slice; the subscription flips the flag on a
+      // microtask (so the opt-in persists AFTER setZeroPos — replay fidelity).
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
       expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
     });
 
@@ -88,13 +90,14 @@ describe('createSlamAppStore', () => {
   });
 
   describe('enableCompassRotationPrior (Stage-C debug opt-in)', () => {
-    it('enables the rotation prior once gpsData exists (after the first setZeroPos)', () => {
+    it('enables the rotation prior once gpsData exists (after the first setZeroPos)', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassRotationPrior: true,
       });
       expect(store.getState().gpsData).toBeNull();
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
       expect(store.getState().gpsData?.compassRotationPriorEnabled).toBe(true);
     });
 
@@ -106,13 +109,14 @@ describe('createSlamAppStore', () => {
   });
 
   describe('enableCompassWebXRConsistency (GPS-free trust gate debug opt-in)', () => {
-    it('enables the consistency gate once gpsData exists', () => {
+    it('enables the consistency gate once gpsData exists', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassWebXRConsistency: true,
       });
       expect(store.getState().gpsData).toBeNull();
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
       expect(store.getState().gpsData?.compassWebXRConsistencyEnabled).toBe(
         true
       );
@@ -126,7 +130,7 @@ describe('createSlamAppStore', () => {
       ).toBeFalsy();
     });
 
-    it('all three compass opt-ins can be enabled together', () => {
+    it('all three compass opt-ins can be enabled together', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassColdStartOverride: true,
@@ -134,25 +138,29 @@ describe('createSlamAppStore', () => {
         enableCompassWebXRConsistency: true,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
       const s = store.getState().gpsData;
       expect(s?.coldStartOverrideEnabled).toBe(true);
       expect(s?.compassRotationPriorEnabled).toBe(true);
       expect(s?.compassWebXRConsistencyEnabled).toBe(true);
     });
 
-    it('RE-APPLIES the opt-in if the flag is later cleared (robust to the recorder gpsData-recreation race)', () => {
+    it('RE-APPLIES the opt-in if the flag is later cleared (robust to the recorder gpsData-recreation race)', async () => {
       // Field bug (2026-06-27): in the recorder the opt-in ended up dropped — the
       // flag fired against a gpsData that was then recreated (store swap / origin
       // reset), and a one-shot subscription never re-applied it. The opt-in must
       // therefore be idempotently re-applied whenever gpsData exists with the flag
       // unset, not fired exactly once. Modelled here by clearing it directly.
+      // Re-application runs on a microtask (replay-fidelity fix), hence the awaits.
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassColdStartOverride: true,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
       expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
       store.dispatch(setColdStartOverrideEnabled(false)); // simulate the drop
+      await Promise.resolve();
       expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
     });
   });

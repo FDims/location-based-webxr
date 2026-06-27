@@ -425,6 +425,56 @@ describe('Recorder Store', () => {
       );
     });
 
+    it('persists the compass opt-in AFTER setZeroPos so replay re-enables it (recording-fidelity)', async () => {
+      // Field finding (2026-06-27): in-house recordings (64c6a294, e7431b85)
+      // showed the compass opt-in actions persisted BEFORE the first setZeroPos,
+      // so replay dropped them (gpsData is null until setZeroPos) and the override
+      // looked OFF on replay even though it worked live. Root cause: the framework
+      // applied the opt-ins from a `store.subscribe` listener, which fires INSIDE
+      // setZeroPos's dispatch (subscriber notification runs within `next()`),
+      // while the persistence middleware enqueues AFTER `next()` — so the opt-in
+      // actions get LOWER persistence indices than setZeroPos itself. Pin the
+      // ordering BY INDEX (not async write-callback order) so the fix can't
+      // silently regress.
+      const backend = new NullStorageBackend();
+      const writeSpy = vi.spyOn(backend, 'writeAction');
+      const s = createRecorderStore({
+        storageBackend: backend,
+        enableDevChecks: false,
+        enableCompassColdStartOverride: true,
+        enableCompassRotationPrior: true,
+        enableCompassWebXRConsistency: true,
+      });
+      s.dispatch(
+        startSession({
+          scenarioName: 'test',
+          sessionName: 'fidelity',
+          startTime: Date.now(),
+        })
+      );
+      s.dispatch(setZeroPos({ lat: 48.8566, lon: 2.3522 }));
+      // Drain the async write queue so every writeAction call is captured.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const byIndex = writeSpy.mock.calls
+        .map((c) => ({
+          type: (c[0] as { type: string }).type,
+          index: c[1] as number,
+        }))
+        .sort((a, b) => a.index - b.index);
+      const zero = byIndex.find((x) => x.type === 'gpsData/setZeroPos');
+      const cold = byIndex.find(
+        (x) => x.type === 'gpsData/setColdStartOverrideEnabled'
+      );
+      expect(zero).toBeDefined();
+      expect(cold).toBeDefined();
+      // Replay applies actions in index order; the opt-in must come AFTER the
+      // setZeroPos that creates gpsData, or the reducer drops it (state null).
+      expect((zero as { index: number }).index).toBeLessThan(
+        (cold as { index: number }).index
+      );
+    });
+
     it('should use per-instance action indices, not shared across stores (Bug 10)', () => {
       /**
        * Why this test matters:
@@ -952,7 +1002,7 @@ describe('Recorder Store', () => {
     // Stage C / consistency gate) so the operator can test them on-device. The
     // store must thread each through createSlamAppStore, which enables it on the
     // gpsData slice once that slice exists (after the first setZeroPos).
-    it('threads all three compass flags into the library store', () => {
+    it('threads all three compass flags into the library store', async () => {
       const s = createRecorderStore({
         enableCompassColdStartOverride: true,
         enableCompassRotationPrior: true,
@@ -960,6 +1010,10 @@ describe('Recorder Store', () => {
       });
       expect(s.getState().gpsData).toBeNull();
       s.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      // The opt-ins are applied on a microtask after gpsData is created (so they
+      // persist AFTER setZeroPos for replay fidelity — see the recording-fidelity
+      // test above), so await one tick before asserting they landed.
+      await Promise.resolve();
       const g = s.getState().gpsData;
       expect(g?.coldStartOverrideEnabled).toBe(true);
       expect(g?.compassRotationPriorEnabled).toBe(true);

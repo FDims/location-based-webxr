@@ -48,6 +48,20 @@ thin `createRecorderStore` that calls this factory with its own extras.
   silently drop its actions from recordings — see
   [persistence-middleware.ts.md](persistence-middleware.ts.md) and the
   2026-05-29 architecture review (§5 P0).
+- **Compass opt-ins (`enableCompass*`) are applied on a MICROTASK, after the
+  triggering dispatch settles.** Each opt-in lives on the `gpsData` slice, which
+  is null until the first `setZeroPos`, so the factory re-applies it idempotently
+  whenever `gpsData` (re)exists with the flag unset (robust to the recorder's
+  store-recreation / origin-reset race). Crucially the re-apply is **deferred via
+  `queueMicrotask`, never dispatched synchronously inside the `store.subscribe`
+  listener**: Redux runs subscriber notifications within `next()`, and the
+  persistence middleware enqueues *after* `next()`, so a synchronous opt-in
+  dispatch would be persisted with a LOWER index than the `setZeroPos` that
+  created `gpsData` — and a replay would then drop it (gpsData still null at that
+  index), making the override look OFF on replay though it worked live (field bug
+  2026-06-27, recordings `64c6a294` / `e7431b85`). Deferring makes the opt-ins
+  top-level dispatches that persist AFTER `setZeroPos`. Consumers asserting the
+  flag after `setZeroPos` must `await` a microtask first (see the tests).
 - The factory does **not** know about routing, ref-points, or scenarios. Any
   app needing those plugs them in via `extraReducers`.
 

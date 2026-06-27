@@ -306,14 +306,39 @@ export function createSlamAppStore<
     });
   }
   if (optIns.length > 0) {
-    const ensureApplied = (): void => {
+    const applyUnset = (): void => {
       const s = store.getState() as LibraryRootState;
-      if (s.gpsData === null) return; // flags live on gpsData; nothing to set yet
+      if (s.gpsData === null) return;
       for (const optIn of optIns) {
         if (!optIn.isSet(s)) optIn.apply();
       }
     };
-    ensureApplied(); // apply now if gpsData already exists
+    // Apply on a MICROTASK, never synchronously inside the subscriber. A
+    // synchronous opt-in dispatch from within (e.g.) setZeroPos's subscriber
+    // notification persists the opt-in actions BEFORE setZeroPos itself: the
+    // persistence middleware enqueues after `next()`, and Redux runs subscriber
+    // notifications within `next()`, so the nested opt-in dispatches receive
+    // LOWER persistence indices than the setZeroPos that creates gpsData. On
+    // replay the reducer then drops them (gpsData still null at that index), so
+    // the override looked OFF on replay even though it worked live — and the
+    // re-entrant subscriber also double-dispatched each flag (field bug
+    // 2026-06-27, recordings 64c6a294 / e7431b85; repro in recorder-store.test.ts
+    // "persists the compass opt-in AFTER setZeroPos"). Deferring makes the opt-ins
+    // top-level dispatches that persist AFTER setZeroPos and replay correctly; the
+    // `scheduled` guard collapses the re-entrant storm to a single pass.
+    let scheduled = false;
+    const ensureApplied = (): void => {
+      if (scheduled) return;
+      const s = store.getState() as LibraryRootState;
+      if (s.gpsData === null) return; // flags live on gpsData; nothing to set yet
+      if (optIns.every((optIn) => optIn.isSet(s))) return; // all settled
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        applyUnset();
+      });
+    };
+    ensureApplied(); // schedule now if gpsData already exists
     store.subscribe(ensureApplied); // re-apply whenever gpsData (re)exists with a flag unset
   }
 
