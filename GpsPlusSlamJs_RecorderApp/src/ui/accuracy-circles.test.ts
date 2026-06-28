@@ -33,7 +33,6 @@ vi.mock('leaflet', () => {
 
 import {
   addAccuracyCircles,
-  ACCURACY_CIRCLE_FILL_OPACITY,
   ACCURACY_CIRCLE_STROKE_OPACITY,
   ACCURACY_CIRCLE_WEIGHT,
 } from './accuracy-circles';
@@ -64,9 +63,11 @@ describe('addAccuracyCircles', () => {
     expect(circleCalls[0]!.options.radius).toBe(7);
   });
 
-  it('applies the documented style constants and the caller-supplied color', () => {
+  it('draws stroke-only outlines (no fill) so overlaps never obscure the basemap', () => {
     // Why: both consumers (preview-map / summary-map) rely on identical
-    // styling. If a constant drifts, this test catches it.
+    // styling. Filled circles composite into an opaque interior on dense
+    // recordings; the stroke-only contract (Finding 1, 2026-06-28) prevents
+    // that. If a fill is re-introduced, this test catches it.
     addAccuracyCircles(
       mapStub as L.Map,
       [{ lat: 1, lng: 2, accuracy: 5 }],
@@ -76,10 +77,9 @@ describe('addAccuracyCircles', () => {
     expect(circleCalls).toHaveLength(1);
     const opts = circleCalls[0]!.options;
     expect(opts.color).toBe('#abcdef');
-    expect(opts.fillColor).toBe('#abcdef');
     expect(opts.weight).toBe(ACCURACY_CIRCLE_WEIGHT);
     expect(opts.opacity).toBe(ACCURACY_CIRCLE_STROKE_OPACITY);
-    expect(opts.fillOpacity).toBe(ACCURACY_CIRCLE_FILL_OPACITY);
+    expect(opts.fill).toBe(false);
   });
 
   it('preserves input order in the returned circles', () => {

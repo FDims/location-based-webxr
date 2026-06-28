@@ -34,7 +34,6 @@ vi.mock('leaflet', () => {
 
 import {
   addAccuracyCircles,
-  ACCURACY_CIRCLE_FILL_OPACITY,
   ACCURACY_CIRCLE_STROKE_OPACITY,
   ACCURACY_CIRCLE_WEIGHT,
 } from './accuracy-circles';
@@ -63,7 +62,13 @@ describe('addAccuracyCircles', () => {
     expect(circleCalls[0]!.options.radius).toBe(7);
   });
 
-  it('applies the documented style constants and the caller-supplied color', () => {
+  // Stroke-only contract (Finding 1, 2026-06-28-map-rings-transparency...).
+  // Leaflet composites overlapping semi-transparent SVG fills, so N stacked
+  // filled circles reach ~1 - 0.88^N opacity and paint the basemap solid on
+  // dense recordings. A fill-free outline never accumulates an opaque interior,
+  // so overlaps stay transparent at ANY density. This test fails if anyone
+  // re-introduces a filled interior.
+  it('draws stroke-only outlines (no fill) so overlaps never obscure the basemap', () => {
     addAccuracyCircles(
       mapStub as L.Map,
       [{ lat: 1, lng: 2, accuracy: 5 }],
@@ -72,11 +77,14 @@ describe('addAccuracyCircles', () => {
 
     expect(circleCalls).toHaveLength(1);
     const opts = circleCalls[0]!.options;
+    // Stroke stays legible and caller-colored.
     expect(opts.color).toBe('#abcdef');
-    expect(opts.fillColor).toBe('#abcdef');
     expect(opts.weight).toBe(ACCURACY_CIRCLE_WEIGHT);
     expect(opts.opacity).toBe(ACCURACY_CIRCLE_STROKE_OPACITY);
-    expect(opts.fillOpacity).toBe(ACCURACY_CIRCLE_FILL_OPACITY);
+    expect(opts.weight as number).toBeGreaterThanOrEqual(1);
+    expect(opts.opacity as number).toBeGreaterThan(0);
+    // No filled interior — the whole point of the change.
+    expect(opts.fill).toBe(false);
   });
 
   it('preserves input order in the returned circles', () => {
