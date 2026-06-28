@@ -47,18 +47,27 @@ See the full analysis and plan:
 
 ## Invariants & assumptions
 
-- **Predicate is level-based, not edge-based.** It fires whenever `gpsData` is
-  non-null **and at least one opt-in is still unset** — _not_ on a `null →
-non-null` transition. Keying on "a flag is unset" means a recreated `gpsData`
-  (store swap / origin reset) with cleared flags re-triggers the apply, matching
-  the pre-existing re-apply semantics (the 2026-06-27 field bug). **Do not
-  "simplify" it to a transition predicate** — that silently drops the re-apply.
+- **Predicate is edge-triggered on the `gpsData` reference, gated by "some flag
+  unset".** It fires when `gpsData` is non-null **and** its object reference is
+  new since the last apply (`s.gpsData !== lastApplied`) **and** at least one
+  opt-in is still unset. The reference guard is what bounds re-firing: a recreated
+  `gpsData` (store swap / origin reset) is a fresh object, so it still re-triggers
+  the apply — the re-apply semantics the 2026-06-27 field bug demands are
+  preserved — but the **same** `gpsData` cannot re-fire. **Do not weaken this to a
+  `null → non-null` transition** — that silently drops the re-apply. Earlier this
+  was purely level-based (no reference guard); that storms when an opt-in's
+  `apply` dispatches but `isSet` never flips true (consumer/library **version
+  skew**: the action type no longer matches the reducer), because the condition
+  stays true forever and every effect dispatch re-arms it — an unbounded loop that
+  freezes the app.
 - **Idempotent under re-entrancy.** `isSet` is re-read against the _current_
   store state immediately before each dispatch (not one snapshot at effect
   entry). Redux dispatch is synchronous, so a flag is set before the next check
   runs, and an opt-in's own dispatch re-triggers the predicate (which can
   re-enter the effect) — re-checking per dispatch guarantees each flag is
-  dispatched **exactly once** per `gpsData` creation (no "storm").
+  dispatched **exactly once** per `gpsData` creation (no duplicate dispatch).
+  This re-check guards only against re-dispatching an _already-set_ flag; the
+  reference guard above is what stops a _never-set_ flag from looping.
 - **Effect dispatches are async** (RTK schedules listener effects after the
   trigger). Tests must `await` (a microtask / `setTimeout(0)`) before asserting.
 - The factory only registers this middleware when `optIns.length > 0`, so the
@@ -91,6 +100,9 @@ Covered by [slam-app-store-listener.test.ts](slam-app-store-listener.test.ts):
   reset, modelled with a root reducer that resets `gpsData` to `null`).
 - Does nothing when no opt-in is requested, and does not fire before `gpsData`
   exists.
+- **Does not dispatch-storm** when an opt-in's `apply` never sets its flag
+  (version-skew failure mode): the reference guard converges to at most one apply
+  per `gpsData` creation instead of looping forever.
 
 The end-to-end recording-fidelity invariant (opt-in persisted **after**
 `setZeroPos`, each flag exactly once) is pinned in the RecorderApp's

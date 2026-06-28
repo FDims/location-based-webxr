@@ -52,35 +52,58 @@ export interface CompassOptIn {
  * (so its effect dispatches *outside* the trigger's `next()` — see module doc).
  *
  * Behaviour:
- *  - **Predicate** fires whenever `gpsData` is non-null and at least one opt-in
- *    is still unset. This is intentionally *level-based*, not edge-based: keying
- *    on "a flag is unset" (rather than a `null → non-null` transition) means a
- *    recreated `gpsData` (store swap / origin reset) with cleared flags
- *    re-triggers the apply, matching the pre-existing re-apply semantics. Do not
- *    "simplify" it to a transition predicate — that would silently drop the
- *    re-apply (the 2026-06-27 field bug).
- *  - **Effect** dispatches every still-unset opt-in as a top-level action.
- *    `isSet` is re-read against the *current* store state immediately before
- *    each dispatch (not against one snapshot taken at effect entry). Redux
- *    dispatch is synchronous, so a flag is already set by the time the next
- *    check runs — and an opt-in's own dispatch re-triggers the predicate, which
- *    can re-enter this effect before the loop finishes. Re-checking per dispatch
- *    makes that re-entrancy idempotent: a flag is dispatched only while still
- *    unset, so it can never be dispatched twice (no "storm").
+ *  - **Predicate** fires whenever the `gpsData` *object reference* is new since
+ *    the last apply AND at least one opt-in is still unset. Two terms, each load-
+ *    bearing:
+ *    - `s.gpsData !== lastApplied` makes the predicate edge-triggered on gpsData
+ *      identity. A recreated `gpsData` (store swap / origin reset) is a fresh
+ *      object, so it still re-triggers the apply — the re-apply semantics the
+ *      2026-06-27 field bug demands are preserved. Do NOT weaken this to a
+ *      `null → non-null` transition: that would drop the re-apply. The point of
+ *      keying on the *reference* (not on "a flag is unset") is that it also stops
+ *      the effect from re-firing for the SAME gpsData.
+ *    - `optIns.some((o) => !o.isSet(s))` keeps the no-op case (all flags already
+ *      set) from scheduling an effect at all.
+ *    Why the reference guard matters: without it the predicate is purely level-
+ *    based, so if an opt-in's `apply` dispatches but `isSet` never flips true
+ *    (e.g. consumer/library **version skew** where the action type no longer
+ *    matches the reducer — the packages are published independently), the
+ *    condition stays true forever and every effect dispatch re-arms it: an
+ *    unbounded storm that freezes the app. The per-dispatch `isSet` re-check
+ *    below guards only against dispatching an *already-set* flag twice; it does
+ *    nothing when the flag never sets. The reference guard is what bounds it.
+ *  - **Effect** records the gpsData reference it is acting on, then dispatches
+ *    every still-unset opt-in as a top-level action. `isSet` is re-read against
+ *    the *current* store state immediately before each dispatch (not one snapshot
+ *    at effect entry): a dispatch is synchronous, so a flag is already set by the
+ *    time the next check runs, and an opt-in's own dispatch can re-enter this
+ *    effect before the loop finishes. Re-checking per dispatch makes that
+ *    re-entrancy idempotent — a flag is dispatched only while still unset.
  */
 export function createSlamAppStoreListenerMiddleware(
   optIns: readonly CompassOptIn[]
 ): Middleware {
   const listenerMiddleware = createListenerMiddleware();
+  // The gpsData reference the opt-ins were last applied against. Guards the
+  // predicate from re-firing for the same gpsData (see module doc) while still
+  // re-applying when gpsData is recreated (a new reference).
+  let lastApplied: unknown = null;
   listenerMiddleware.startListening({
     predicate: (_action, currentState): boolean => {
       const s = currentState as LibraryRootState;
-      return s.gpsData !== null && optIns.some((optIn) => !optIn.isSet(s));
+      return (
+        s.gpsData !== null &&
+        s.gpsData !== lastApplied &&
+        optIns.some((optIn) => !optIn.isSet(s))
+      );
     },
     effect: (_action, api): void => {
+      const entry = api.getState() as LibraryRootState;
+      if (entry.gpsData === null) return; // flags live on gpsData; nothing to set yet
+      lastApplied = entry.gpsData;
       for (const optIn of optIns) {
         const s = api.getState() as LibraryRootState;
-        if (s.gpsData === null) return; // flags live on gpsData; nothing to set yet
+        if (s.gpsData === null) return;
         if (!optIn.isSet(s)) {
           optIn.apply((action) => {
             api.dispatch(action);

@@ -153,4 +153,35 @@ describe('createSlamAppStoreListenerMiddleware', () => {
     await flushEffects();
     expect(log.filter((t) => t === COLD)).toHaveLength(0);
   });
+
+  it('does not dispatch-storm when an opt-in apply never sets its flag (version skew)', async () => {
+    // Failure mode: the recorder app and the published `gps-plus-slam` library
+    // are versioned independently (see CLAUDE.md). On version skew the consumer's
+    // action creator can emit a type the library reducer no longer recognises, so
+    // `apply` dispatches but `isSet` never flips to true. With a purely
+    // level-based predicate ("gpsData present AND some flag unset") that condition
+    // stays true forever: every dispatch the effect makes re-satisfies the
+    // predicate, re-runs the effect, dispatches again — an unbounded storm that
+    // freezes the app. The per-dispatch `isSet` re-check guards against duplicate
+    // dispatches of a flag that DID get set; it does nothing when the flag never
+    // sets. A defensive predicate must also stop re-firing for the SAME gpsData.
+    let applyCount = 0;
+    const mismatchedOptIn: CompassOptIn = {
+      // Never becomes true (simulates a reducer that ignores the dispatched type).
+      isSet: (s) => s.gpsData?.coldStartOverrideEnabled === true,
+      apply: (dispatch) => {
+        applyCount++;
+        // Safety valve so a genuine storm bounds the test instead of hanging.
+        if (applyCount > 50) return;
+        dispatch({ type: 'gpsData/staleActionFromVersionSkew' });
+      },
+    };
+    const { store } = makeStore([mismatchedOptIn]);
+    store.dispatch(setZeroPos({ lat: 1, lon: 2 }));
+    // Drain many effect cycles; a converged predicate applies at most once per
+    // gpsData creation, a storming one keeps climbing until the safety valve.
+    for (let i = 0; i < 20; i++) await flushEffects();
+
+    expect(applyCount).toBeLessThanOrEqual(1);
+  });
 });
