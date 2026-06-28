@@ -361,11 +361,12 @@ describe('SummaryMap', () => {
       expect(circleCalls[0].options).toMatchObject({
         radius: 4,
         color: RAW_GPS_COLOR,
-        fillColor: RAW_GPS_COLOR,
       });
       expect(circleCalls[1].options).toMatchObject({ radius: 30 });
-      const opts0 = circleCalls[0].options as { fillOpacity: number };
-      expect(opts0.fillOpacity).toBeLessThan(0.5);
+      // Stroke-only since 2026-06-28 (Finding 1): no fill, so overlapping
+      // circles never composite into an opaque interior over the basemap.
+      const opts0 = circleCalls[0].options as { fill?: boolean };
+      expect(opts0.fill).toBe(false);
     });
 
     it('skips circles for non-positive / NaN accuracy values', () => {

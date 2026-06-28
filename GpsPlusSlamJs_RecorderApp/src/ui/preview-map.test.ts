@@ -234,12 +234,12 @@ describe('PreviewMap', () => {
     expect(circleCalls[0].options).toMatchObject({
       radius: 5,
       color: '#ffff00',
-      fillColor: '#ffff00',
     });
     expect(circleCalls[1].options).toMatchObject({ radius: 25 });
-    // Fill must be transparent so overlapping circles remain legible.
-    const opts0 = circleCalls[0].options as { fillOpacity: number };
-    expect(opts0.fillOpacity).toBeLessThan(0.5);
+    // Stroke-only since 2026-06-28 (Finding 1): no fill, so overlapping circles
+    // never composite into an opaque interior that hides the basemap.
+    const opts0 = circleCalls[0].options as { fill?: boolean };
+    expect(opts0.fill).toBe(false);
   });
 
   it('skips accuracy circles for points with non-positive accuracy', () => {

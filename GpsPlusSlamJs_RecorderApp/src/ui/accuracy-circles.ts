@@ -13,8 +13,11 @@
  * shim. Import it directly from the framework if needed.
  */
 
+// `ACCURACY_CIRCLE_FILL_OPACITY` is intentionally NOT re-exported: accuracy
+// circles are stroke-only since 2026-06-28 (Finding 1), so the fill-opacity
+// constant is deprecated and unused by any recorder module. Import it directly
+// from the framework if ever needed.
 export {
-  ACCURACY_CIRCLE_FILL_OPACITY,
   ACCURACY_CIRCLE_STROKE_OPACITY,
   ACCURACY_CIRCLE_WEIGHT,
   addAccuracyCircles,
