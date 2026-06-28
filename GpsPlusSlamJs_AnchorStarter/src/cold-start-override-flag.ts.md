@@ -1,24 +1,24 @@
 # `cold-start-override-flag.ts`
 
-**Purpose:** Read the Stage-0 cold-start-override debug toggle from the page URL
-(`?coldStartOverride=1`). A field tester can enable the experimental Phase-4
-Stage-0 compass override without a rebuild; the value is passed to
+**Purpose:** Read the Stage-0 cold-start-override toggle from the page URL.
+Stage 0 is a default-ON feature, so this defaults to enabled; a field tester can
+opt OUT without a rebuild via `?coldStartOverride=0`. The value is passed to
 `createSlamAppStore({ enableCompassColdStartOverride })`.
 
 ## Public API
 
-- `coldStartOverrideEnabledFromSearch(search: string): boolean` — `true` only for
-  `coldStartOverride=1` or `=true`; `false` for absent/empty/any other value.
+- `coldStartOverrideEnabledFromSearch(search: string): boolean` — `true` by
+  default (absent/empty/any non-opt-out value); `false` only for the explicit
+  opt-out spellings `coldStartOverride=0` or `=false`.
 
 ## Invariants & assumptions
 
 - Pure (no DOM access) — takes the search string so it is trivially unit-tested;
   `main.ts` passes `window.location.search`.
-- Conservative: only the two explicit truthy spellings enable it, so the
-  experimental override never turns on by accident.
-- Default behaviour (no param) is OFF ⇒ the core alignment is unchanged. Keep it
-  OFF while collecting field-calibration recordings (the override's thresholds
-  are still field-untuned). See
+- Default behaviour (no param) is ON ⇒ matches the framework default (Stage 0 is
+  a field-validated default-on feature). Pass `?coldStartOverride=0` to disable —
+  e.g. when collecting §6a field-calibration recordings so the captured compass
+  behaviour is unmodified. See
   [`GpsPlusSlamJs_Docs/docs/2026-06-26-stage0-field-collection-and-enablement.md`](../../../GpsPlusSlamJs_Docs/docs/2026-06-26-stage0-field-collection-and-enablement.md).
 
 ## Examples
@@ -26,11 +26,14 @@ Stage-0 compass override without a rebuild; the value is passed to
 ```ts
 store = createSlamAppStore({
   storageBackend: new NullStorageBackend(),
-  enableCompassColdStartOverride: coldStartOverrideEnabledFromSearch(window.location.search),
+  enableCompassColdStartOverride: coldStartOverrideEnabledFromSearch(
+    window.location.search,
+  ),
 });
 ```
 
 ## Tests
 
-`cold-start-override-flag.test.ts` — accepts `=1`/`=true` (incl. alongside other
-params); rejects absent/empty/`=0`/`=yes`.
+`cold-start-override-flag.test.ts` — defaults to `true` (absent/empty/`=1`/`=yes`,
+incl. alongside other params); returns `false` only for the explicit opt-out
+`=0`/`=false`.

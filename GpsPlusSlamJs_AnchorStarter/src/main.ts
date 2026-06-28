@@ -489,7 +489,7 @@ async function startAr(): Promise<void> {
 
   store = createSlamAppStore({
     storageBackend: new NullStorageBackend(),
-    // Debug: enable the Stage-0 cold-start compass override via ?coldStartOverride=1.
+    // Stage-0 cold-start compass override ships ON; opt out via ?coldStartOverride=0.
     enableCompassColdStartOverride: coldStartOverrideEnabledFromSearch(
       window.location.search,
     ),
