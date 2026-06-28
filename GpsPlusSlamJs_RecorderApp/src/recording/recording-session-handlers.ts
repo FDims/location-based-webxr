@@ -122,34 +122,10 @@ import { DEFAULT_SCENARIO } from '../ui/session-browser';
 
 const log = createLogger('RecordingSession');
 
-/**
- * Live AbsCompass HUD refresh timer. The capture module surfaces lifecycle via
- * its onStatus callback but not per-reading; this polls the latest reading a few
- * times a second to show the live magnetic heading (the same number the v3
- * absolute-compass demo shows), so a field tester can point at a landmark and
- * cross-check it on the spot. Cleared on recording stop.
- */
-let absCompassHudTimer: ReturnType<typeof setInterval> | null = null;
-const ABS_COMPASS_HUD_INTERVAL_MS = 200; // 5 Hz — readable, no DOM thrash
-
-function startAbsCompassHudUpdates(): void {
-  stopAbsCompassHudUpdates();
-  absCompassHudTimer = setInterval(() => {
-    const reading = getLatestAbsoluteOrientation();
-    if (!reading) return; // unavailable / not warmed up → leave onStatus text
-    setAbsCompassStatus({
-      state: 'active',
-      headingDeg: magneticHeadingFromEnuQuat(reading.quaternion),
-    });
-  }, ABS_COMPASS_HUD_INTERVAL_MS);
-}
-
-function stopAbsCompassHudUpdates(): void {
-  if (absCompassHudTimer !== null) {
-    clearInterval(absCompassHudTimer);
-    absCompassHudTimer = null;
-  }
-}
+/** AbsCompass HUD refresh cadence. 5 Hz — readable, no DOM thrash. Immutable
+ *  config, so it is module-level; the timer *handle* it drives is per-instance
+ *  state owned by the factory closure (see `createRecordingSessionHandlers`). */
+const ABS_COMPASS_HUD_INTERVAL_MS = 200;
 
 /**
  * Single fallback used everywhere a scenario name is needed but unavailable.
@@ -278,8 +254,38 @@ export function createRecordingSessionHandlers(
   /** Off-thread blur/blackness analyzer worker for this recording (null when the
    *  quality gate is disabled). Owned here: created on start, disposed on stop. */
   let imageQualityClient: ImageQualityClient | null = null;
+  /**
+   * Live AbsCompass HUD refresh timer for THIS recording. The capture module
+   * surfaces lifecycle via its onStatus callback but not per-reading; this polls
+   * the latest reading a few times a second to show the live magnetic heading
+   * (the same number the v3 absolute-compass demo shows), so a field tester can
+   * point at a landmark and cross-check it on the spot. Armed on start, cleared
+   * on stop. Per-instance (not module-level) so independent handler instances do
+   * not share/overwrite each other's timer — the factory's "no module-level
+   * mutable state" invariant (see sidecar).
+   */
+  let absCompassHudTimer: ReturnType<typeof setInterval> | null = null;
 
   // --- Internal helpers ---
+
+  function startAbsCompassHudUpdates(): void {
+    stopAbsCompassHudUpdates();
+    absCompassHudTimer = setInterval(() => {
+      const reading = getLatestAbsoluteOrientation();
+      if (!reading) return; // unavailable / not warmed up → leave onStatus text
+      setAbsCompassStatus({
+        state: 'active',
+        headingDeg: magneticHeadingFromEnuQuat(reading.quaternion),
+      });
+    }, ABS_COMPASS_HUD_INTERVAL_MS);
+  }
+
+  function stopAbsCompassHudUpdates(): void {
+    if (absCompassHudTimer !== null) {
+      clearInterval(absCompassHudTimer);
+      absCompassHudTimer = null;
+    }
+  }
 
   /**
    * Build the ZIP export contributors for the current session. Used by BOTH

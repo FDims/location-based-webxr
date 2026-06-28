@@ -1716,3 +1716,48 @@ describe('tracker proxy methods', () => {
     expect(mockCaptureFailureTrackerInstance.recordFailure).toHaveBeenCalled();
   });
 });
+
+describe('AbsCompass HUD timer — factory-pattern isolation (PR #126)', () => {
+  // The sidecar documents the factory invariant: "Each call to
+  // createRecordingSessionHandlers returns independent state. No module-level
+  // mutable state." The live AbsCompass HUD refresh timer must therefore be
+  // per-instance. When the timer handle lives in a module-level variable shared
+  // across instances, a SECOND handlers instance starting recording runs
+  // startAbsCompassHudUpdates() → stopAbsCompassHudUpdates(), which — reading the
+  // shared module variable — clears the FIRST instance's still-live HUD interval.
+  // Two concurrent sessions then collapse onto a single timer (cross-session
+  // interference / timer leak). This test pins the isolation.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a second instance starting recording must not clear the first instance HUD timer', async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+    const handlersA = createRecordingSessionHandlers(createMockDeps());
+    await handlersA.handleStartRecording();
+
+    // createSyncManager and every sensor watch are mocked, so the only timer the
+    // start flow arms is the AbsCompass HUD refresh interval. Capture its id.
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    const aHudIntervalId = setIntervalSpy.mock.results[0]?.value;
+
+    clearIntervalSpy.mockClear();
+
+    const handlersB = createRecordingSessionHandlers(createMockDeps());
+    await handlersB.handleStartRecording();
+
+    // With shared module state, B's start cleared A's interval. With per-instance
+    // state, B's own (null) timer means nothing of A's is touched.
+    const clearedAsTimer = clearIntervalSpy.mock.calls.some(
+      ([id]) => id === aHudIntervalId
+    );
+    expect(clearedAsTimer).toBe(false);
+  });
+});
