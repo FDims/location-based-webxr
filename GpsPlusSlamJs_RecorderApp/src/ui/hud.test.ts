@@ -2659,7 +2659,6 @@ function makeReport(
     subScores: {
       convergence: 0.9,
       residualConsensus: 0.85,
-      compassAgreement: 0.95,
       gpsAccuracy: 0.88,
       coverage: 1.0,
     },
@@ -2670,8 +2669,6 @@ function makeReport(
       medianRecentGpsAccuracyM: 6.0,
       walkedDistanceM: 42,
       directionSpreadDeg: 120,
-      headingDeltaDeg: 5.0,
-      compassDriftDetected: false,
       observationsSeen: 25,
       gpsVsFusedMaxDivergenceM: 3.1,
     },
@@ -2764,16 +2761,16 @@ describe('updateTrackingQuality', () => {
   // Why: sub-scores must be visible in the expanded detail view.
   it('populates sub-score values in detail panel', () => {
     // Why: confirms the four sub-scores that survived the 2026-05-23
-    // field-test pruning (Findings 2, 3, 5) still render. compass /
-    // headingDelta / obs / walked were intentionally removed from the
-    // HUD; they remain on the report for background metrics + tests but
-    // are no longer in the detail panel.
+    // field-test pruning (Findings 2, 3, 5) still render. heading / obs /
+    // walked were intentionally removed from the HUD; they remain on the
+    // report for background metrics + tests but are no longer in the
+    // detail panel. (The compass sub-score was removed entirely on
+    // 2026-06-28 — it was inert dead code.)
     updateTrackingQuality(
       makeReport({
         subScores: {
           convergence: 0.91,
           residualConsensus: 0.72,
-          compassAgreement: 0.88,
           gpsAccuracy: 0.65,
           coverage: 1.0,
         },
@@ -2821,8 +2818,6 @@ describe('updateTrackingQuality', () => {
           medianRecentGpsAccuracyM: 5.0,
           walkedDistanceM: 42,
           directionSpreadDeg: 120,
-          headingDeltaDeg: null,
-          compassDriftDetected: false,
           observationsSeen: 25,
           gpsVsFusedMaxDivergenceM: 3.1,
         },
