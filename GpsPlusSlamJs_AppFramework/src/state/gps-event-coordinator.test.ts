@@ -270,7 +270,14 @@ describe('Recording Coordinator', () => {
      * is relative to magnetic north (true) or an arbitrary reference (false).
      * If false, compass-based drift correction is unreliable. Must be preserved.
      */
-    it('preserves DeviceOrientation absolute flag as compassAbsolute', () => {
+    /**
+     * Why this test matters: the legacy `compassAbsolute` field on recorded
+     * GPS events was dead data and is no longer populated (§5b dead-code
+     * removal, 2026-06-28). Even with a fully-populated absolute orientation,
+     * the built RawGpsPoint must NOT carry `compassAbsolute`. The live
+     * odometry-restart orientation path uses the cached orientation instead.
+     */
+    it('does not populate the legacy compassAbsolute field', () => {
       const gpsPosition: GpsPosition = {
         lat: 48.8567,
         lon: 2.3523,
@@ -289,47 +296,12 @@ describe('Recording Coordinator', () => {
         absolute: true,
       };
 
-      const result = buildRawGpsPoint(gpsPosition, orientation);
-      expect(result.compassAbsolute).toBe(true);
-    });
-
-    it('sets compassAbsolute to false when DeviceOrientation.absolute is false', () => {
-      const gpsPosition: GpsPosition = {
-        lat: 48.8567,
-        lon: 2.3523,
-        altitude: null,
-        accuracy: 5.0,
-        altitudeAccuracy: null,
-        heading: null,
-        speed: null,
-        timestamp: Date.now(),
-      };
-
-      const orientation: RawDeviceOrientation = {
-        alpha: 90,
-        beta: 0,
-        gamma: 0,
-        absolute: false,
-      };
-
-      const result = buildRawGpsPoint(gpsPosition, orientation);
-      expect(result.compassAbsolute).toBe(false);
-    });
-
-    it('leaves compassAbsolute undefined when no orientation available', () => {
-      const gpsPosition: GpsPosition = {
-        lat: 48.8567,
-        lon: 2.3523,
-        altitude: null,
-        accuracy: 5.0,
-        altitudeAccuracy: null,
-        heading: null,
-        speed: null,
-        timestamp: Date.now(),
-      };
-
-      const result = buildRawGpsPoint(gpsPosition, null);
-      expect(result.compassAbsolute).toBeUndefined();
+      expect(buildRawGpsPoint(gpsPosition, orientation).compassAbsolute).toBe(
+        undefined
+      );
+      expect(buildRawGpsPoint(gpsPosition, null).compassAbsolute).toBe(
+        undefined
+      );
     });
   });
 
@@ -337,7 +309,8 @@ describe('Recording Coordinator', () => {
     /**
      * Why this test matters:
      * Verifies the library-compatible payload structure with raw-storage pattern.
-     * Payload stores rawGpsPoint (raw sensor data) and rawDeviceOrientation (Euler angles).
+     * Payload stores rawGpsPoint (raw sensor data); the legacy
+     * rawDeviceOrientation field is no longer populated.
      * Derived fields are computed by the reducer.
      */
     it('builds payload with odomPosition, odomRotation, and rawGpsPoint', () => {
