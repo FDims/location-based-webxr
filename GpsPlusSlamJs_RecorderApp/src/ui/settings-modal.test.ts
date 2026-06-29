@@ -176,6 +176,14 @@ describe('settings-modal', () => {
       expect(html).toContain('id="occupancy-live-occlusion"');
     });
 
+    it('includes the occluder debug-visualization checkbox', () => {
+      // 2026-06-29 occlusion-debug-viz feedback: a third independent checkbox
+      // (occupancy.occluderDebugViz) renders the persistent occluder mesh as a
+      // visible matcap so its shape can be judged on-device.
+      const html = loadSettingsModalHtml();
+      expect(html).toContain('id="occupancy-occluder-debug-viz"');
+    });
+
     it('includes the frame-tile display-resolution slider and value display', () => {
       // D7-resolution, 2026-06-16 user feedback: the in-AR/replay tile display
       // resolution (frameTileDisplay.divisor) must be user-configurable here,
@@ -437,6 +445,32 @@ describe('settings-modal', () => {
       showSettingsModal();
       const checkbox = document.getElementById(
         'occupancy-live-occlusion'
+      ) as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+    });
+
+    it('populates the occluder debug-viz checkbox from saved options and updates the working copy', () => {
+      localStorageMock.getItem.mockReturnValueOnce(
+        JSON.stringify({ occupancy: { occluderDebugViz: true } })
+      );
+
+      showSettingsModal();
+
+      const checkbox = document.getElementById(
+        'occupancy-occluder-debug-viz'
+      ) as HTMLInputElement;
+      expect(checkbox.checked).toBe(true);
+
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change'));
+      expect(getWorkingOptions()?.occupancy.occluderDebugViz).toBe(false);
+    });
+
+    it('defaults the occluder debug-viz checkbox to off (off by default)', () => {
+      localStorageMock.getItem.mockReturnValueOnce(JSON.stringify({}));
+      showSettingsModal();
+      const checkbox = document.getElementById(
+        'occupancy-occluder-debug-viz'
       ) as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
     });

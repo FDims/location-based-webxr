@@ -226,6 +226,10 @@ export async function startReplayMode(
     // only the persistent flag is honoured here.)
     const occluderSink = occupancyOptions.persistentOcclusion
       ? ((occlusionMesh = new OcclusionMesh(replaySceneState.arWorldGroup)),
+        // Debug viz (occupancy.occluderDebugViz): visible shiny matcap render of
+        // the occluder mesh so its shape can be judged on replay too (additive
+        // skin; occlusion unchanged), re-read per replay like the cubes.
+        occlusionMesh.setDebugVisualization(occupancyOptions.occluderDebugViz),
         {
           refresh: (g: OccupancyGrid) =>
             occlusionMesh?.update(

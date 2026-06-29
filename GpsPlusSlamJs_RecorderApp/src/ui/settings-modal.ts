@@ -74,6 +74,7 @@ let occupancyMinConfidenceSlider: HTMLInputElement | null = null;
 let occupancyMinConfidenceValue: HTMLElement | null = null;
 let occupancyLiveOcclusionCheckbox: HTMLInputElement | null = null;
 let occupancyPersistentOcclusionCheckbox: HTMLInputElement | null = null;
+let occupancyOccluderDebugVizCheckbox: HTMLInputElement | null = null;
 let frameTileDisplayDivisorSlider: HTMLInputElement | null = null;
 let frameTileDisplayDivisorValue: HTMLElement | null = null;
 let vizFrameTilesCheckbox: HTMLInputElement | null = null;
@@ -207,6 +208,9 @@ export function initSettingsModal(
   ) as HTMLInputElement;
   occupancyPersistentOcclusionCheckbox = document.getElementById(
     'occupancy-persistent-occlusion'
+  ) as HTMLInputElement;
+  occupancyOccluderDebugVizCheckbox = document.getElementById(
+    'occupancy-occluder-debug-viz'
   ) as HTMLInputElement;
   occupancyMinConfidenceValue = document.getElementById(
     'occupancy-min-confidence-value'
@@ -354,6 +358,16 @@ export function initSettingsModal(
     if (workingOptions && occupancyPersistentOcclusionCheckbox) {
       workingOptions.occupancy.persistentOcclusion =
         occupancyPersistentOcclusionCheckbox.checked;
+    }
+  });
+
+  // Debug visualization of the persistent occluder mesh (matcap, shiny,
+  // semi-transparent). Independent flag; only visible when the persistent
+  // occluder is on. Applies on the next Enter-AR / replay load.
+  occupancyOccluderDebugVizCheckbox?.addEventListener('change', () => {
+    if (workingOptions && occupancyOccluderDebugVizCheckbox) {
+      workingOptions.occupancy.occluderDebugViz =
+        occupancyOccluderDebugVizCheckbox.checked;
     }
   });
 
@@ -876,6 +890,10 @@ function populateForm(options: RecordingOptions): void {
   if (occupancyPersistentOcclusionCheckbox) {
     occupancyPersistentOcclusionCheckbox.checked =
       options.occupancy.persistentOcclusion;
+  }
+  if (occupancyOccluderDebugVizCheckbox) {
+    occupancyOccluderDebugVizCheckbox.checked =
+      options.occupancy.occluderDebugViz;
   }
 
   // Frame-tile display-resolution divisor (D7-resolution)

@@ -1326,6 +1326,13 @@ async function handleEnterAR(): Promise<void> {
         const minConfidence = recordingOptions.occupancy.minConfidence;
         const occluderSink = recordingOptions.occupancy.persistentOcclusion
           ? ((occlusionMesh = new OcclusionMesh(arWorldGroup)),
+            // Debug viz (occupancy.occluderDebugViz): render the occluder mesh
+            // as a visible shiny matcap so its shape can be judged on-device. No
+            // effect on occlusion (additive skin); read here like the other
+            // occupancy knobs so a change applies on the next Enter-AR.
+            occlusionMesh.setDebugVisualization(
+              recordingOptions.occupancy.occluderDebugViz
+            ),
             {
               refresh: (g: OccupancyGrid) =>
                 occlusionMesh?.update(
