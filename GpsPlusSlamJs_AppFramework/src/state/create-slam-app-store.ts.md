@@ -52,9 +52,15 @@ thin `createRecorderStore` that calls this factory with its own extras.
   middleware, never a synchronous `store.subscribe` dispatch.** Each opt-in lives
   on the `gpsData` slice, which is null until the first `setZeroPos`, so
   [`createSlamAppStoreListenerMiddleware`](slam-app-store-listener.ts) re-applies
-  it idempotently whenever `gpsData` (re)exists with the flag unset (robust to the
-  recorder's store-recreation / origin-reset race — a level-based predicate, not a
-  one-shot edge trigger). A prepended listener-middleware **effect runs after the
+  it whenever `gpsData` becomes a **new object reference** with the flag still
+  unset — **edge-triggered on `gpsData` identity** via a `s.gpsData !== lastApplied`
+  guard, NOT a level-based predicate. A recreated `gpsData` (store swap / origin
+  reset) is a fresh reference so the opt-in still re-applies, while the reference
+  guard stops the effect re-firing for the same `gpsData`. (The earlier purely
+  level-based predicate — "fire while the flag is unset" — caused a dispatch storm
+  on consumer/library version skew where the flag never sets; the reference guard
+  is what bounds it. See [`slam-app-store-listener.ts`](slam-app-store-listener.ts).)
+  A prepended listener-middleware **effect runs after the
   triggering dispatch unwinds**, so the opt-in is a top-level dispatch that the
   persistence middleware indexes AFTER `setZeroPos` → correct replay order **by
   construction**. This replaced the former `queueMicrotask` + `scheduled`-guard +
