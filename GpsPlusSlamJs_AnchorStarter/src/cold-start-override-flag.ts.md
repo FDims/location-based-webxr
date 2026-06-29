@@ -9,7 +9,9 @@ opt OUT without a rebuild via `?coldStartOverride=0`. The value is passed to
 
 - `coldStartOverrideEnabledFromSearch(search: string): boolean` — `true` by
   default (absent/empty/any non-opt-out value); `false` only for the explicit
-  opt-out spellings `coldStartOverride=0` or `=false`.
+  opt-out spellings `coldStartOverride=0` or `=false`. The opt-out match is
+  **case-insensitive and whitespace-trimmed** (`False`, `FALSE`, `" false "` all
+  opt out) so a field-tester-typed capitalization can't silently leave Stage-0 on.
 
 ## Invariants & assumptions
 
@@ -36,4 +38,5 @@ store = createSlamAppStore({
 
 `cold-start-override-flag.test.ts` — defaults to `true` (absent/empty/`=1`/`=yes`,
 incl. alongside other params); returns `false` only for the explicit opt-out
-`=0`/`=false`.
+`=0`/`=false`, including case-insensitive / whitespace-padded spellings
+(`False`, `FALSE`, `" false "`, `" 0 "`).

@@ -39,4 +39,23 @@ describe("coldStartOverrideEnabledFromSearch", () => {
       coldStartOverrideEnabledFromSearch("?foo=bar&coldStartOverride=0"),
     ).toBe(false);
   });
+
+  // Why this matters: this is a field-tester-typed URL toggle. Without
+  // case-insensitivity, `?coldStartOverride=False` (a natural capitalization)
+  // silently leaves Stage-0 enabled — the OPPOSITE of the tester's intent — and
+  // a §6a calibration capture would be recorded with the compass still modified.
+  // (PR #129 review.)
+  it("opts out case-insensitively (False/FALSE/FaLsE, surrounding spaces)", () => {
+    for (const v of ["False", "FALSE", "FaLsE", " false ", " FALSE "]) {
+      expect(
+        coldStartOverrideEnabledFromSearch(
+          `?coldStartOverride=${encodeURIComponent(v)}`,
+        ),
+      ).toBe(false);
+    }
+    // The numeric opt-out is unaffected by case but spaces must still trim.
+    expect(
+      coldStartOverrideEnabledFromSearch("?coldStartOverride=%200%20"),
+    ).toBe(false);
+  });
 });

@@ -10,8 +10,16 @@
  * GpsPlusSlamJs_Docs/docs/2026-06-26-stage0-field-collection-and-enablement.md.
  */
 
-/** True unless the `coldStartOverride` query param explicitly opts out (`0`/`false`). */
+/**
+ * True unless the `coldStartOverride` query param explicitly opts out
+ * (`0`/`false`). The comparison is case-insensitive and trims surrounding
+ * whitespace so a field-tester-typed `?coldStartOverride=False` (or `FALSE`,
+ * `" false "`) reliably opts out instead of silently leaving Stage-0 enabled.
+ */
 export function coldStartOverrideEnabledFromSearch(search: string): boolean {
-  const value = new URLSearchParams(search).get("coldStartOverride");
+  const value = new URLSearchParams(search)
+    .get("coldStartOverride")
+    ?.trim()
+    .toLowerCase();
   return value !== "0" && value !== "false";
 }
