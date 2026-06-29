@@ -177,6 +177,32 @@ describe('AbsoluteOrientationSensor capture', () => {
       });
       expect(getLatestAbsoluteOrientation()).toBeNull();
     });
+
+    // Why this matters (PR #128 review): a real AbsoluteOrientationSensor can
+    // still deliver a queued event after `stop()` returns (the spec does not
+    // guarantee listener removal on stop). Without a current-instance guard,
+    // such a late `reading`/`error`/`activate` from a SUPERSEDED instance writes
+    // stale data into `latest` or emits a stale status from the previous session.
+    it('ignores listener callbacks from a superseded sensor after stop()', async () => {
+      const onStatus = vi.fn();
+      await startAbsoluteOrientationWatch(onStatus);
+      const inst = FakeAbsoluteOrientationSensor.lastInstance!;
+      inst.quaternion = [0, 0, 0, 1];
+      inst.emit('reading');
+      expect(getLatestAbsoluteOrientation()).not.toBeNull();
+
+      stopAbsoluteOrientationWatch();
+      onStatus.mockClear();
+
+      // The old instance's late/queued events must be dropped.
+      inst.quaternion = [0.5, 0.5, 0.5, 0.5];
+      inst.emit('reading');
+      inst.emit('error', { error: { name: 'NotReadableError' } });
+      inst.emit('activate');
+
+      expect(getLatestAbsoluteOrientation()).toBeNull();
+      expect(onStatus).not.toHaveBeenCalled();
+    });
   });
 
   describe('permissions', () => {

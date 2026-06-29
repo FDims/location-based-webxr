@@ -50,6 +50,12 @@ referenceFrame:'device', screenAngleDeg, timestamp }`. The raw device frame +
   after the initial stop and re-checked before the sensor is installed; if a
   `stop()`/restart landed during the await, the stale start aborts instead of
   installing a sensor that teardown no longer owns.
+- **Stale-listener safety**: each `reading`/`activate`/`error` listener begins
+  with a `created === sensor` guard. A real sensor can still deliver a queued
+  event after `stop()` returns (the spec does not guarantee listener removal),
+  and after a `stop()`/restart the superseded instance's events would otherwise
+  write stale data into `latest` or emit a stale status from the previous
+  session. The guard drops any event not from the currently-live instance.
 
 ## Examples
 

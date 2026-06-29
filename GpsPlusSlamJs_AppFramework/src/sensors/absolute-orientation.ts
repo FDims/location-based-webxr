@@ -159,7 +159,14 @@ export async function startAbsoluteOrientationWatch(
     });
     sensor = created;
 
+    // Each listener drops events from a SUPERSEDED instance: after a
+    // stop()/restart the old sensor's queued events can still fire (the spec
+    // does not guarantee listener removal on stop), and writing their stale
+    // data into `latest` or emitting their status would leak the previous
+    // session into the current one. `created === sensor` only holds while this
+    // exact instance is the live one.
     created.addEventListener('reading', () => {
+      if (created !== sensor) return;
       const q = created.quaternion;
       if (!q || q.length < 4) return;
       const x = q[0];
@@ -183,10 +190,12 @@ export async function startAbsoluteOrientationWatch(
       };
     });
     created.addEventListener('activate', () => {
+      if (created !== sensor) return;
       log.info('active');
       onStatus({ state: 'active' });
     });
     created.addEventListener('error', (event?: unknown) => {
+      if (created !== sensor) return;
       latest = null;
       const reason =
         (event as SensorErrorLike | undefined)?.error?.name ?? 'SensorError';
