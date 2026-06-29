@@ -17,13 +17,12 @@
  * in-plane. The map's parent (`CameraFollower`) is rotation-identity, so the
  * object-local axes equal world axes; the yaw is therefore about true world up.
  *
- * Sign caveat: the *magnitude* and *axis* of the rotation are pinned by
- * `heading-up-rotation.test.ts`, but whether `−headingDeg` makes the map turn
- * the way a user perceives as correct on a north-up basemap is a device
- * spot-check (same open item as the heading line's sign — see
- * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-29-heading-up-minimap-rotation-plan.md
- * § Follow-ups). If the device check shows it turns the wrong way, flip the sign
- * of `YAW_SIGN` below — the one place that decides it.
+ * Sign: the *magnitude* and *axis* of the rotation are pinned by
+ * `heading-up-rotation.test.ts`; the *perceived* turn direction was
+ * device-verified correct with `YAW_SIGN = -1` (2026-06-29, see
+ * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-29-heading-up-minimap-rotation-plan.md).
+ * `YAW_SIGN` remains the one place to flip if a future frame/convention change
+ * ever inverts it.
  */
 
 import { quat } from 'gl-matrix';

@@ -42,9 +42,9 @@ camera)`), so the camera already rotates the map's on-screen appearance as the
   "only points forward at one heading (~the alignment yaw), wrong elsewhere".
   Subtracting the live camera azimuth cancels the camera's contribution exactly
   (no lag) and removes the offset.
-- **Sign caveat:** axis + magnitude are test-pinned, but the _perceived_ turn
-  direction (CSS-rotate sign vs on-screen) is a device spot-check. `YAW_SIGN` is
-  the single knob to flip if the device check shows the map turns the wrong way.
+- **Sign:** axis + magnitude are test-pinned; the _perceived_ turn direction was
+  **device-verified correct with `YAW_SIGN = -1`** (2026-06-29). `YAW_SIGN`
+  remains the single knob to flip if a future frame/convention change inverts it.
 
 ## Examples
 
