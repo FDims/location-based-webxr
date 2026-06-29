@@ -234,6 +234,13 @@ export { bresenham3d, type GridCell } from './bresenham3d.js';
 // --- occupancy-grid ---
 export { OccupancyGrid, type OccupancyGridOptions } from './occupancy-grid.js';
 
+// --- occupancy-mesher (sparse voxel Set → face-culled surface + AABB list) ---
+export {
+  type Aabb,
+  type OccupancyMeshResult,
+  meshOccupiedCells,
+} from './occupancy-mesher.js';
+
 // --- frame-loop ---
 export { type FrameUpdate, registerFrameUpdate } from './frame-loop.js';
 

@@ -1,0 +1,224 @@
+/**
+ * Occupancy Grid → Mesh (face-culled voxel surface + AABB list)
+ *
+ * Pure, dependency-free mesher for the sparse {@link OccupancyGrid}. Turns a
+ * snapshot of occupied cells into:
+ *  - a **face-culled** triangle surface (`positions` + `indices`, raw-WebXR
+ *    metres) — only the faces whose neighbour cell is empty are emitted, so
+ *    cost scales with the surface area of the occupied set, not its volume.
+ *    This is the geometry the depth-only **occlusion** mesh and a **trimesh**
+ *    physics collider consume.
+ *  - an **AABB list** (one box per occupied cell) — the natural input for a
+ *    **compound box collider**, the better voxel-physics fit (§3E of the plan).
+ *
+ * No THREE, no DOM, no Redux — the caller snapshots `getOccupiedCells(floor)`
+ * and feeds the result here; a thin adapter wraps the typed arrays into a
+ * `THREE.BufferGeometry` (and the output is transferable to a Web Worker).
+ * Greedy quad/box merging is a separate follow-on optimisation.
+ *
+ * Design notes (see 2026-06-13-occupancy-mesh-options-plan.md, option B):
+ * - Vertices are NOT shared between faces (4 verts/face). Simpler and keeps
+ *   per-face winding trivially correct; the occluder/collider don't need a
+ *   welded vertex buffer. A closed voxel surface is still watertight (every
+ *   edge is covered an even number of times — see the property tests).
+ * - Faces use outward CCW winding so a trimesh collider has consistent normals
+ *   and the surface back-face culls correctly if ever rendered visibly.
+ * - Cell centre is `cell · cellSizeM` (matching {@link OccupancyGrid.getCellCenter},
+ *   round-quantization — NOT a half-cell offset), so a cube for cell `c` spans
+ *   `[c·s − s/2, c·s + s/2]` per axis.
+ *
+ * @see occupancy-mesher.ts.md for detailed documentation
+ */
+
+import type { GridCell } from './bresenham3d';
+
+/**
+ * An axis-aligned bounding box for one occupied cell (or, after greedy merge, a
+ * run of cells), in raw-WebXR metres. The neutral form a developer adapts into
+ * their physics engine's box collider — the framework adds no engine dependency.
+ */
+export interface Aabb {
+  readonly center: readonly [number, number, number];
+  readonly halfExtents: readonly [number, number, number];
+}
+
+/**
+ * Output of {@link meshOccupiedCells}: a non-indexed-friendly triangle soup
+ * (`positions`/`indices`, raw-WebXR metres) plus the per-cell AABB list. Typed
+ * arrays so the result is cheap to hand to `THREE.BufferGeometry` or transfer
+ * to a Web Worker.
+ */
+export interface OccupancyMeshResult {
+  /** Flat `[x0,y0,z0, x1,y1,z1, …]` vertex positions, 4 verts per emitted face. */
+  readonly positions: Float32Array;
+  /** Triangle indices into `positions` (2 triangles / 6 indices per face). */
+  readonly indices: Uint32Array;
+  /** One AABB per unique occupied cell. */
+  readonly aabbs: readonly Aabb[];
+}
+
+/** Unit-cube face: a neighbour offset (cull test) + 4 outward-CCW corner signs. */
+interface FaceSpec {
+  /** Neighbour cell offset; the face is emitted iff that neighbour is empty. */
+  readonly neighbour: readonly [number, number, number];
+  /** Four corners as ±1 signs (×halfCell), already in outward-CCW order. */
+  readonly corners: readonly [
+    readonly [number, number, number],
+    readonly [number, number, number],
+    readonly [number, number, number],
+    readonly [number, number, number],
+  ];
+}
+
+/**
+ * The six cube faces with outward (CCW-from-outside) winding. Corner signs are
+ * ±1 multipliers of the half-cell extent. Triangulated as (0,1,2)+(0,2,3).
+ */
+const FACES: readonly FaceSpec[] = [
+  // +X
+  {
+    neighbour: [1, 0, 0],
+    corners: [
+      [1, -1, -1],
+      [1, 1, -1],
+      [1, 1, 1],
+      [1, -1, 1],
+    ],
+  },
+  // -X
+  {
+    neighbour: [-1, 0, 0],
+    corners: [
+      [-1, -1, -1],
+      [-1, -1, 1],
+      [-1, 1, 1],
+      [-1, 1, -1],
+    ],
+  },
+  // +Y
+  {
+    neighbour: [0, 1, 0],
+    corners: [
+      [-1, 1, -1],
+      [-1, 1, 1],
+      [1, 1, 1],
+      [1, 1, -1],
+    ],
+  },
+  // -Y
+  {
+    neighbour: [0, -1, 0],
+    corners: [
+      [-1, -1, -1],
+      [1, -1, -1],
+      [1, -1, 1],
+      [-1, -1, 1],
+    ],
+  },
+  // +Z
+  {
+    neighbour: [0, 0, 1],
+    corners: [
+      [-1, -1, 1],
+      [1, -1, 1],
+      [1, 1, 1],
+      [-1, 1, 1],
+    ],
+  },
+  // -Z
+  {
+    neighbour: [0, 0, -1],
+    corners: [
+      [-1, -1, -1],
+      [-1, 1, -1],
+      [1, 1, -1],
+      [1, -1, -1],
+    ],
+  },
+];
+
+function cellKey(x: number, y: number, z: number): string {
+  return `${x},${y},${z}`;
+}
+
+function isFiniteCell(cell: GridCell): boolean {
+  return (
+    Number.isFinite(cell[0]) &&
+    Number.isFinite(cell[1]) &&
+    Number.isFinite(cell[2])
+  );
+}
+
+/**
+ * Mesh a snapshot of occupied cells into a face-culled surface + AABB list.
+ *
+ * Only faces whose neighbour cell is **not** in the occupied set are emitted
+ * (interior faces are dropped), so the triangle count scales with the surface
+ * area of the occupied set. Duplicate cells in `cells` are de-duplicated;
+ * cells with a non-finite coordinate are skipped defensively (a tracking glitch
+ * upstream must not poison the mesh).
+ *
+ * @param cells     occupied cells (e.g. `grid.getOccupiedCells(minConfidence)`).
+ * @param cellSizeM cube edge length in metres (must be a positive finite number).
+ * @returns positions/indices (raw-WebXR metres) + one AABB per unique cell.
+ */
+export function meshOccupiedCells(
+  cells: Iterable<GridCell>,
+  cellSizeM: number
+): OccupancyMeshResult {
+  if (!Number.isFinite(cellSizeM) || cellSizeM <= 0) {
+    throw new RangeError(
+      `cellSizeM must be a positive number, got ${cellSizeM}`
+    );
+  }
+  const half = cellSizeM / 2;
+
+  // Snapshot into a Set for O(1) neighbour tests, de-duplicating and dropping
+  // non-finite cells. Keep the de-duplicated, finite cells in insertion order
+  // for deterministic AABB / face emission.
+  const occupied = new Set<string>();
+  const uniqueCells: GridCell[] = [];
+  for (const cell of cells) {
+    if (!isFiniteCell(cell)) {
+      continue;
+    }
+    const key = cellKey(cell[0], cell[1], cell[2]);
+    if (occupied.has(key)) {
+      continue;
+    }
+    occupied.add(key);
+    uniqueCells.push(cell);
+  }
+
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const aabbs: Aabb[] = [];
+
+  for (const [x, y, z] of uniqueCells) {
+    const cx = x * cellSizeM;
+    const cy = y * cellSizeM;
+    const cz = z * cellSizeM;
+    aabbs.push({ center: [cx, cy, cz], halfExtents: [half, half, half] });
+
+    for (const face of FACES) {
+      const nx = x + face.neighbour[0];
+      const ny = y + face.neighbour[1];
+      const nz = z + face.neighbour[2];
+      if (occupied.has(cellKey(nx, ny, nz))) {
+        continue; // shared interior face — cull it
+      }
+      const base = positions.length / 3;
+      for (const [sx, sy, sz] of face.corners) {
+        positions.push(cx + sx * half, cy + sy * half, cz + sz * half);
+      }
+      // Two triangles for the quad: (0,1,2) and (0,2,3).
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+
+  return {
+    positions: Float32Array.from(positions),
+    indices: Uint32Array.from(indices),
+    aabbs,
+  };
+}
