@@ -53,6 +53,7 @@ import {
   DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
   setFrameCallback,
   getLiveCss3dManager,
+  getDepthInfoFromFrame,
   type ARPose,
 } from './webxr-session.js';
 import { createMockPose } from '../test-utils/browser-mocks.js';
@@ -1289,6 +1290,70 @@ describe('depth capture functions', () => {
    */
   it('getDepthSampleCount returns 0 when not sampling', () => {
     expect(getDepthSampleCount()).toBe(0);
+  });
+});
+
+/**
+ * `getDepthInfoFromFrame` is exported so a consumer can feed the live depth
+ * occluder from a `registerXrFrameUpdate` callback. These tests pin that it
+ * surfaces the widened occluder metadata (`data` / `rawValueToMeters` /
+ * `normDepthBufferFromNormView` / `projectionMatrix`) and degrades to `null`
+ * exactly when depth is unavailable — so a degraded frame can never feed the
+ * occluder stale/garbage depth.
+ */
+describe('getDepthInfoFromFrame', () => {
+  const identity16 = (): Float32Array => {
+    const m = new Float32Array(16);
+    m[0] = m[5] = m[10] = m[15] = 1;
+    return m;
+  };
+
+  it('wraps per-frame XRCPUDepthInformation with the widened occluder fields', () => {
+    const projectionMatrix = identity16();
+    const pose = {
+      views: [{ projectionMatrix } as unknown as XRView],
+    } as unknown as XRViewerPose;
+    const depthData = new ArrayBuffer(16 * 16 * 2);
+    const frame = {
+      getDepthInformation: vi.fn(() => ({
+        width: 16,
+        height: 16,
+        getDepthInMeters: () => 1,
+        data: depthData,
+        rawValueToMeters: 0.001,
+        normDepthBufferFromNormView: { matrix: identity16() },
+      })),
+    } as unknown as XRFrame;
+
+    const info = getDepthInfoFromFrame(frame, pose);
+    expect(info).not.toBeNull();
+    expect(info!.data).toBe(depthData); // live reference, no clone
+    expect(info!.rawValueToMeters).toBe(0.001);
+    expect(info!.normDepthBufferFromNormView).toHaveLength(16);
+    expect(info!.projectionMatrix).toHaveLength(16);
+  });
+
+  it('returns null when there is no pose/view', () => {
+    expect(getDepthInfoFromFrame({} as XRFrame, null)).toBeNull();
+  });
+
+  it('returns null when the frame has no getDepthInformation', () => {
+    const pose = {
+      views: [{ projectionMatrix: identity16() } as unknown as XRView],
+    } as unknown as XRViewerPose;
+    expect(getDepthInfoFromFrame({} as XRFrame, pose)).toBeNull();
+  });
+
+  it('returns null when getDepthInformation throws (device hiccup)', () => {
+    const pose = {
+      views: [{ projectionMatrix: identity16() } as unknown as XRView],
+    } as unknown as XRViewerPose;
+    const frame = {
+      getDepthInformation: vi.fn(() => {
+        throw new Error('depth unavailable');
+      }),
+    } as unknown as XRFrame;
+    expect(getDepthInfoFromFrame(frame, pose)).toBeNull();
   });
 });
 

@@ -333,6 +333,7 @@ export {
   getArWorldGroup,
   getCamera,
   getCurrentArPose,
+  getDepthInfoFromFrame,
   type SessionFeatureOptions,
 } from './webxr-session.js';
 

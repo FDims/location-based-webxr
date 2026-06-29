@@ -1238,10 +1238,17 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
 }
 
 /**
- * Extract depth information from an XR frame.
- * Returns null if depth sensing is not available.
+ * Extract depth information from an XR frame. Returns `null` if depth sensing is
+ * not available (no pose/view, no `getDepthInformation`, or the call throws).
+ *
+ * Exported so a consumer can feed the **live depth occluder** from a
+ * `registerXrFrameUpdate` callback — the callback has the live `frame` +
+ * `referenceSpace`, computes `pose = frame.getViewerPose(referenceSpace)`, and
+ * passes both here to obtain the per-frame {@link DepthInfo} (with the widened
+ * `data` / `rawValueToMeters` / `normDepthBufferFromNormView` / `projectionMatrix`
+ * the occluder needs). The same wrapped depth the sparse grid sampler consumes.
  */
-function getDepthInfoFromFrame(
+export function getDepthInfoFromFrame(
   frame: XRFrame,
   pose: XRViewerPose | null
 ): DepthInfo | null {
