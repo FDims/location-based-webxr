@@ -1143,6 +1143,33 @@ describe('LeafletMapOverlay', () => {
       overlay.dispose();
     });
 
+    // Why (PR #131 review): a non-finite heading (NaN/Infinity) must be treated
+    // exactly like `null` — held, never forwarded. Without normalization at the
+    // render() boundary, NaN flows through the heading smoothing into
+    // `cssObject.quaternion.set(...)`, writing a quaternion full of NaN that
+    // corrupts the CSS3D transform instead of degrading gracefully.
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      it(`holds the last orientation (no NaN quaternion) when userHeadingDeg is ${bad}`, () => {
+        const { overlay, parent, camera } = showOverlayWithParent(true);
+        aimCamera(camera, 0);
+        overlay.render({ ...sampleMapData(), userHeadingDeg: 90 });
+        overlay.updatePosition(1, camera);
+        const held = northEdgeAzDeg(parent.children[0]);
+
+        overlay.render({ ...sampleMapData(), userHeadingDeg: bad });
+        overlay.updatePosition(1, camera);
+
+        const cssObject = parent.children[0] as THREE.Object3D;
+        const q = cssObject.quaternion;
+        expect(Number.isFinite(q.x)).toBe(true);
+        expect(Number.isFinite(q.y)).toBe(true);
+        expect(Number.isFinite(q.z)).toBe(true);
+        expect(Number.isFinite(q.w)).toBe(true);
+        expect(northEdgeAzDeg(parent.children[0])).toBeCloseTo(held, 3);
+        overlay.dispose();
+      });
+    }
+
     // Why: the heading is smoothed — snap on the first sample, then lerp toward
     // subsequent ~1 Hz targets. With the camera fixed, a small dt must move the
     // heading only PART of the way (so the north edge moves partway).

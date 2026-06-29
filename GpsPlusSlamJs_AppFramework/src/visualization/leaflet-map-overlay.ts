@@ -266,9 +266,15 @@ export class LeafletMapOverlay {
   render(data: MapData): void {
     this.latestMapData = data;
     // Cache the heading-up rotation target (~1 Hz). `updatePosition` smooths
-    // the actual map yaw toward it each frame. `undefined`/absent → null = the
-    // heading is currently undefined (hold the last orientation).
-    this.targetHeadingDeg = data.userHeadingDeg ?? null;
+    // the actual map yaw toward it each frame. Absent/undefined OR non-finite
+    // (NaN/Infinity) → null = the heading is currently undefined (hold the last
+    // orientation). Normalizing non-finite values here keeps a bad sample from
+    // smoothing a NaN into `cssObject.quaternion.set(...)` downstream.
+    this.targetHeadingDeg =
+      typeof data.userHeadingDeg === 'number' &&
+      Number.isFinite(data.userHeadingDeg)
+        ? data.userHeadingDeg
+        : null;
     if (this.leafletMap) {
       this.drawTrajectory();
     }
