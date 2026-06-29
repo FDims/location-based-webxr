@@ -163,6 +163,9 @@ describe('matrixDelta', () => {
     const r2 = matrixDelta(IDENTITY, infTranslation);
     expect(Number.isFinite(r2.rotationDeltaDeg)).toBe(true);
     expect(Number.isFinite(r2.translationDeltaM)).toBe(true);
+    // Assert the EXACT zero fallback (not just finiteness) so a regression to a
+    // non-zero finite value is caught — mirrors the r1 assertion. (PR #127 review.)
+    expect(r2).toEqual({ rotationDeltaDeg: 0, translationDeltaM: 0 });
   });
 
   // Why this test matters: §11 (a) of the tracking-quality plan requires
@@ -309,6 +312,29 @@ describe('computeConvergence', () => {
       { observationIndex: 2, matrix: nanMatrix },
     ]);
     // The corrupt pair must drag the score DOWN, never sit at the healthy 1.
+    expect(corrupt.score).toBeLessThan(healthy.score);
+    expect(corrupt.score).toBe(0);
+  });
+
+  // Why this matters (PR #127 review): a finite but WRONG-LENGTH matrix (e.g. a
+  // truncated/corrupt snapshot — `AlignmentSnapshot.matrix` is typed `number[]`,
+  // not a fixed 16-tuple) passed `isFiniteMatrix` (which only checked finiteness)
+  // and then hit `matrixDelta`'s own length guard, which returns ZERO deltas =
+  // "perfectly stable". So a malformed snapshot inflated the score to the healthy
+  // 1 instead of degrading it — the same defect class the non-finite guard above
+  // fixes. A wrong-length matrix must score on the fail side too.
+  it('does not let a finite but wrong-length matrix improve the score', () => {
+    const healthy = computeConvergence([
+      { observationIndex: 1, matrix: [...IDENTITY] },
+      { observationIndex: 2, matrix: [...IDENTITY] },
+    ]);
+    expect(healthy.score).toBe(1);
+
+    const truncated = [...IDENTITY].slice(0, 15); // 15 finite elements, not 16
+    const corrupt = computeConvergence([
+      { observationIndex: 1, matrix: [...IDENTITY] },
+      { observationIndex: 2, matrix: truncated },
+    ]);
     expect(corrupt.score).toBeLessThan(healthy.score);
     expect(corrupt.score).toBe(0);
   });

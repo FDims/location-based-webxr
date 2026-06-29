@@ -116,7 +116,8 @@ receive — copies are taken before sorting or sliding-window operations.
 ## Defensive measures
 
 - `matrixDelta` validates length-16 matrices and returns zero deltas otherwise. It also finite-guards both outputs: a NaN/Infinity-bearing matrix (degenerate alignment solve) would otherwise propagate `NaN` through `getRotation`/`vec3.distance` into `computeConvergence` and turn the whole score `NaN`. On non-finite output it falls back to `0` (no delta).
-  Internally uses `mat4.getRotation` + `quat.getAngle` + `mat4.getTranslation`
+- `computeConvergence` treats a **corrupt** alignment matrix — non-finite OR wrong-length (`AlignmentSnapshot.matrix` is typed `number[]`, not a 16-tuple) — as evidence of instability, NOT stability. Its `isFiniteMatrix` guard rejects both cases, so such a pair is scored on the FAIL side (thresholds added) rather than slipping through to `matrixDelta`'s zero-delta length fallback, which reads as "perfectly stable" and would _inflate_ the score.
+  Internally `matrixDelta` uses `mat4.getRotation` + the shared `geodesicAngleRad` kernel + `mat4.getTranslation`
   from gl-matrix — the same kernel as `computeStabilityDelta` in
   `GpsPlusSlamJs_Investigation/src/investigation-helpers.ts`. Per the plan
   §11 (a), these two functions share one numeric definition so the §6.1

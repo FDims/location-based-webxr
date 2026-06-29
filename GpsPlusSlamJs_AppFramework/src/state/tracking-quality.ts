@@ -242,8 +242,17 @@ function rampUp(value: number, low: number, high: number): number {
   return (value - low) / (high - low);
 }
 
-/** True iff every element of the matrix is a finite number (no NaN/Infinity). */
+/**
+ * True iff the matrix is well-formed: exactly 16 elements, all finite (no
+ * NaN/Infinity). The length check matters because `computeConvergence` scores a
+ * pair as corrupt (fail side) only when this returns false; without it a finite
+ * but wrong-length snapshot (`AlignmentSnapshot.matrix` is typed `number[]`,
+ * not a 16-tuple) would slip past here, then hit `matrixDelta`'s own length
+ * guard which returns ZERO deltas = "perfectly stable" — inflating the score
+ * instead of degrading it (the same trap the non-finite guard avoids).
+ */
 function isFiniteMatrix(m: readonly number[]): boolean {
+  if (m.length !== 16) return false;
   for (let i = 0; i < m.length; i++) {
     if (!Number.isFinite(m[i])) return false;
   }
