@@ -23,6 +23,24 @@ function findMesh(parent: THREE.Object3D): THREE.Mesh | undefined {
     | undefined;
 }
 
+function meshes(parent: THREE.Object3D): THREE.Mesh[] {
+  return parent.children.filter((c) => c instanceof THREE.Mesh) as THREE.Mesh[];
+}
+
+/** The invisible depth-only occluder mesh (colorWrite off). */
+function occluderMesh(parent: THREE.Object3D): THREE.Mesh | undefined {
+  return meshes(parent).find(
+    (m) => (m.material as THREE.Material).colorWrite === false
+  );
+}
+
+/** The visible matcap debug skin, if present. */
+function debugSkin(parent: THREE.Object3D): THREE.Mesh | undefined {
+  return meshes(parent).find(
+    (m) => m.material instanceof THREE.MeshMatcapMaterial
+  );
+}
+
 describe('OcclusionMesh', () => {
   it('attaches a depth-only mesh under the injected node with the NUE basis', () => {
     const parent = new THREE.Group();
@@ -93,5 +111,86 @@ describe('OcclusionMesh', () => {
     // No-op after dispose (no throw, no re-mesh).
     occluder.update([[1, 1, 1]], 0.15);
     expect(() => occluder.dispose()).not.toThrow();
+  });
+
+  /**
+   * Debug visualization (2026-06-29 testing feedback): when on, a VISIBLE shiny
+   * matcap "skin" is added so the operator can judge the meshed surface, while
+   * the original invisible depth-only mesh is left untouched — so occlusion is
+   * provably unchanged. (A single transparent material would render in three.js's
+   * transparent phase after opaque content, which would stop it occluding opaque
+   * objects; the additive skin avoids that entirely.)
+   */
+  describe('setDebugVisualization', () => {
+    it('adds a visible semi-transparent matcap skin while keeping the depth-only occluder', () => {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent);
+      occluder.update([[0, 0, 0]], 0.15);
+
+      expect(debugSkin(parent)).toBeUndefined();
+      occluder.setDebugVisualization(true);
+
+      // The invisible depth-only occluder is still present and still occludes.
+      const depthMesh = occluderMesh(parent);
+      expect(depthMesh).toBeDefined();
+      expect((depthMesh!.material as THREE.Material).colorWrite).toBe(false);
+      expect((depthMesh!.material as THREE.Material).depthWrite).toBe(true);
+
+      // A second, visible matcap mesh now exists: shiny, semi-transparent.
+      const skin = debugSkin(parent);
+      expect(skin).toBeDefined();
+      const mat = skin!.material as THREE.MeshMatcapMaterial;
+      expect(mat.transparent).toBe(true);
+      expect(mat.opacity).toBeLessThan(1);
+      expect(mat.matcap).toBeTruthy(); // shaded/"shiny", not flat
+      // Matcap shading needs normals; the mesher emits none, so debug computes them.
+      expect(skin!.geometry.getAttribute('normal')).toBeTruthy();
+      // Skin rides the same NUE basis as the occluder so it overlays exactly.
+      expect(skin!.matrix.elements).toEqual(WEBXR_TO_NUE.elements);
+
+      occluder.dispose();
+    });
+
+    it('removes the skin when turned back off, leaving only the depth-only mesh', () => {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent);
+      occluder.update([[0, 0, 0]], 0.15);
+      occluder.setDebugVisualization(true);
+      expect(debugSkin(parent)).toBeDefined();
+
+      occluder.setDebugVisualization(false);
+      expect(debugSkin(parent)).toBeUndefined();
+      expect(occluderMesh(parent)).toBeDefined();
+      occluder.dispose();
+    });
+
+    it('keeps the skin geometry + normals in sync across re-mesh', () => {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent);
+      occluder.setDebugVisualization(true); // enabled before any geometry
+      occluder.update([[0, 0, 0]], 0.15);
+
+      const skin = debugSkin(parent)!;
+      expect(skin.geometry).toBe(occluderMesh(parent)!.geometry); // shared
+      expect(skin.geometry.getAttribute('normal')).toBeTruthy();
+      occluder.dispose();
+    });
+
+    it('is idempotent and safe after dispose', () => {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent);
+      occluder.update([[0, 0, 0]], 0.15);
+      occluder.setDebugVisualization(true);
+      occluder.setDebugVisualization(true); // no duplicate skin
+      expect(
+        meshes(parent).filter(
+          (m) => m.material instanceof THREE.MeshMatcapMaterial
+        )
+      ).toHaveLength(1);
+
+      occluder.dispose();
+      expect(debugSkin(parent)).toBeUndefined();
+      expect(() => occluder.setDebugVisualization(true)).not.toThrow();
+    });
   });
 });
