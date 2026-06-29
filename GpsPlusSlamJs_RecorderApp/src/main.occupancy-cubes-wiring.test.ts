@@ -54,16 +54,66 @@ const {
   };
 });
 
-const { mockGetArWorldGroup, mockGetScene, mockGetCamera } = vi.hoisted(() => {
-  const mockArWorldGroup = { name: 'ar-world' };
-  const mockScene = { name: 'scene' };
-  const mockCamera = { name: 'camera' };
+const { mockGetArWorldGroup, mockGetScene, mockGetCamera, mockArWorldGroup } =
+  vi.hoisted(() => {
+    const mockArWorldGroup = {
+      name: 'ar-world',
+      add: vi.fn(),
+      remove: vi.fn(),
+    };
+    const mockScene = { name: 'scene' };
+    const mockCamera = { name: 'camera' };
+    return {
+      mockGetArWorldGroup: vi.fn().mockReturnValue(mockArWorldGroup),
+      mockGetScene: vi.fn().mockReturnValue(mockScene),
+      mockGetCamera: vi.fn().mockReturnValue(mockCamera),
+      mockArWorldGroup,
+    };
+  });
+
+// Live CPU-depth occluder (occupancy.liveOcclusion) — full mock so the wiring
+// (construct → add mesh → per-frame update → session-disposer) is observable.
+const {
+  mockDepthOccluderCtor,
+  mockDepthOccluderInstance,
+  mockOcclusionMeshObject,
+  mockRegisterXrFrameUpdate,
+  mockGetDepthInfoFromFrame,
+  liveOccluderFrameCallbacks,
+  liveOccluderUnregisterFrame,
+} = vi.hoisted(() => {
+  const mockOcclusionMeshObject = { name: 'live-depth-occluder' };
+  const mockDepthOccluderInstance = {
+    getOcclusionMesh: vi.fn(() => mockOcclusionMeshObject),
+    update: vi.fn(),
+    dispose: vi.fn(),
+  };
+  const liveOccluderFrameCallbacks: Array<(ctx: unknown) => void> = [];
+  const liveOccluderUnregisterFrame = vi.fn();
   return {
-    mockGetArWorldGroup: vi.fn().mockReturnValue(mockArWorldGroup),
-    mockGetScene: vi.fn().mockReturnValue(mockScene),
-    mockGetCamera: vi.fn().mockReturnValue(mockCamera),
+    mockDepthOccluderCtor: vi.fn(function () {
+      return mockDepthOccluderInstance;
+    }),
+    mockDepthOccluderInstance,
+    mockOcclusionMeshObject,
+    mockRegisterXrFrameUpdate: vi.fn((cb: (ctx: unknown) => void) => {
+      liveOccluderFrameCallbacks.push(cb);
+      return liveOccluderUnregisterFrame;
+    }),
+    mockGetDepthInfoFromFrame: vi.fn((): { depth: boolean } | null => ({
+      depth: true,
+    })),
+    liveOccluderFrameCallbacks,
+    liveOccluderUnregisterFrame,
   };
 });
+
+vi.mock('gps-plus-slam-app-framework/ar/depth-occluder', () => ({
+  DepthOccluder: mockDepthOccluderCtor,
+}));
+vi.mock('gps-plus-slam-app-framework/ar/xr-frame-loop', () => ({
+  registerXrFrameUpdate: mockRegisterXrFrameUpdate,
+}));
 
 // ---------- mocks for the modules under test ----------
 
@@ -109,6 +159,7 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   getScene: mockGetScene,
   getCamera: mockGetCamera,
   getArWorldGroup: mockGetArWorldGroup,
+  getDepthInfoFromFrame: mockGetDepthInfoFromFrame,
   getImageCaptureFrameCount: vi.fn().mockReturnValue(0),
   getDepthSampleCount: vi.fn().mockReturnValue(0),
 }));
@@ -421,7 +472,12 @@ vi.mock('./storage/folder-manager', () => ({
 // Import after all mocks are set up. The occupancy-grid provider is imported
 // REAL (not mocked) so we can assert main.ts publishes/clears the live grid
 // through it — the shared accessor the COLMAP contributor reads (Iter 2.5).
-import { handleEnterARForTesting, resetMainState } from './main';
+import {
+  handleEnterARForTesting,
+  resetMainState,
+  setRecordingOptionsForTesting,
+} from './main';
+import { loadRecordingOptions } from 'gps-plus-slam-app-framework/state/recording-options';
 import { getOccupancyGrid } from './state/occupancy-grid-provider';
 import {
   setDepthCaptureCallback,
@@ -641,5 +697,104 @@ describe('Occupancy-grid cube wiring in live AR', () => {
       screenRotation: 90,
       capturedAt: 1700000000123, // timestamp → capturedAt
     });
+  });
+});
+
+/**
+ * Live CPU-depth occluder wiring (2026-06-29 occlusion-debug-viz-and-live-occluder
+ * Finding 2). When `occupancy.liveOcclusion` is on, handleEnterAR must construct a
+ * DepthOccluder, add its full-screen mesh to arWorldGroup, feed it the per-frame
+ * depth via a registerXrFrameUpdate callback, and dispose it via a session
+ * disposer. The actual occlusion render is device-gated; this pins the JS wiring.
+ */
+describe('Live CPU-depth occluder wiring in live AR', () => {
+  beforeEach(() => {
+    resetMainState();
+    vi.clearAllMocks();
+    liveOccluderFrameCallbacks.length = 0;
+    document.body.innerHTML = `
+      <div id="app"></div>
+      <div id="setup-modal"><h1 id="setup-title">Recorder</h1></div>
+      <div id="controls"></div>
+      <div id="replay-controls" class="hidden"></div>
+      <div id="ref-point-picker-modal"></div>
+    `;
+  });
+
+  /** Turn liveOcclusion on for the next Enter-AR (module-global options need the
+   *  *ForTesting setter, not a per-call loadRecordingOptions override). */
+  function enableLiveOcclusion(): void {
+    const base = vi.mocked(loadRecordingOptions)();
+    setRecordingOptionsForTesting({
+      ...base,
+      occupancy: { ...base.occupancy, liveOcclusion: true },
+    });
+  }
+
+  it('does NOT construct the live occluder when liveOcclusion is off (default)', async () => {
+    await handleEnterARForTesting();
+    expect(mockDepthOccluderCtor).not.toHaveBeenCalled();
+  });
+
+  it('constructs the occluder, adds its mesh to arWorldGroup, and registers the per-frame feed', async () => {
+    enableLiveOcclusion();
+    await handleEnterARForTesting();
+
+    expect(mockDepthOccluderCtor).toHaveBeenCalledTimes(1);
+    expect(mockDepthOccluderInstance.getOcclusionMesh).toHaveBeenCalledTimes(1);
+    expect(mockArWorldGroup.add).toHaveBeenCalledWith(mockOcclusionMeshObject);
+    expect(mockRegisterXrFrameUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('feeds per-frame depth to the occluder via the frame callback', async () => {
+    enableLiveOcclusion();
+    await handleEnterARForTesting();
+
+    const cb = liveOccluderFrameCallbacks[0];
+    expect(cb).toBeDefined();
+    const pose = { views: [{}] };
+    cb!({
+      frame: { getViewerPose: vi.fn(() => pose) },
+      referenceSpace: { name: 'ref' },
+    });
+    // getDepthInfoFromFrame returns a truthy depthInfo → update is called with it.
+    expect(mockGetDepthInfoFromFrame).toHaveBeenCalledTimes(1);
+    expect(mockDepthOccluderInstance.update).toHaveBeenCalledWith({
+      depth: true,
+    });
+  });
+
+  it('does not update the occluder when the frame has no depth (degraded frame)', async () => {
+    enableLiveOcclusion();
+    mockGetDepthInfoFromFrame.mockReturnValueOnce(null);
+    await handleEnterARForTesting();
+
+    liveOccluderFrameCallbacks[0]!({
+      frame: { getViewerPose: vi.fn(() => null) },
+      referenceSpace: {},
+    });
+    expect(mockDepthOccluderInstance.update).not.toHaveBeenCalled();
+  });
+
+  it('disposes the occluder + unregisters the frame feed on resetMainState', async () => {
+    enableLiveOcclusion();
+    await handleEnterARForTesting();
+    expect(mockDepthOccluderInstance.dispose).not.toHaveBeenCalled();
+
+    resetMainState();
+    expect(liveOccluderUnregisterFrame).toHaveBeenCalledTimes(1);
+    expect(mockDepthOccluderInstance.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('disposes the prior occluder + unregisters when Enter-AR re-enters', async () => {
+    enableLiveOcclusion();
+    await handleEnterARForTesting();
+    enableLiveOcclusion(); // re-enable for the second enter
+    await handleEnterARForTesting();
+
+    // The first cycle's occluder/frame feed is torn down before the second wires up.
+    expect(liveOccluderUnregisterFrame).toHaveBeenCalled();
+    expect(mockDepthOccluderInstance.dispose).toHaveBeenCalled();
+    expect(mockDepthOccluderCtor).toHaveBeenCalledTimes(2);
   });
 });

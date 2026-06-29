@@ -78,9 +78,12 @@ import {
   getArWorldGroup,
   setScene,
   setArWorldGroup,
+  getDepthInfoFromFrame,
   type CapturedImage,
   type DepthSample,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
+import { DepthOccluder } from 'gps-plus-slam-app-framework/ar/depth-occluder';
+import { registerXrFrameUpdate } from 'gps-plus-slam-app-framework/ar/xr-frame-loop';
 import { getXrErrorMessage } from 'gps-plus-slam-app-framework/ar/xr-error-handler';
 import { applyChromiumProjectionLayerWorkaround } from 'gps-plus-slam-app-framework/ar/chromium-camera-access-workaround';
 import {
@@ -270,6 +273,12 @@ let occupancyGrid: OccupancyGrid | null = null;
 let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
 // Persistent depth-only occluder (off by default — occupancy.persistentOcclusion).
 let occlusionMesh: OcclusionMesh | null = null;
+// Live CPU-depth occluder (off by default — occupancy.liveOcclusion). Lifecycle
+// mirrors `occlusionMesh`: disposed on re-enter + in resetMainState (not via the
+// framework session-disposer registry). `liveOccluderUnregisterFrame` unhooks
+// the per-frame depth feed alongside the dispose.
+let liveOccluder: DepthOccluder | null = null;
+let liveOccluderUnregisterFrame: (() => void) | null = null;
 let unsubscribeOccupancyGrid: (() => void) | null = null;
 
 // Live QR recording (opt-in, recording-options `qr`). The thin RAW producer
@@ -561,6 +570,19 @@ export function setCurrentScenarioName(name: string): void {
 }
 
 /**
+ * Tear down the live CPU-depth occluder: unhook its per-frame depth feed and
+ * dispose it (which removes its full-screen mesh from `arWorldGroup`). Safe to
+ * call when nothing is wired. Used on re-enter and in `resetMainState`, mirroring
+ * how `occlusionMesh` is managed.
+ */
+function disposeLiveOccluder(): void {
+  liveOccluderUnregisterFrame?.();
+  liveOccluderUnregisterFrame = null;
+  liveOccluder?.dispose();
+  liveOccluder = null;
+}
+
+/**
  * Reset main module state.
  * Exported for testing purposes to ensure test isolation.
  */
@@ -607,6 +629,7 @@ export function resetMainState(): void {
     occlusionMesh.dispose();
     occlusionMesh = null;
   }
+  disposeLiveOccluder();
   occupancyGrid = null;
   setOccupancyGrid(null);
   // Live QR teardown — stop capture, detach the producer + debug-viz subscriber.
@@ -1167,9 +1190,9 @@ async function handleEnterAR(): Promise<void> {
     // Live depth occluder (opt-in, off by default): request the
     // `cpu-optimized` depth-sensing feature for the live occluder even when
     // depth *recording* is off, so the session negotiates the depth stream the
-    // occluder consumes. The render-side integration (DepthOccluder material
-    // patching + per-frame update) is the device-gated next step — see
-    // 2026-06-29-occupancy-live-occluder-followups.md.
+    // occluder consumes. The render-side integration (the full-screen
+    // DepthOccluder fed per frame) is wired below once arWorldGroup exists; its
+    // on-device occlusion quality is still being tuned.
     await initAR(appContainer, recordingOptions.arCrashIsolation, {
       requestDepthOcclusion: recordingOptions.occupancy.liveOcclusion === true,
     });
@@ -1360,6 +1383,37 @@ async function handleEnterAR(): Promise<void> {
       } catch (err) {
         log.warn(
           'Occupancy grid wiring skipped; recording continues without depth cubes',
+          err
+        );
+      }
+
+      // Live CPU-depth occluder (opt-in — occupancy.liveOcclusion). The
+      // full-screen depth-write path (v1): each frame we read the full depth and
+      // feed it to the occluder, whose clip-space mesh writes gl_FragDepth so the
+      // real surface hides ALL virtual content behind it — like the persistent
+      // mesh, but for the surface the camera sees *this* frame. Best-effort: a
+      // wiring failure (or a per-frame throw — the registry is try/catch-safe per
+      // callback) must never break the AR session. The on-device occlusion render
+      // is still being brought up, so the checkbox stays experimental.
+      try {
+        disposeLiveOccluder(); // guard a re-enter (mirrors occlusionMesh teardown)
+        if (recordingOptions.occupancy.liveOcclusion) {
+          const occluder = new DepthOccluder();
+          liveOccluder = occluder;
+          // The mesh's vertex shader ignores transforms, but parenting under
+          // arWorldGroup keeps it in the AR render pass alongside the content.
+          arWorldGroup.add(occluder.getOcclusionMesh());
+          liveOccluderUnregisterFrame = registerXrFrameUpdate(
+            ({ frame, referenceSpace }) => {
+              const pose = frame.getViewerPose(referenceSpace);
+              const depthInfo = getDepthInfoFromFrame(frame, pose);
+              if (depthInfo) occluder.update(depthInfo);
+            }
+          );
+        }
+      } catch (err) {
+        log.warn(
+          'Live depth occluder wiring skipped; recording continues without it',
           err
         );
       }
