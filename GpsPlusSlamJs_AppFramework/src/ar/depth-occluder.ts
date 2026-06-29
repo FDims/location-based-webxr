@@ -17,14 +17,23 @@
  *    selection, and the soft-margin / holes occlusion-strength policy. These are
  *    deterministic and property-tested.
  *  - The **{@link DepthOccluder} class** owns the per-frame `THREE.DataTexture`
- *    upload, the shared uniform block, the `onBeforeCompile` material patch, and the
- *    lifecycle (enable / dispose). Its JS-observable behaviour (texture (re)creation,
- *    uniform updates, patch registration, disposal) is unit-tested in jsdom, but the
- *    **actual GLSL occlusion is device-gated** (plan §8 Iter 2–3): no headless GL
- *    context renders it, so the injected shader is a first-light draft to verify and
- *    tune on-device (soft edges, the `gl_FragDepth` sanity check, the
- *    `dataFormatPreference` default). Keep `occupancy.liveOcclusion` OFF by default
- *    until that verification lands.
+ *    upload, the shared uniform block, the lifecycle (enable / dispose), and **two
+ *    render paths**:
+ *      - **v1 — full-screen depth write ({@link DepthOccluder.getOcclusionMesh}).**
+ *        A clip-space quad that writes `gl_FragDepth` from the live depth map, so the
+ *        normal depth test hides **all** virtual content behind real surfaces — the
+ *        "do what the persistent mesh does" path the recorder uses (2026-06-29
+ *        occlusion-debug-viz-and-live-occluder feedback Finding 2). Hard-edged.
+ *      - **Phase B — per-material soft injection ({@link DepthOccluder.patch} /
+ *        {@link injectOcclusionGlsl}).** Soft-margin alpha fade + per-object opt-out;
+ *        retained for the eventual quality upgrade, **not** wired today. (Its draft
+ *        body is still a first-light placeholder — see `injectOcclusionGlsl`.)
+ *    The JS-observable behaviour (texture (re)creation, uniform updates, mesh/patch
+ *    construction, disposal) is unit-tested in jsdom, but the **actual GLSL occlusion
+ *    is device-gated** (plan §8 Iter 2–3): no headless GL renders it, so the shader is
+ *    a first-light draft to verify/tune on-device (the `gl_FragDepth` sanity check,
+ *    the depth-UV Y orientation, the float-vs-packed default). Keep
+ *    `occupancy.liveOcclusion` OFF by default until that verification lands.
  *
  * @see depth-occluder.ts.md for detailed documentation
  * @see ar/depth-sampler.ts — `DepthInfo` / `wrapXRDepthInfo` (the per-frame source)
@@ -36,6 +45,11 @@ import type { DepthInfo } from './depth-sampler.js';
 /** Default soft-occlusion band half-width (metres). A few cm hides the coarse,
  *  noisy depth map's frame-to-frame shimmer at the silhouette (plan §3c). */
 export const DEFAULT_SOFT_MARGIN_M = 0.05;
+
+/** Render order of the full-screen depth writer — before virtual content
+ *  (≥ 0) and at/after the persistent mesh (−2), so it composes with the mesh
+ *  (nearer depth wins) and lays depth before content draws (plan §5). */
+export const OCCLUDER_RENDER_ORDER = -1;
 
 /** The two upload formats `XRCPUDepthInformation` resolves to (plan §3a/§10). */
 export type DepthTextureFormat = 'r32f' | 'luminance-alpha';
@@ -168,7 +182,8 @@ export interface DepthOccluderOptions {
   readonly softMarginMeters?: number;
 }
 
-/** Shared uniform block injected into every patched material. */
+/** Shared uniform block injected into every patched material / the full-screen
+ *  occluder. Held by reference so {@link DepthOccluder.update} reaches both. */
 interface DepthOccluderUniforms {
   uDepthTexture: { value: THREE.DataTexture | null };
   uRawValueToMeters: { value: number };
@@ -176,6 +191,81 @@ interface DepthOccluderUniforms {
   uProjectionMatrix: { value: THREE.Matrix4 };
   uSoftMarginMeters: { value: number };
   uOccluderEnabled: { value: number };
+  /** 1 when the depth texture is packed luminance-alpha (RG8), 0 for float R32F.
+   *  Tells the shader how to reconstruct metres from a texel. */
+  uPackedDepth: { value: number };
+}
+
+/**
+ * GLSL for the **full-screen depth-write occluder** (v1 — the "do what the
+ * persistent mesh does" path). A clip-space quad whose fragment shader samples
+ * the live depth map and writes `gl_FragDepth` from the real surface depth, so
+ * the normal depth test then hides ALL virtual content behind real surfaces —
+ * no per-material patching (2026-06-29-occlusion-debug-viz-and-live-occluder
+ * user-feedback Finding 2).
+ *
+ * The fragment math **mirrors the CI-tested pure functions**:
+ * `screenUvToDepthUv` (the `uDepthUvFromScreenUv` transform + perspective
+ * divide), the `luminance-alpha`→metres unpack, the holes policy (no/invalid
+ * depth ⇒ `discard` ⇒ never occlude, so the persistent mesh shows through), and
+ * `metricDepthToWindowDepth` (the projection-matrix metres→window-depth step).
+ *
+ * The vertex shader maps the quad's NDC position to a `[0,1]` screen UV varying,
+ * so the shader needs **no resolution uniform** (the interpolated UV *is* the
+ * normalized screen coordinate). Mono AR (one `XRView`) — plan §3c.
+ *
+ * **Device-gated tuning** (the on-device gate, not CI): the depth-UV Y
+ * orientation, the float-vs-packed default, and that `gl_FragDepth` is writable
+ * on the target (it may need an extension/`glslVersion` on some renderers).
+ */
+export function buildFullscreenOcclusionShader(): {
+  vertexShader: string;
+  fragmentShader: string;
+} {
+  const vertexShader = `
+varying vec2 vScreenUv;
+void main() {
+  // Fullscreen clip-space quad: 'position' (PlaneGeometry(2,2)) is already in
+  // NDC [-1,1]; the interpolated [0,1] uv is the normalized screen coordinate,
+  // so no resolution uniform is needed. View/projection are intentionally
+  // ignored — this writes gl_FragDepth, not geometry depth.
+  vScreenUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+  const fragmentShader = `
+precision highp float;
+uniform sampler2D uDepthTexture;
+uniform float uRawValueToMeters;
+uniform mat4 uDepthUvFromScreenUv;
+uniform mat4 uProjectionMatrix;
+uniform float uOccluderEnabled;
+uniform float uPackedDepth;
+varying vec2 vScreenUv;
+void main() {
+  // No valid depth this frame → write nothing (frame-level holes policy).
+  if (uOccluderEnabled < 0.5) { discard; }
+  // Normalized screen UV → depth-buffer UV (low-res / possibly rotated), then
+  // perspective divide — mirrors screenUvToDepthUv.
+  vec4 duv = uDepthUvFromScreenUv * vec4(vScreenUv, 0.0, 1.0);
+  vec2 depthUv = duv.xy / duv.w;
+  vec4 texel = texture2D(uDepthTexture, depthUv);
+  // Reconstruct metres: packed luminance-alpha (lo + hi*256) or float R32F.
+  float realDepthMeters = uPackedDepth > 0.5
+    ? (texel.r * 255.0 + texel.g * 255.0 * 256.0) * uRawValueToMeters
+    : texel.r * uRawValueToMeters;
+  // Hole / invalid texel → never occlude (per-texel holes policy).
+  if (!(realDepthMeters > 0.0)) { discard; }
+  // metres → window depth via the WebXR projection matrix (column-major
+  // [col][row]) — mirrors metricDepthToWindowDepth.
+  float zClip = -realDepthMeters * uProjectionMatrix[2][2] + uProjectionMatrix[3][2];
+  float wClip = -realDepthMeters * uProjectionMatrix[2][3] + uProjectionMatrix[3][3];
+  gl_FragDepth = 0.5 * (zClip / wClip) + 0.5;
+  // colorWrite is off on the material; this is only here to satisfy GLSL1.
+  gl_FragColor = vec4(0.0);
+}
+`;
+  return { vertexShader, fragmentShader };
 }
 
 /**
@@ -192,6 +282,7 @@ interface DepthOccluderUniforms {
 export class DepthOccluder {
   private readonly uniforms: DepthOccluderUniforms;
   private readonly patched = new Set<THREE.Material>();
+  private fullscreenMesh: THREE.Mesh | null = null;
   private texture: THREE.DataTexture | null = null;
   private textureFormat: DepthTextureFormat | null = null;
   private textureWidth = 0;
@@ -210,6 +301,8 @@ export class DepthOccluder {
       // Disabled until the first valid depth frame lands, so a patched material
       // never samples a null texture.
       uOccluderEnabled: { value: 0 },
+      // Set per frame in update() from the resolved upload format.
+      uPackedDepth: { value: 0 },
     };
   }
 
@@ -221,6 +314,35 @@ export class DepthOccluder {
   /** The current upload format, or null before the first {@link update}. */
   getTextureFormat(): DepthTextureFormat | null {
     return this.textureFormat;
+  }
+
+  /**
+   * The **full-screen depth-write occluder** mesh (v1 path) — lazily created and
+   * cached. Add it to the AR scene (its vertex shader ignores transforms, so the
+   * parent node is irrelevant; the recorder adds it under `arWorldGroup`). It is
+   * `colorWrite:false` / `depthWrite:true` / `depthTest:true` at
+   * {@link OCCLUDER_RENDER_ORDER}, so it lays the real-surface depth before
+   * virtual content draws and composes with the persistent mesh (nearer wins).
+   * Shares the live uniform block, so each {@link update} reaches it.
+   */
+  getOcclusionMesh(): THREE.Mesh {
+    if (!this.fullscreenMesh) {
+      const { vertexShader, fragmentShader } = buildFullscreenOcclusionShader();
+      const material = new THREE.ShaderMaterial({
+        uniforms: this.uniforms as unknown as Record<string, THREE.IUniform>,
+        vertexShader,
+        fragmentShader,
+        colorWrite: false,
+        depthWrite: true,
+        depthTest: true,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+      mesh.name = 'live-depth-occluder';
+      mesh.frustumCulled = false; // covers the whole viewport in clip space
+      mesh.renderOrder = OCCLUDER_RENDER_ORDER;
+      this.fullscreenMesh = mesh;
+    }
+    return this.fullscreenMesh;
   }
 
   /**
@@ -248,6 +370,7 @@ export class DepthOccluder {
     const format = selectDepthTextureFormat(width, height, data.byteLength);
     this.ensureTexture(width, height, format, data);
 
+    this.uniforms.uPackedDepth.value = format === 'luminance-alpha' ? 1 : 0;
     this.uniforms.uRawValueToMeters.value = rawValueToMeters;
     this.uniforms.uDepthUvFromScreenUv.value.fromArray(
       normDepthBufferFromNormView
@@ -331,7 +454,7 @@ export class DepthOccluder {
     return this.patched.has(material);
   }
 
-  /** Release the depth texture and forget patched materials. */
+  /** Release the depth texture, the full-screen mesh, and forget patches. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -339,6 +462,12 @@ export class DepthOccluder {
     this.uniforms.uDepthTexture.value = null;
     this.texture?.dispose();
     this.texture = null;
+    if (this.fullscreenMesh) {
+      this.fullscreenMesh.removeFromParent();
+      this.fullscreenMesh.geometry.dispose();
+      (this.fullscreenMesh.material as THREE.Material).dispose();
+      this.fullscreenMesh = null;
+    }
     this.patched.clear();
   }
 }

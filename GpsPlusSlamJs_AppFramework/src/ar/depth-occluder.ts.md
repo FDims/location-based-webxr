@@ -9,7 +9,8 @@ It is a **second consumer** of the same per-frame `XRCPUDepthInformation` the sp
 ## Two confidence levels (read this before changing anything)
 
 - **Pure occlusion math** — fully CI-tested (plan §9). Deterministic, property-tested in `depth-occluder.property.test.ts`.
-- **`DepthOccluder` class** — its CPU-observable behaviour (texture (re)creation, format selection, uniform updates, patch registration, dispose) is unit-tested in jsdom (`depth-occluder.test.ts`). **The actual GLSL occlusion is device-gated** (plan §8 Iter 2–3): no headless GL renders it, so `injectOcclusionGlsl` is a **first-light draft** to verify and tune on-device. Keep `occupancy.liveOcclusion` **OFF by default** until that verification lands.
+- **`DepthOccluder` class** — its CPU-observable behaviour (texture (re)creation, format selection, uniform updates, full-screen mesh + patch construction, dispose) is unit-tested in jsdom (`depth-occluder.test.ts`). **The actual GLSL occlusion is device-gated** (plan §8 Iter 2–3): no headless GL renders it, so the shader is a **first-light draft** to verify and tune on-device. Keep `occupancy.liveOcclusion` **OFF by default** until that verification lands.
+- **Two render paths.** **v1 = full-screen depth write** (`getOcclusionMesh` + `buildFullscreenOcclusionShader`): a clip-space quad writes `gl_FragDepth` from the live depth, occluding **all** virtual content like the persistent mesh — this is what the recorder wires (2026-06-29 occlusion-debug-viz-and-live-occluder feedback Finding 2). **Phase B = per-material soft injection** (`patch` / `injectOcclusionGlsl`): soft-margin fade + opt-out, retained but **not** wired; pursued only if hard edges shimmer on-device.
 
 ## Public API
 
@@ -22,13 +23,16 @@ It is a **second consumer** of the same per-frame `XRCPUDepthInformation` the sp
 - `occlusionStrength(realDepthMeters, fragmentDepthMeters, softMarginMeters)` → `number` in `[0,1]` — the soft-margin / holes policy (plan §3c). Holes (`real ≤ 0` / non-finite) ⇒ `0` (never occlude). Positive margin ⇒ a symmetric fade band centred on the surface; non-positive ⇒ a hard step. The **single source of truth** the GLSL mirrors.
 - `injectOcclusionGlsl(fragmentShader)` → `string` — splice the occluder uniforms + decision into a fragment shader (device-gated draft).
 
+- `buildFullscreenOcclusionShader()` → `{ vertexShader, fragmentShader }` — the GLSL for the **v1 full-screen depth writer**. A clip-space quad whose fragment shader samples the live depth map (`screenUvToDepthUv` via `uDepthUvFromScreenUv`), reconstructs metres (packed `lo + hi*256` or float `r`), applies the holes policy (`discard` on no/invalid depth or when disabled), and writes `gl_FragDepth` from the projection matrix (`metricDepthToWindowDepth`). The vertex shader derives the `[0,1]` screen UV from the NDC quad, so **no resolution uniform** is needed. Exported for the GLSL-mirror unit test; device-gated for actual rendering.
+
 ### Class
 
 - `new DepthOccluder({ softMarginMeters? })` — defaults `softMarginMeters` to `DEFAULT_SOFT_MARGIN_M` (0.05 m).
-- `update(depthInfo: DepthInfo)` — upload this frame's depth + metadata. **No-op that DISABLES occlusion** when the frame lacks the occluder fields (`data` / `rawValueToMeters` / `normDepthBufferFromNormView` / `projectionMatrix`) — frame-level holes policy, so a degraded frame never occludes with stale/absent depth.
-- `patch(material)` — `onBeforeCompile`-inject the occlusion decision; idempotent per material. Shared uniforms injected **by reference** so each `update` reaches every patched material. Per-object opt-out = don't patch it.
+- `update(depthInfo: DepthInfo)` — upload this frame's depth + metadata. **No-op that DISABLES occlusion** when the frame lacks the occluder fields (`data` / `rawValueToMeters` / `normDepthBufferFromNormView` / `projectionMatrix`) — frame-level holes policy, so a degraded frame never occludes with stale/absent depth. Also sets `uPackedDepth` from the resolved upload format.
+- `getOcclusionMesh()` → `THREE.Mesh` — **v1 render path.** Lazily creates + caches a full-screen depth-only mesh (`ShaderMaterial`, `colorWrite:false` / `depthWrite:true` / `depthTest:true`, `renderOrder = OCCLUDER_RENDER_ORDER` = −1, `frustumCulled:false`). Add it to the AR scene; its vertex shader ignores transforms (parent node irrelevant). Shares the live uniform block, so each `update` reaches it. Occludes **all** virtual content like the persistent mesh, and composes with it (nearer depth wins).
+- `patch(material)` — **Phase-B** per-material soft path (NOT v1): `onBeforeCompile`-inject the occlusion decision; idempotent per material. Shared uniforms injected **by reference**. Retained for the eventual soft-edge upgrade; its GLSL body is still a first-light placeholder.
 - `isEnabled()` / `getTextureFormat()` / `isPatched(material)` — inspection hooks.
-- `dispose()` — release the depth texture, disable, forget patched materials. Idempotent; post-dispose `update` is a no-op.
+- `dispose()` — release the depth texture, the full-screen mesh (detach + dispose geometry/material), disable, forget patched materials. Idempotent; post-dispose `update` is a no-op.
 
 ## Invariants & assumptions
 

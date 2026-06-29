@@ -20,6 +20,8 @@ import * as THREE from 'three';
 import {
   DepthOccluder,
   injectOcclusionGlsl,
+  buildFullscreenOcclusionShader,
+  OCCLUDER_RENDER_ORDER,
   DEFAULT_SOFT_MARGIN_M,
 } from './depth-occluder.js';
 import type { DepthInfo } from './depth-sampler.js';
@@ -194,6 +196,96 @@ describe('DepthOccluder', () => {
       String(DEFAULT_SOFT_MARGIN_M)
     );
     occ.dispose();
+  });
+});
+
+describe('full-screen depth-write occluder (v1)', () => {
+  it('builds a clip-space quad mesh that writes depth but no color', () => {
+    const occ = new DepthOccluder();
+    const mesh = occ.getOcclusionMesh();
+    const mat = mesh.material as THREE.ShaderMaterial;
+    expect(mat).toBeInstanceOf(THREE.ShaderMaterial);
+    // Depth-only writer that composes with the persistent mesh + lays depth
+    // before content (nearer wins): colorWrite off, depthWrite+depthTest on.
+    expect(mat.colorWrite).toBe(false);
+    expect(mat.depthWrite).toBe(true);
+    expect(mat.depthTest).toBe(true);
+    expect(mesh.renderOrder).toBe(OCCLUDER_RENDER_ORDER);
+    expect(mesh.frustumCulled).toBe(false);
+    occ.dispose();
+  });
+
+  it('caches the mesh (one instance per occluder)', () => {
+    const occ = new DepthOccluder();
+    expect(occ.getOcclusionMesh()).toBe(occ.getOcclusionMesh());
+    occ.dispose();
+  });
+
+  it('shares the live uniform block so update() reaches the full-screen material', () => {
+    const occ = new DepthOccluder();
+    const mat = occ.getOcclusionMesh().material as THREE.ShaderMaterial;
+    expect(mat.uniforms['uOccluderEnabled']?.value).toBe(0);
+
+    // A packed (RG8) frame: enables occlusion AND flags the packed unpack path.
+    occ.update(makeDepthInfo(8, 6, 'luminance-alpha'));
+    expect(mat.uniforms['uOccluderEnabled']?.value).toBe(1);
+    expect(mat.uniforms['uPackedDepth']?.value).toBe(1);
+
+    // A float (R32F) frame flips the unpack flag back to the float path.
+    occ.update(makeDepthInfo(8, 6, 'r32f'));
+    expect(mat.uniforms['uPackedDepth']?.value).toBe(0);
+    occ.dispose();
+  });
+
+  it('dispose detaches the mesh and frees it', () => {
+    const occ = new DepthOccluder();
+    const parent = new THREE.Group();
+    const mesh = occ.getOcclusionMesh();
+    parent.add(mesh);
+    occ.dispose();
+    expect(mesh.parent).toBeNull();
+    expect(() => occ.dispose()).not.toThrow();
+  });
+});
+
+describe('buildFullscreenOcclusionShader', () => {
+  it('writes gl_FragDepth from the projection matrix (mirrors metricDepthToWindowDepth)', () => {
+    const { fragmentShader } = buildFullscreenOcclusionShader();
+    expect(fragmentShader).toContain('gl_FragDepth');
+    // metres → window depth uses P[10]/P[14]/P[11]/P[15] (column-major [col][row]).
+    expect(fragmentShader).toContain('uProjectionMatrix[2][2]');
+    expect(fragmentShader).toContain('uProjectionMatrix[3][2]');
+    expect(fragmentShader).toContain('uProjectionMatrix[2][3]');
+    expect(fragmentShader).toContain('uProjectionMatrix[3][3]');
+    expect(fragmentShader).toContain('0.5 * (zClip / wClip) + 0.5');
+  });
+
+  it('applies the holes policy (discard on no/invalid depth or when disabled)', () => {
+    const { fragmentShader } = buildFullscreenOcclusionShader();
+    expect(fragmentShader).toContain(
+      'if (uOccluderEnabled < 0.5) { discard; }'
+    );
+    expect(fragmentShader).toContain(
+      'if (!(realDepthMeters > 0.0)) { discard; }'
+    );
+  });
+
+  it('reconstructs metres for both the packed and float formats', () => {
+    const { fragmentShader } = buildFullscreenOcclusionShader();
+    expect(fragmentShader).toContain('uPackedDepth > 0.5'); // packed branch
+    expect(fragmentShader).toContain(
+      'texel.r * 255.0 + texel.g * 255.0 * 256.0'
+    );
+    expect(fragmentShader).toContain('texel.r * uRawValueToMeters'); // float branch
+  });
+
+  it('derives the screen UV from the clip-space quad (no resolution uniform)', () => {
+    const { vertexShader, fragmentShader } = buildFullscreenOcclusionShader();
+    expect(vertexShader).toContain('vScreenUv = position.xy * 0.5 + 0.5');
+    expect(vertexShader).toContain('gl_Position = vec4(position.xy, 0.0, 1.0)');
+    // Screen UV → depth-buffer UV via normDepthBufferFromNormView + persp divide.
+    expect(fragmentShader).toContain('uDepthUvFromScreenUv * vec4(vScreenUv');
+    expect(fragmentShader).toContain('duv.xy / duv.w');
   });
 });
 
