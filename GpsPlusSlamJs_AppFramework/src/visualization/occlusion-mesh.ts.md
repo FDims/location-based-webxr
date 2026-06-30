@@ -15,9 +15,10 @@ can use it; the recorder owns only the off-by-default toggle + scene wiring. See
 
 - `new OcclusionMesh(arSpaceNode: THREE.Object3D, options?: OcclusionMeshOptions)`
   - `arSpaceNode` — the AR-odometry-NUE node that receives the alignment matrix (`arWorldGroup` live, `replaySceneState.arWorldGroup` in replay). The mesh is added to it on construction.
-  - `options.greedy` — merge coplanar faces (default **true**; the occluder is invisible so coarser triangulation is free).
+  - `options.greedy` — merge coplanar faces (default **true**; the occluder is invisible so coarser triangulation is free). Ignored when `mode` is set.
+  - `options.mode` — mesher strategy (`'per-face' | 'greedy' | 'smooth'`; F2 2026-06-30). Additive opt-in: **unset by default**, so existing behaviour (greedy cubes) is byte-for-byte unchanged. When `'smooth'`, pass `getCellPoint` to `update` so the surface nets hugs the measured centroids (see `occupancy-mesher.ts.md` → "Modes"). Switching is a one-option change.
   - `options.renderOrder` — depth-only draw order (default **−1**, before virtual content ≥ 0).
-- `update(cells: Iterable<GridCell>, cellSizeM: number): void` — re-mesh from a fresh snapshot (pass `grid.getOccupiedCells(occupancy.minConfidence)`); disposes the previous geometry.
+- `update(cells: Iterable<GridCell>, cellSizeM: number, getCellPoint?: (cell) => Vector3 | null): void` — re-mesh from a fresh snapshot (pass `grid.getOccupiedCells(occupancy.minConfidence)`); disposes the previous geometry. `getCellPoint` (pass `grid.getCellPoint`) is consumed only under `mode: 'smooth'`.
 - `getTriangleCount(): number` — triangles currently drawn.
 - `getAabbs(): readonly Aabb[]` — the AABB list from the last `update` (physics-export hook).
 - `setDebugVisualization(enabled: boolean): void` — toggle a **visible** matcap debug rendering of the meshed surface (shiny, semi-transparent) so its shape can be judged on-device. **Additive:** adds/removes a separate skin mesh sharing the occluder's geometry and **never touches the invisible depth-only mesh**, so occlusion is byte-for-byte unchanged either way. Backs the recorder's `occupancy.occluderDebugViz` toggle. Idempotent; safe before `update` (no-op until geometry exists) and after `dispose`.

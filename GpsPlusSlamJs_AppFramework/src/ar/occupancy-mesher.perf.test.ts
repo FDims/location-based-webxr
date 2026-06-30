@@ -32,18 +32,27 @@ import {
   type OccupancyMeshResult,
 } from './occupancy-mesher';
 import { buildSyntheticSurfaceGrid } from '../test-utils/synthetic-occupancy-grid';
+import type { OccupancyGrid } from './occupancy-grid';
 
 /**
- * The selectable mesher strategies. Extend this as F2 ('smooth') / F2b
- * ('corner-fit') land so the bench below auto-includes them; the per-face and
- * greedy budgets stay the deterministic gate.
+ * The selectable mesher strategies, as a function of the grid (so 'smooth' can
+ * bind `getCellPoint`). Extend this as F2b ('corner-fit') lands so the bench
+ * below auto-includes it; the per-face and greedy budgets stay the
+ * deterministic gate.
  */
 const STRATEGIES: ReadonlyArray<{
   name: string;
-  opts: MeshOccupiedCellsOptions | undefined;
+  opts: (grid: OccupancyGrid) => MeshOccupiedCellsOptions | undefined;
 }> = [
-  { name: 'per-face', opts: undefined },
-  { name: 'greedy', opts: { greedy: true } },
+  { name: 'per-face', opts: () => undefined },
+  { name: 'greedy', opts: () => ({ greedy: true }) },
+  {
+    name: 'smooth',
+    opts: (grid) => ({
+      mode: 'smooth',
+      getCellPoint: (cell) => grid.getCellPoint(cell),
+    }),
+  },
 ];
 
 /**
@@ -159,7 +168,7 @@ describe('occupancy mesher — deterministic large-scene perf/memory harness', (
 
       const bench = STRATEGIES.map(({ name, opts }) => {
         const t0 = performance.now();
-        const mesh = meshOccupiedCells(cells, cellSizeM, opts);
+        const mesh = meshOccupiedCells(cells, cellSizeM, opts(grid));
         const ms = performance.now() - t0;
         return { name, mesh, ms };
       });
@@ -188,6 +197,11 @@ describe('occupancy mesher — deterministic large-scene perf/memory harness', (
       // Greedy never adds triangles and stays non-empty.
       expect(triangleCount(greedy)).toBeGreaterThan(0);
       expect(triangleCount(greedy)).toBeLessThanOrEqual(triangleCount(perFace));
+      // Smooth (surface nets) also stays within the per-face triangle budget at
+      // scale (F2 step 4) and produces a non-empty sheet over this flat slab.
+      const smooth = bench.find((b) => b.name === 'smooth')!.mesh;
+      expect(triangleCount(smooth)).toBeGreaterThan(0);
+      expect(triangleCount(smooth)).toBeLessThanOrEqual(triangleCount(perFace));
       // Absolute memory cap — catches a catastrophic blow-up at this scale.
       expect(byteSize(perFace)).toBeLessThan(8 * 1024 * 1024);
 

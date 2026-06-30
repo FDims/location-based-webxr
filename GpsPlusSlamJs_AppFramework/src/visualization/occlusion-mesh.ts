@@ -26,8 +26,14 @@
 
 import * as THREE from 'three';
 import type { GridCell } from '../ar/bresenham3d.js';
-import { meshOccupiedCells, type Aabb } from '../ar/occupancy-mesher.js';
+import {
+  meshOccupiedCells,
+  type Aabb,
+  type MeshMode,
+  type MeshOccupiedCellsOptions,
+} from '../ar/occupancy-mesher.js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis.js';
+import type { Vector3 } from 'gps-plus-slam-js';
 
 const MESH_NAME = 'occupancy-occluder';
 const DEBUG_MESH_NAME = 'occupancy-occluder-debug';
@@ -87,8 +93,18 @@ export interface OcclusionMeshOptions {
   /**
    * Merge coplanar faces (fewer triangles, same occluded volume). Default
    * true — the occluder is invisible, so the coarser triangulation is free.
+   * Ignored when {@link OcclusionMeshOptions.mode} is set.
    */
   readonly greedy?: boolean;
+  /**
+   * Mesher strategy (additive opt-in; 2026-06-30 occluder-tuning, F2). When set
+   * it takes precedence over {@link greedy}. `'smooth'` selects the surface-nets
+   * mesher that hugs the measured per-cell centroids — pass a `getCellPoint`
+   * provider to {@link OcclusionMesh.update} for it to read. Left **unset by
+   * default** so existing behaviour (greedy cubes) is byte-for-byte unchanged
+   * until the smooth occluder is confirmed on-device.
+   */
+  readonly mode?: MeshMode;
   /**
    * `renderOrder` of the depth-only mesh. Must be below virtual content so the
    * occluder lays down depth first. Default −1. (The live occluder, when it
@@ -105,6 +121,7 @@ export interface OcclusionMeshOptions {
 export class OcclusionMesh {
   private readonly arSpaceNode: THREE.Object3D;
   private readonly greedy: boolean;
+  private readonly mode: MeshMode | undefined;
   private readonly material: THREE.MeshBasicMaterial;
   private readonly mesh: THREE.Mesh;
   private geometry: THREE.BufferGeometry;
@@ -125,6 +142,7 @@ export class OcclusionMesh {
   constructor(arSpaceNode: THREE.Object3D, options: OcclusionMeshOptions = {}) {
     this.arSpaceNode = arSpaceNode;
     this.greedy = options.greedy ?? true;
+    this.mode = options.mode;
     this.geometry = new THREE.BufferGeometry();
     // Invisible depth-writer: contributes only to the depth buffer, so virtual
     // content's normal depth test hides fragments behind the real surface.
@@ -157,12 +175,26 @@ export class OcclusionMesh {
    * Re-mesh from a fresh occupied-cell snapshot. Pass
    * `grid.getOccupiedCells(occupancy.minConfidence)` so the occluder shares the
    * same noise floor as the cubes and the COLMAP export.
+   *
+   * @param getCellPoint optional per-cell measured-centroid provider
+   *   (`grid.getCellPoint`); only consumed when this occluder was constructed
+   *   with `mode: 'smooth'` (otherwise ignored). When omitted under `'smooth'`,
+   *   the surface nets falls back to cell centres.
    */
-  update(cells: Iterable<GridCell>, cellSizeM: number): void {
+  update(
+    cells: Iterable<GridCell>,
+    cellSizeM: number,
+    getCellPoint?: (cell: GridCell) => Vector3 | null
+  ): void {
     if (this.disposed) return;
-    const { positions, indices, aabbs } = meshOccupiedCells(cells, cellSizeM, {
-      greedy: this.greedy,
-    });
+    const meshOptions: MeshOccupiedCellsOptions = this.mode
+      ? { mode: this.mode, getCellPoint }
+      : { greedy: this.greedy };
+    const { positions, indices, aabbs } = meshOccupiedCells(
+      cells,
+      cellSizeM,
+      meshOptions
+    );
     this.lastAabbs = aabbs;
     // Replace the geometry wholesale — a full rebuild is the simple first cut;
     // dispose the old buffers to avoid leaking GPU memory across refreshes.

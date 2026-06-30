@@ -13,14 +13,24 @@ AABB list feeds a **compound box collider** (the better voxel-physics fit). See
 ## Public API
 
 - `meshOccupiedCells(cells: Iterable<GridCell>, cellSizeM: number, options?: MeshOccupiedCellsOptions): OccupancyMeshResult`
-  - **Inputs:** `cells` — occupied cells, typically `grid.getOccupiedCells(occupancy.minConfidence)`; `cellSizeM` — cube edge length in metres; `options.greedy` — merge coplanar faces (default false).
+  - **Inputs:** `cells` — occupied cells, typically `grid.getOccupiedCells(occupancy.minConfidence)`; `cellSizeM` — cube edge length in metres; `options.mode` — the mesher strategy (see below); `options.getCellPoint` — per-cell measured centroid provider consumed by `'smooth'`.
   - **Output:** `{ positions: Float32Array, indices: Uint32Array, aabbs: Aabb[] }`.
-    - `positions`/`indices`: a triangle soup, 4 vertices + 2 triangles per emitted quad, in raw-WebXR metres. Vertices are **not** shared between quads.
-    - `aabbs`: one `{ center, halfExtents }` per **unique** occupied cell (`center = cell · cellSizeM`, `halfExtents = cellSizeM/2`). The AABB list is **not** affected by `greedy`.
+    - `positions`/`indices`: a triangle soup in raw-WebXR metres. Cube modes (`per-face`/`greedy`) emit 4 vertices per quad, **not** shared. `smooth` **welds** one vertex per surface cell (shared across quads).
+    - `aabbs`: one `{ center, halfExtents }` per **unique** occupied cell (`center = cell · cellSizeM`, `halfExtents = cellSizeM/2`). The AABB list is **mode-independent**.
   - **Error modes:** throws `RangeError` if `cellSizeM` is non-finite or ≤ 0. Duplicate cells are de-duplicated; cells with a non-finite coordinate are skipped defensively.
 - `Aabb` — `{ center: [x,y,z], halfExtents: [hx,hy,hz] }`, raw-WebXR metres.
 - `OccupancyMeshResult` — the typed-array bundle above (transferable to a Web Worker).
-- `MeshOccupiedCellsOptions` — `{ greedy?: boolean }`.
+- `MeshMode` — `'per-face' | 'greedy' | 'smooth'` (F2b adds `'corner-fit'`).
+- `MeshOccupiedCellsOptions` — `{ mode?: MeshMode; greedy?: boolean; getCellPoint?: (cell) => Vector3 | null }`. `mode` takes precedence; the legacy `greedy` boolean is a back-compat shim (`true → 'greedy'`, else `'per-face'`). All modes stay simultaneously usable — none replaces another.
+
+## Modes
+
+- **`'per-face'`** (default) — blocky, watertight, exact cell volume; the strict baseline. See "Invariants" below.
+- **`'greedy'`** — fewest triangles, blocky; coplanar-face merge for memory. See "Greedy merge".
+- **`'smooth'`** (surface nets, F2 2026-06-30) — one **welded** vertex per occupied _surface_ cell (a cell with ≥1 empty neighbour) placed at `getCellPoint(cell)` — the measured centroid the cube modes throw away — or the cell centre when no provider is given. Faces are the dual of coplanar surface patches: one quad per coplanar 2×2 occupied group whose `+d` **or** `−d` side is exposed.
+  - **Open, not closed:** a one-cell-thick slab (the floor) yields ONE sheet hugging the measured surface — an **open** manifold, so the even-edge-cover / closed-surface invariant is deliberately **unsatisfiable** and not asserted. Leak-prevention comes from **crack-free welding** (shared vertex indices), not closedness. Thick solids get top/bottom/side sheets (closed where thick).
+  - **Hugs the measured surface, occludes less volume:** every vertex sits within `cellSize/2` of the cell centre (inside the union-of-cubes hull), so it occludes a little less than the cubes but far more accurately.
+  - **Scope:** connects coplanar surface cells, so flat/convex exposed surfaces (the floor) are fully tiled; bridging the **concave seam** where two perpendicular surfaces meet (wall-meets-floor) is left to the deferred full QEF/dual-contouring solver.
 
 ## Greedy merge (`{ greedy: true }`)
 
@@ -77,5 +87,6 @@ for (const { center, halfExtents } of aabbs)
 
 - `occupancy-mesher.test.ts` — exact-count fixtures: isolated voxel (6 faces / 12 tris), AABB placement, ±half-cell span, shared-face culling (10 faces), solid 2×2×2 (24 faces), enclosed-voxel drop (3×3×3 → 54 faces), de-dup, non-finite skip, `cellSizeM` validation.
 - `occupancy-mesher.property.test.ts` — invariants over arbitrary cell sets: face count = empty-6-neighbour sum, watertight (even edge cover, per-face path), in-range indices + finite positions, permutation invariance, one AABB per unique cell, and **greedy covers the exact same unit faces as per-face culling** (with ≤ the triangle count).
+- `occupancy-mesher.smooth.test.ts` — the `'smooth'` surface-nets invariants: vertex AT `getCellPoint` (within `cellSize/2`, ≠ centre), centre fallback without a provider, crack-free **welded** manifold (shared indices, no T-junctions) that is explicitly **open** (not even-edge-cover), full-patch tiling with no internal holes, `≤` per-face triangle budget, AABBs mode-independent, and the `greedy:true`→`'greedy'` back-compat shim.
 - `occupancy-mesher.perf.test.ts` — **deterministic, CI-safe large-scene perf/memory harness (F3, 2026-06-30)**. Builds a known ~20k-cell solid box slab via `../test-utils/synthetic-occupancy-grid.ts` and asserts exact triangle/vertex/byte budgets, watertightness, greedy ≤ per-face, and linear bytes-per-cell across a 4× scale-up. Wall-clock is logged (non-gating). Its `STRATEGIES` list is the side-by-side "compare at scale" bench every selectable mode (per-face, greedy, and — once they land — `'smooth'`/`'corner-fit'`) runs in.
 - A complementary skip-if-missing RecorderApp integration probe meshes a _real_ recorded room (plan §8 "Test data strategy"); the F3 harness is the deterministic CI gate that probe could not be.

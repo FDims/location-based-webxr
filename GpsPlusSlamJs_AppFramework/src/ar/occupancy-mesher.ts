@@ -30,6 +30,7 @@
  * @see occupancy-mesher.ts.md for detailed documentation
  */
 
+import type { Vector3 } from 'gps-plus-slam-js';
 import type { GridCell } from './bresenham3d';
 
 /**
@@ -57,19 +58,54 @@ export interface OccupancyMeshResult {
   readonly aabbs: readonly Aabb[];
 }
 
+/**
+ * Selectable mesher strategy (2026-06-30 occluder-tuning session). All modes are
+ * simultaneously usable — none replaces another — so they can be perf/quality
+ * compared and a consumer can pick per use-case:
+ * - `'per-face'` — blocky, watertight, exact cell volume; the strict baseline.
+ * - `'greedy'` — fewest triangles, blocky; coplanar-face merge for memory.
+ * - `'smooth'` — surface nets: one welded vertex per occupied surface cell at
+ *   its measured centroid (`getCellPoint`); continuous, closest to the measured
+ *   surface, typically fewest triangles, but an **open** sheet over thin
+ *   features (the floor) — not closed. Requires `getCellPoint` to hug the
+ *   surface (falls back to the cell centre = plain surface nets without it).
+ *
+ * F2b adds a fourth value `'corner-fit'` (surface-hugging *and* watertight); the
+ * union is designed to extend.
+ */
+export type MeshMode = 'per-face' | 'greedy' | 'smooth';
+
 /** Options for {@link meshOccupiedCells}. */
 export interface MeshOccupiedCellsOptions {
   /**
-   * Merge coplanar adjacent exposed faces into larger quads (Minecraft-style
-   * greedy meshing) to cut the triangle count, often 5–20×. The merged surface
-   * covers the **exact same** set of unit faces as the default per-face output
-   * (same occluded volume) — only the triangulation is coarser. Default false.
-   *
-   * Note: this merges the **render/occluder geometry** only; the `aabbs` list
-   * stays one box per cell (a 3-D greedy box merge for fewer colliders is a
-   * separate follow-on — see the plan §3E).
+   * @deprecated Prefer {@link MeshOccupiedCellsOptions.mode}. Back-compat shim:
+   * when `mode` is unset, `greedy:true` → `'greedy'`, otherwise `'per-face'`.
+   * Kept so existing callers/tests keep working unchanged.
    */
   readonly greedy?: boolean;
+  /**
+   * The mesher strategy. Takes precedence over {@link greedy}. Default resolves
+   * via the `greedy` shim above (so omitting both ⇒ `'per-face'`).
+   *
+   * Note: every mode still returns one `aabbs` box per cell (a 3-D greedy box
+   * merge for fewer colliders is a separate follow-on — see the plan §3E).
+   */
+  readonly mode?: MeshMode;
+  /**
+   * Per-cell measured surface point (the `OccupancyGrid.getCellPoint` bound
+   * method). Consumed by `mode: 'smooth'` to place each vertex at the cell's
+   * centroid instead of the lattice centre. Ignored by the cube modes. When
+   * absent under `'smooth'`, vertices fall back to the cell centre.
+   */
+  readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
+}
+
+/** Resolve the effective mesher mode from the (possibly legacy) options. */
+function resolveMode(options: MeshOccupiedCellsOptions | undefined): MeshMode {
+  if (options?.mode) {
+    return options.mode;
+  }
+  return options?.greedy ? 'greedy' : 'per-face';
 }
 
 /** A coordinate-axis index into a {@link GridCell} / position triple. */
@@ -228,8 +264,18 @@ export function meshOccupiedCells(
 
   const positions: number[] = [];
   const indices: number[] = [];
-  if (options?.greedy) {
+  const mode = resolveMode(options);
+  if (mode === 'greedy') {
     buildGreedy(occupied, uniqueCells, cellSizeM, positions, indices);
+  } else if (mode === 'smooth') {
+    buildSmooth(
+      occupied,
+      uniqueCells,
+      cellSizeM,
+      options?.getCellPoint,
+      positions,
+      indices
+    );
   } else {
     buildCulled(occupied, uniqueCells, cellSizeM, positions, indices);
   }
@@ -283,6 +329,122 @@ function buildCulled(
           cz + sz * half,
         ])
       );
+    }
+  }
+}
+
+/** A new cell shifted by `delta` along `axis` (the other two coords unchanged). */
+function stepAxis(cell: GridCell, axis: Axis, delta: number): GridCell {
+  const out: [number, number, number] = [cell[0], cell[1], cell[2]];
+  out[axis] += delta;
+  return out;
+}
+
+/** True iff EVERY cell in `group` has an empty neighbour on the `sign`·`axis` side. */
+function sideIsEmpty(
+  occupied: Set<string>,
+  group: readonly GridCell[],
+  axis: Axis,
+  sign: 1 | -1
+): boolean {
+  for (const c of group) {
+    const n = stepAxis(c, axis, sign);
+    if (occupied.has(cellKey(n[0], n[1], n[2]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 'smooth' mode — a minimal **Naive Surface Nets** pass that consumes the
+ * per-cell measured centroid the cube meshers discard.
+ *
+ * One **welded** vertex is placed per occupied cell that participates in the
+ * surface, AT `getCellPoint(cell)` (the measured centroid, within `cellSize/2`
+ * of the cell centre) — or the cell centre when no provider is given (plain
+ * surface nets). Welding (a cell→vertex-index map) makes the sheet **crack-free**
+ * by construction: adjacent quads reference the same vertex index, so there are
+ * no coincident-but-duplicated boundary vertices and no occlusion-leaking
+ * cracks.
+ *
+ * Faces are emitted as the **dual of coplanar surface patches**: for each axis
+ * `d` and each coplanar 2×2 group of occupied cells (sharing a lattice edge
+ * parallel to `d`), a single quad over the four cells' vertices is emitted iff
+ * one `d`-side of the group is exposed (all four `+d` OR all four `−d`
+ * neighbours empty). A one-cell-thick slab (the floor) is exposed on BOTH sides
+ * but still yields ONE quad per group — an **open** sheet hugging the measured
+ * surface, NOT a closed shell (so the cube mesher's even-edge-cover invariant is
+ * deliberately unsatisfiable here; crack-free welding, not closedness, is what
+ * prevents leaks). A thick solid yields a top sheet, a bottom sheet and side
+ * sheets — closed where the geometry is thick.
+ *
+ * SCOPE: this connects coplanar surface cells, so flat/convex exposed surfaces
+ * (the floor — the motivating case) are fully tiled. Bridging the **concave
+ * seam** where two perpendicular surfaces meet (wall-meets-floor) is left to the
+ * deferred full QEF/dual-contouring solver. The output occludes LESS volume than
+ * the cubes (vertices sit inside the union-of-cubes hull) but hugs the measured
+ * surface more accurately — by design.
+ */
+function buildSmooth(
+  occupied: Set<string>,
+  uniqueCells: readonly GridCell[],
+  cellSizeM: number,
+  getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined,
+  positions: number[],
+  indices: number[]
+): void {
+  // Lazy welded vertex per cell — only cells that actually bound an emitted quad
+  // get a vertex, so there are no orphan vertices.
+  const vertexIndex = new Map<string, number>();
+  const vertexFor = (cell: GridCell): number => {
+    const key = cellKey(cell[0], cell[1], cell[2]);
+    const existing = vertexIndex.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const cp = getCellPoint ? getCellPoint(cell) : null;
+    const px = cp ? cp[0] : cell[0] * cellSizeM;
+    const py = cp ? cp[1] : cell[1] * cellSizeM;
+    const pz = cp ? cp[2] : cell[2] * cellSizeM;
+    const idx = positions.length / 3;
+    positions.push(px, py, pz);
+    vertexIndex.set(key, idx);
+    return idx;
+  };
+
+  for (const { d, u, v } of GREEDY_DIRS) {
+    for (const c0 of uniqueCells) {
+      // Treat c0 as the (u−,v−) min corner of a coplanar 2×2 group in the ⊥d
+      // plane; each group is reached exactly once (from its min corner).
+      const c1 = stepAxis(c0, u, 1);
+      const c2 = stepAxis(c0, v, 1);
+      const c3 = stepAxis(c1, v, 1);
+      if (
+        !occupied.has(cellKey(c1[0], c1[1], c1[2])) ||
+        !occupied.has(cellKey(c2[0], c2[1], c2[2])) ||
+        !occupied.has(cellKey(c3[0], c3[1], c3[2]))
+      ) {
+        continue; // not a full 2×2 occupied group
+      }
+      const group = [c0, c1, c2, c3] as const;
+      const plusExposed = sideIsEmpty(occupied, group, d, 1);
+      const minusExposed = sideIsEmpty(occupied, group, d, -1);
+      if (!plusExposed && !minusExposed) {
+        continue; // interior patch (solid on both sides) — no surface here
+      }
+      const i0 = vertexFor(c0);
+      const i1 = vertexFor(c1);
+      const i2 = vertexFor(c2);
+      const i3 = vertexFor(c3);
+      // Square corner order c0→c1(+u)→c3(+u+v)→c2(+v). With eu×ev = ed, the
+      // (c0,c1,c3)+(c0,c3,c2) winding faces +d; reverse it when only −d is
+      // exposed so the outward normal points away from the solid.
+      if (plusExposed) {
+        indices.push(i0, i1, i3, i0, i3, i2);
+      } else {
+        indices.push(i0, i3, i1, i0, i2, i3);
+      }
     }
   }
 }

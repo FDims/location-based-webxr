@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import type { GridCell } from '../ar/bresenham3d';
+import type { Vector3 } from 'gps-plus-slam-js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis';
 import { OcclusionMesh } from './occlusion-mesh';
 
@@ -89,6 +90,34 @@ describe('OcclusionMesh', () => {
     expect(perFace.getAabbs()).toHaveLength(25);
     greedy.dispose();
     perFace.dispose();
+  });
+
+  it('mode "smooth" builds the surface-nets sheet and consumes getCellPoint (additive opt-in)', () => {
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 5; x++)
+      for (let y = 0; y < 5; y++) cells.push([x, y, 0]);
+    const occ = new Set(cells.map((c) => `${c[0]},${c[1]},${c[2]}`));
+    const getCellPoint = (c: GridCell): Vector3 | null =>
+      occ.has(`${c[0]},${c[1]},${c[2]}`)
+        ? [c[0] * 0.15 + 0.03, c[1] * 0.15 - 0.02, c[2] * 0.15 + 0.01]
+        : null;
+
+    const smooth = new OcclusionMesh(new THREE.Group(), { mode: 'smooth' });
+    smooth.update(cells, 0.15, getCellPoint);
+
+    // 5×5 single-thick sheet → (5-1)×(5-1) = 16 quads = 32 triangles (one open
+    // sheet, not the 12-tri greedy box of the same input).
+    expect(smooth.getTriangleCount()).toBe(32);
+    // AABB list is mode-independent — one box per cell.
+    expect(smooth.getAabbs()).toHaveLength(25);
+    // Distinct from the default (greedy) occluder output for the same input
+    // (centroid consumption itself is proven in occupancy-mesher.smooth.test).
+    const greedy = new OcclusionMesh(new THREE.Group());
+    greedy.update(cells, 0.15);
+    expect(smooth.getTriangleCount()).not.toBe(greedy.getTriangleCount());
+
+    smooth.dispose();
+    greedy.dispose();
   });
 
   it('clear() empties the geometry but keeps the node attached', () => {
