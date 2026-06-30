@@ -16,7 +16,7 @@
  * @see depth-unprojection.ts.md for detailed documentation
  */
 
-import { mat4, quat, vec3, vec4 } from 'gl-matrix';
+import { mat4 } from 'gl-matrix';
 import type { Matrix4, Quaternion, Vector3 } from 'gps-plus-slam-js';
 import type { DepthPoint } from '../types/ar-types';
 
@@ -64,24 +64,38 @@ export function createDepthUnprojector(
   if (!invProj) {
     return null; // singular matrix
   }
-  const cameraQuat = quat.fromValues(
-    cameraRot[0],
-    cameraRot[1],
-    cameraRot[2],
-    cameraRot[3]
-  );
-  const cameraPosVec = vec3.fromValues(
-    cameraPos[0],
-    cameraPos[1],
-    cameraPos[2]
-  );
 
-  // Reusable temporaries — sample-scoped, never escape `unproject` (the
-  // result is always copied into a fresh array before returning).
-  const ndc = vec4.create();
-  const view = vec4.create();
-  const viewPoint = vec3.create();
-  const world = vec3.create();
+  // Capture the inverse-projection columns and the camera pose as plain scalars
+  // ONCE, so the per-point hot path (called once per depth point — millions on a
+  // long replay) is pure arithmetic: no gl-matrix calls, no Float32Array
+  // indexing, and no temporary-vector allocations. (The math mirrors
+  // `vec4.transformMat4` → perspective divide → rescale → `vec3.transformQuat` +
+  // translate; keeping f64 intermediates makes it marginally more accurate than
+  // the previous Float32Array path, which is harmless — the grid quantizes the
+  // result to 15 cm cells.)
+  const m0 = invProj[0];
+  const m1 = invProj[1];
+  const m2 = invProj[2];
+  const m3 = invProj[3];
+  const m4 = invProj[4];
+  const m5 = invProj[5];
+  const m6 = invProj[6];
+  const m7 = invProj[7];
+  const m8 = invProj[8];
+  const m9 = invProj[9];
+  const m10 = invProj[10];
+  const m11 = invProj[11];
+  const m12 = invProj[12];
+  const m13 = invProj[13];
+  const m14 = invProj[14];
+  const m15 = invProj[15];
+  const qx = cameraRot[0];
+  const qy = cameraRot[1];
+  const qz = cameraRot[2];
+  const qw = cameraRot[3];
+  const px = cameraPos[0];
+  const py = cameraPos[1];
+  const pz = cameraPos[2];
 
   return {
     unproject(point: DepthPoint): Vector3 | null {
@@ -90,28 +104,51 @@ export function createDepthUnprojector(
       }
       const { screenX, screenY, depthM } = point;
 
-      // Inverse-project an arbitrary point on the pixel's ray (NDC z = -1),
-      // then rescale the resulting view-space point so its z-depth is depthM.
-      vec4.set(ndc, 2 * screenX - 1, 1 - 2 * screenY, -1, 1);
-      vec4.transformMat4(view, ndc, invProj);
-      if (view[3] === 0) {
+      // Inverse-project a point on the pixel's ray (NDC = [nx, ny, −1, 1]):
+      // view = invProj · ndc (column-major).
+      const nx = 2 * screenX - 1;
+      const ny = 1 - 2 * screenY;
+      const viewW = m3 * nx + m7 * ny - m11 + m15;
+      if (viewW === 0) {
         return null;
       }
-      const rayX = view[0] / view[3];
-      const rayY = view[1] / view[3];
-      const rayZ = view[2] / view[3];
+      const viewZ = m2 * nx + m6 * ny - m10 + m14;
+      const rayZ = viewZ / viewW;
       if (rayZ >= 0) {
-        return null; // ray does not point into the view frustum (-z forward)
+        return null; // ray does not point into the view frustum (−z forward)
       }
+      const viewX = m0 * nx + m4 * ny - m8 + m12;
+      const viewY = m1 * nx + m5 * ny - m9 + m13;
+      // Rescale so the view-space point's z-depth is depthM.
       const scale = -depthM / rayZ;
-      vec3.set(viewPoint, rayX * scale, rayY * scale, -depthM);
+      const vx = (viewX / viewW) * scale;
+      const vy = (viewY / viewW) * scale;
+      const vz = -depthM;
 
-      // Rigid transform by the camera pose: world = rot · viewPoint + pos
-      vec3.transformQuat(world, viewPoint, cameraQuat);
-      vec3.add(world, world, cameraPosVec);
+      // world = cameraQuat · viewPoint + cameraPos (vec3.transformQuat inlined:
+      // a + 2w·(q×a) + 2·(q×(q×a))).
+      let uvx = qy * vz - qz * vy;
+      let uvy = qz * vx - qx * vz;
+      let uvz = qx * vy - qy * vx;
+      const uuvx = qy * uvz - qz * uvy;
+      const uuvy = qz * uvx - qx * uvz;
+      const uuvz = qx * uvy - qy * uvx;
+      const w2 = qw * 2;
+      uvx *= w2;
+      uvy *= w2;
+      uvz *= w2;
+      const worldX = vx + uvx + uuvx * 2 + px;
+      const worldY = vy + uvy + uuvy * 2 + py;
+      const worldZ = vz + uvz + uuvz * 2 + pz;
 
-      const result: Vector3 = [world[0], world[1], world[2]];
-      return result.every((v) => Number.isFinite(v)) ? result : null;
+      if (
+        !Number.isFinite(worldX) ||
+        !Number.isFinite(worldY) ||
+        !Number.isFinite(worldZ)
+      ) {
+        return null;
+      }
+      return [worldX, worldY, worldZ];
     },
   };
 }

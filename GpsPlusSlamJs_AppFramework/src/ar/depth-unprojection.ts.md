@@ -20,6 +20,7 @@ Pure math helper that turns a persisted depth read (`screenX`, `screenY`, `depth
 3. **View space is the WebXR camera frame** (+x right, +y up, −z forward); the camera pose is applied as a rigid transform (`world = rot·view + pos`).
 4. **Defensive null returns** (never throws): missing/short matrix, singular matrix, `depthM ≤ 0` or non-finite, screen coordinates outside `[0, 1]` or non-finite, non-finite output. `null` for a missing matrix is the designed old-recordings path — callers skip the point.
 5. Works for any invertible projection matrix (generic `mat4.invert`), not only axis-aligned frustums.
+6. **Hot-path is hand-inlined (2026-06-30 perf):** `createDepthUnprojector` inverts the projection with gl-matrix **once**, then captures the inverse-projection columns + camera pose as scalars; `unproject` itself is pure arithmetic (the `vec4·M`, perspective divide, rescale, and `q·v + p` quaternion rotation, inlined — no gl-matrix calls, Float32Array temps, or `.every()` per point). ~636 → ~282 ns/point. Keeping f64 intermediates makes it marginally **more** accurate than the previous Float32Array path; the grid quantizes to 15 cm cells so this is immaterial. Benchmarked by `depth-unprojection.bench.test.ts` (opt-in `BENCH=1`).
 
 ## Examples
 
