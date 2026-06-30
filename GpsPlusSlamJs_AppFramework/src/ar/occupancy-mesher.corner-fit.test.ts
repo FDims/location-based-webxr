@@ -2,15 +2,22 @@
  * Occupancy mesher — 'corner-fit' deformed-corner cube mode (F2b, 2026-06-30).
  *
  * The maintainer's "improve the cube approach" path: keep the per-face cube
- * mesher's EXACT face topology, but move each shared lattice corner to the mean
- * of getCellPoint() over the occupied cells touching it. Because adjacent cubes
- * reference the SAME displaced corner (a pure function of the corner's
- * half-lattice key), seams stay coincident — so the surface hugs the measured
- * points yet stays **watertight** (the property surface nets gives up).
+ * mesher's EXACT face topology, but nudge each shared lattice corner by the MEAN
+ * sub-cell offset (getCellPoint() − cellCentre) of the occupied cells touching
+ * it. Because adjacent cubes reference the SAME displaced corner (a pure function
+ * of the corner's half-lattice key), seams stay coincident — so the surface hugs
+ * the measured points yet stays **watertight** (the property surface nets gives
+ * up).
  *
- * Invariants driven here (per the F2b spec):
- *  1. hugs measured points — a corner equals the mean of its contributing
- *     getCellPoint()s, NOT the geometric lattice corner;
+ * 2026-06-30 fix: the corner is displaced by the OFFSET, not onto the absolute
+ * centroid mean. The absolute-mean version collapsed thin features (a one-cell
+ * floor's top and bottom corners average the same cells → coincide → a flat sheet
+ * indistinguishable from 'smooth' — the reported device bug); the offset keeps
+ * the cube's thickness so 'corner-fit' stays a distinct, cube-like option.
+ *
+ * Invariants driven here:
+ *  1. hugs the surface by the sub-cell offset (corner = geometric + mean offset,
+ *     ≠ geometric corner, ≠ absolute centroid) and does NOT collapse a thin floor;
  *  2. watertight — even-edge-cover (closed-surface Z/2) holds, the property
  *     'smooth' is exempt from (here checked on the WELDED index buffer, since
  *     displaced corners are off the half-lattice the cube test quantizes to);
@@ -85,26 +92,74 @@ function hasVertexNear(positions: Float32Array, target: Vector3): boolean {
 }
 
 describe("occupancy mesher — 'corner-fit' deformed-corner cube mode", () => {
-  it('hugs measured points: corners are centroid-means, not geometric corners', () => {
-    // A 2×1×1 domino: cells (0,0,0) and (1,0,0). The x=0.5 corners are shared by
-    // BOTH cells and stay on the surface (the +Y/+Z faces are exposed), so the
-    // shared-corner mean is actually emitted (unlike a solid box's interior
-    // centre corner, which no exposed face references).
+  it('hugs the surface by the sub-cell OFFSET, keeping cube structure (not the absolute centroid)', () => {
+    // 2026-06-30 fix: corner-fit displaces each shared corner by the MEAN
+    // sub-cell offset (getCellPoint − cellCentre) of the cells touching it, NOT
+    // onto the absolute centroid. With a uniform OFFSET on every cell, every
+    // corner is its geometric position + OFFSET — a rigidly surface-shifted cube
+    // that still hugs the measured surface but keeps its full shape. (Displacing
+    // onto the absolute centroid collapsed thin features — see the next test.)
     const cells = solidBox(2, 1, 1);
     const { positions } = meshOccupiedCells(cells, CELL, {
       mode: 'corner-fit',
       getCellPoint: centroidProvider(cells),
     });
-    // Outer corner of cell (0,0,0), key (−1,−1,−1): touched by ONE cell ⇒
-    // equals that cell's centroid = [0.03, −0.02, 0.018], NOT the geometric
-    // corner [−half, −half, −half].
-    expect(hasVertexNear(positions, [0.03, -0.02, 0.018])).toBe(true);
-    expect(hasVertexNear(positions, [-half, -half, -half])).toBe(false);
-    // Shared corner key (1,1,1): touched by cells (0,0,0) and (1,0,0) ⇒ mean of
-    // their centroids = [(0.03+0.18)/2, −0.02, 0.018] = [0.105, −0.02, 0.018],
-    // NOT the geometric corner [half, half, half].
-    expect(hasVertexNear(positions, [0.105, -0.02, 0.018])).toBe(true);
-    expect(hasVertexNear(positions, [half, half, half])).toBe(false);
+    // Outer corner of cell (0,0,0), key (−1,−1,−1): geometric corner + OFFSET.
+    const geomOuter: Vector3 = [-half, -half, -half];
+    expect(
+      hasVertexNear(positions, [
+        geomOuter[0] + OFFSET[0],
+        geomOuter[1] + OFFSET[1],
+        geomOuter[2] + OFFSET[2],
+      ])
+    ).toBe(true);
+    // Displaced, so NOT at the plain geometric corner…
+    expect(hasVertexNear(positions, geomOuter)).toBe(false);
+    // …and NOT collapsed onto the cell centroid (the old, buggy behaviour).
+    expect(hasVertexNear(positions, [0.03, -0.02, 0.018])).toBe(false);
+  });
+
+  it('does NOT collapse a one-cell-thick floor (top and bottom corners stay ~a cube apart)', () => {
+    // The reported device bug: displacing corners onto the absolute centroid made
+    // a 1-cell-thick floor's top and bottom corners average the SAME cells →
+    // coincide → a flat sheet indistinguishable from surface nets. Offset-based
+    // displacement keeps the full cell thickness, so corner-fit stays a distinct
+    // (cube-like, watertight) option from 'smooth'.
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 4; x++)
+      for (let z = 0; z < 4; z++) cells.push([x, 0, z]);
+    const { positions } = meshOccupiedCells(cells, CELL, {
+      mode: 'corner-fit',
+      getCellPoint: centroidProvider(cells),
+    });
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let v = 1; v < positions.length; v += 3) {
+      minY = Math.min(minY, positions[v]!);
+      maxY = Math.max(maxY, positions[v]!);
+    }
+    // ~full cube thickness preserved (≈ cellSize), NOT collapsed to ~0.
+    expect(maxY - minY).toBeGreaterThan(CELL * 0.9);
+  });
+
+  it('produces a different mesh than surface nets for the same thin floor', () => {
+    // Directly pins the user's complaint: the two surface-hugging modes must not
+    // resolve to the same geometry on a floor.
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 4; x++)
+      for (let z = 0; z < 4; z++) cells.push([x, 0, z]);
+    const getCellPoint = centroidProvider(cells);
+    const cornerFit = meshOccupiedCells(cells, CELL, {
+      mode: 'corner-fit',
+      getCellPoint,
+    });
+    const smooth = meshOccupiedCells(cells, CELL, {
+      mode: 'smooth',
+      getCellPoint,
+    });
+    // Corner-fit keeps the per-face cube topology (top+bottom+sides) → many more
+    // triangles than the single surface-nets sheet.
+    expect(cornerFit.indices.length).toBeGreaterThan(smooth.indices.length);
   });
 
   it('is watertight (even-edge-cover) — the property smooth gives up', () => {

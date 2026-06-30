@@ -71,10 +71,11 @@ export interface OccupancyMeshResult {
  *   surface (falls back to the cell centre = plain surface nets without it).
  *
  * - `'corner-fit'` — the per-face cube mesher with each shared lattice corner
- *   moved to the mean of `getCellPoint` over the occupied cells touching it.
- *   Surface-hugging like `'smooth'` but **watertight** (identical face topology
- *   to `'per-face'`), at the per-face triangle cost. The "improve the cubes"
- *   path; needs `getCellPoint` (falls back to plain cubes without it).
+ *   nudged by the mean sub-cell offset (`getCellPoint − cellCentre`) of the cells
+ *   touching it. Surface-hugging like `'smooth'` but **watertight** (identical
+ *   face topology to `'per-face'`) and cube-thickness-preserving, at the per-face
+ *   triangle cost. The "improve the cubes" path; needs `getCellPoint` (falls back
+ *   to plain cubes without it).
  */
 export type MeshMode = 'per-face' | 'greedy' | 'smooth' | 'corner-fit';
 
@@ -467,13 +468,20 @@ function buildSmooth(
  *
  * Keeps {@link buildCulled}'s exact face topology (same exposed faces), but each
  * lattice corner — identified by its integer half-lattice key `(2x±1, 2y±1,
- * 2z±1)` so every cell sharing it produces the SAME key — is moved to the
- * **mean of `getCellPoint()` over the occupied cells touching it**. Vertices are
- * welded by corner key, so adjacent faces reference the identical displaced
- * position: seams stay coincident ⇒ the surface deforms to hug the measured
- * points yet stays **watertight** (the even-edge-cover invariant `'smooth'`
- * gives up). Without a `getCellPoint` provider every corner falls back to the
- * geometric corner `key · cellSize/2`, i.e. plain cubes.
+ * 2z±1)` so every cell sharing it produces the SAME key — is **nudged by the mean
+ * sub-cell offset** (`getCellPoint() − cellCentre`) of the occupied cells
+ * touching it. Vertices are welded by corner key, so adjacent faces reference the
+ * identical displaced position: seams stay coincident ⇒ the surface deforms to
+ * hug the measured points yet stays **watertight** (the even-edge-cover invariant
+ * `'smooth'` gives up). Without a `getCellPoint` provider every corner falls back
+ * to the geometric corner `key · cellSize/2`, i.e. plain cubes.
+ *
+ * Why the **offset**, not the absolute centroid mean (2026-06-30 fix): moving a
+ * corner onto the absolute mean collapsed thin features — a one-cell-thick floor's
+ * top and bottom corners average the SAME cells, so they coincided into a flat
+ * sheet visually indistinguishable from `'smooth'`. Adding the offset to each
+ * corner's OWN geometric position keeps the cube's thickness, so `'corner-fit'`
+ * stays a distinct, cube-like, watertight option.
  *
  * Tradeoffs vs `'smooth'`: watertight and exact-cube topology, but corners are
  * 8-way averages (so geometry only *approaches* the measured points, never lands
@@ -489,7 +497,13 @@ function buildCornerFit(
   indices: number[]
 ): void {
   const half = cellSizeM / 2;
-  // Pass 1: accumulate the centroid mean per shared corner (half-lattice key).
+  // Pass 1: accumulate the mean **sub-cell offset** (getCellPoint − cellCentre)
+  // per shared corner (half-lattice key). Displacing by the offset — NOT onto the
+  // absolute centroid — is what keeps a thin (one-cell) feature from collapsing:
+  // a 1-cell floor's top and bottom corners average the same cells, so the
+  // absolute-centroid mean made them coincide (a flat sheet indistinguishable
+  // from surface nets). Adding the offset to each corner's own geometric position
+  // preserves the cube's thickness while still hugging the measured surface.
   const cornerSum = new Map<
     string,
     { x: number; y: number; z: number; n: number }
@@ -499,6 +513,10 @@ function buildCornerFit(
     if (!cp) {
       continue;
     }
+    // Offset of the measured centroid from this cell's geometric centre.
+    const ox = cp[0] - cell[0] * cellSizeM;
+    const oy = cp[1] - cell[1] * cellSizeM;
+    const oz = cp[2] - cell[2] * cellSizeM;
     for (const sx of [-1, 1] as const) {
       for (const sy of [-1, 1] as const) {
         for (const sz of [-1, 1] as const) {
@@ -512,16 +530,17 @@ function buildCornerFit(
             acc = { x: 0, y: 0, z: 0, n: 0 };
             cornerSum.set(key, acc);
           }
-          acc.x += cp[0];
-          acc.y += cp[1];
-          acc.z += cp[2];
+          acc.x += ox;
+          acc.y += oy;
+          acc.z += oz;
           acc.n += 1;
         }
       }
     }
   }
 
-  // Welded vertex per corner key (lazy) — displaced mean, or geometric fallback.
+  // Welded vertex per corner key (lazy) — geometric corner + mean offset, or the
+  // bare geometric corner when no cell contributed an offset (plain cubes).
   const vertexIndex = new Map<string, number>();
   const cornerVertex = (kx: number, ky: number, kz: number): number => {
     const key = cellKey(kx, ky, kz);
@@ -530,9 +549,10 @@ function buildCornerFit(
       return existing;
     }
     const acc = cornerSum.get(key);
-    const px = acc ? acc.x / acc.n : kx * half; // geometric corner = key · half
-    const py = acc ? acc.y / acc.n : ky * half;
-    const pz = acc ? acc.z / acc.n : kz * half;
+    // geometric corner = key · half; nudge it by the mean sub-cell offset.
+    const px = kx * half + (acc ? acc.x / acc.n : 0);
+    const py = ky * half + (acc ? acc.y / acc.n : 0);
+    const pz = kz * half + (acc ? acc.z / acc.n : 0);
     const idx = positions.length / 3;
     positions.push(px, py, pz);
     vertexIndex.set(key, idx);
