@@ -203,11 +203,12 @@ describe('occupancy mesher — deterministic large-scene perf/memory harness', (
       // Greedy never adds triangles and stays non-empty.
       expect(triangleCount(greedy)).toBeGreaterThan(0);
       expect(triangleCount(greedy)).toBeLessThanOrEqual(triangleCount(perFace));
-      // Smooth (surface nets) also stays within the per-face triangle budget at
-      // scale (F2 step 4) and produces a non-empty sheet over this flat slab.
+      // Smooth (dual-contouring surface nets) covers the full boundary — one
+      // quad per crossing == one per exposed cube face — so at scale its triangle
+      // count equals per-face, but with a much smaller (welded) vertex buffer.
       const smooth = bench.find((b) => b.name === 'smooth')!.mesh;
-      expect(triangleCount(smooth)).toBeGreaterThan(0);
-      expect(triangleCount(smooth)).toBeLessThanOrEqual(triangleCount(perFace));
+      expect(triangleCount(smooth)).toBe(triangleCount(perFace));
+      expect(vertexCount(smooth)).toBeLessThan(vertexCount(perFace));
       // Corner-fit keeps the per-face topology (F2b "same face set") so its
       // triangle count equals per-face exactly — only the vertices are displaced
       // (and welded, so its vertex buffer is smaller).

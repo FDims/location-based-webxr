@@ -142,9 +142,12 @@ describe("occupancy mesher — 'corner-fit' deformed-corner cube mode", () => {
     expect(maxY - minY).toBeGreaterThan(CELL * 0.9);
   });
 
-  it('produces a different mesh than surface nets for the same thin floor', () => {
-    // Directly pins the user's complaint: the two surface-hugging modes must not
-    // resolve to the same geometry on a floor.
+  it('keeps cube thickness on a thin floor where surface nets collapses', () => {
+    // Both modes now fully cover the boundary (same triangle count), so the
+    // distinction is GEOMETRY: corner-fit retains the cube's thickness, while
+    // dual-contouring surface nets collapses a one-cell floor to a single sheet
+    // (its top and bottom dual vertices average the same cells). This is what
+    // makes the two modes visibly different on a floor.
     const cells: GridCell[] = [];
     for (let x = 0; x < 4; x++)
       for (let z = 0; z < 4; z++) cells.push([x, 0, z]);
@@ -157,12 +160,20 @@ describe("occupancy mesher — 'corner-fit' deformed-corner cube mode", () => {
       mode: 'smooth',
       getCellPoint,
     });
-    // Corner-fit keeps the per-face cube topology (top+bottom+sides) → many more
-    // triangles than the single surface-nets sheet.
-    expect(cornerFit.indices.length).toBeGreaterThan(smooth.indices.length);
+    const yExtent = (m: { positions: Float32Array }): number => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let v = 1; v < m.positions.length; v += 3) {
+        lo = Math.min(lo, m.positions[v]!);
+        hi = Math.max(hi, m.positions[v]!);
+      }
+      return hi - lo;
+    };
+    expect(yExtent(cornerFit)).toBeGreaterThan(CELL * 0.9); // ~full cell thick
+    expect(yExtent(smooth)).toBeLessThan(CELL * 0.1); // collapsed flat sheet
   });
 
-  it('is watertight (even-edge-cover) — the property smooth gives up', () => {
+  it('is watertight (even-edge-cover) on a closed region', () => {
     const cells = solidBox(2, 2, 2);
     const { indices } = meshOccupiedCells(cells, CELL, {
       mode: 'corner-fit',

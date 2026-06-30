@@ -105,9 +105,11 @@ describe('OcclusionMesh', () => {
     const smooth = new OcclusionMesh(new THREE.Group(), { mode: 'smooth' });
     smooth.update(cells, 0.15, getCellPoint);
 
-    // 5×5 single-thick sheet → (5-1)×(5-1) = 16 quads = 32 triangles (one open
-    // sheet, not the 12-tri greedy box of the same input).
-    expect(smooth.getTriangleCount()).toBe(32);
+    // 5×5 single-thick sheet, dual-contouring surface nets: one quad per
+    // occupied↔empty crossing (top 25 + bottom 25 + 20 perimeter sides) = 70
+    // quads = 140 triangles — full coverage, like the cubes, not the 12-tri
+    // greedy box of the same input.
+    expect(smooth.getTriangleCount()).toBe(140);
     // AABB list is mode-independent — one box per cell.
     expect(smooth.getAabbs()).toHaveLength(25);
     // Distinct from the default (greedy) occluder output for the same input

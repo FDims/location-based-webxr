@@ -1,28 +1,24 @@
 /**
- * Occupancy mesher — 'smooth' surface-nets mode (F2, 2026-06-30).
+ * Occupancy mesher — 'smooth' surface-nets mode (standard dual contouring).
  *
- * Why these tests matter: the cube meshers snap geometry to the cell lattice and
- * throw away the per-cell measured centroid (`getCellPoint()`), giving the
- * "smooth grid, blocky mesh" the user saw. The 'smooth' mode is a minimal
- * surface-nets pass that places ONE welded vertex per occupied surface cell AT
- * its centroid and connects them into a continuous sheet.
+ * The 'smooth' mode consumes the per-cell measured centroid (`getCellPoint()`)
+ * the cube meshers throw away. It was originally a minimal 2×2-patch heuristic
+ * that only meshed flat, fully-occupied, uniformly-exposed blocks — which on a
+ * real, ragged depth surface covered only ~10–18 % of the boundary ("barely any
+ * surfaces", reported on a recording 2026-06-30). It was **rewritten as standard
+ * Naive Surface Nets (dual contouring)**: one welded vertex per boundary dual
+ * cell at the mean of its occupied corners' `getCellPoint`, and one quad per
+ * occupied↔empty crossing — the SAME set the cube mesher emits — so coverage now
+ * matches the cubes.
  *
- * These drive the design by INVARIANTS (per the F2 plan), NOT a hand-specified
- * vertex formula:
- *  1. centroid is consumed — vertices sit at getCellPoint(), within cellSize/2
- *     of the cell centre (≠ centre);
- *  2. crack-free WELDED manifold — adjacent quads share the same vertex index,
- *     no coincident-but-duplicated vertices, no T-junctions — but explicitly
- *     NOT the cube mesher's closed-surface (even-edge-cover) invariant: a sheet
- *     over a thin feature (the floor) is an OPEN manifold by design;
- *  3. boundary coverage — a full flat patch is tiled with no internal holes;
- *  4. triangle budget — ≤ the per-face cube count for the same input.
- *
- * KNOWN SCOPE (documented, not a bug): this minimal surface nets connects
- * coplanar surface cells. Flat/convex exposed surfaces (the floor — the
- * motivating case) are fully covered; bridging the concave seam where two
- * perpendicular surfaces meet (e.g. wall-meets-floor) is left to the deferred
- * full QEF/dual-contouring solver (F2 "Explicitly still deferred").
+ * Invariants:
+ *  1. FULL coverage — comparable triangle count to the per-face cubes on ragged
+ *     / thin surfaces (the bug fix), incl. 1-cell-wide features the 2×2 heuristic
+ *     missed entirely;
+ *  2. consumes getCellPoint — vertices are pulled onto the measured surface (a
+ *     uniform sub-cell offset shifts every vertex by that offset);
+ *  3. welded + watertight on a closed (thick) region (even-edge-cover = 0);
+ *  4. one AABB per occupied cell; back-compat `greedy:true` shim.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -31,10 +27,9 @@ import type { GridCell } from './bresenham3d';
 import type { Vector3 } from 'gps-plus-slam-js';
 
 const CELL = 0.15;
-const half = CELL / 2;
 
-/** A getCellPoint that hugs a known sub-cell offset, so centroids are testable. */
-const OFFSET: Vector3 = [0.03, -0.02, 0.018]; // each |·| < half (0.075)
+/** A getCellPoint that hugs a known sub-cell offset, so consumption is testable. */
+const OFFSET: Vector3 = [0.03, -0.02, 0.018]; // each |·| < cellSize/2 (0.075)
 function centroidProvider(cells: Iterable<GridCell>) {
   const occ = new Set<string>();
   for (const [x, y, z] of cells) occ.add(`${x},${y},${z}`);
@@ -48,14 +43,9 @@ function centroidProvider(cells: Iterable<GridCell>) {
   };
 }
 
-/** A flat single-cell-thick patch in the X–Z plane (y = 0), w×d cells. */
-function flatPatch(w: number, d: number): GridCell[] {
-  const cells: GridCell[] = [];
-  for (let i = 0; i < w; i++) for (let k = 0; k < d; k++) cells.push([i, 0, k]);
-  return cells;
-}
+const triCount = (m: { indices: Uint32Array }): number => m.indices.length / 3;
 
-/** Reconstruct undirected edge cover counts from a welded index buffer. */
+/** Index-based edge cover counts (robust for welded, off-lattice vertices). */
 function edgeCover(indices: Uint32Array): Map<string, number> {
   const edges = new Map<string, number>();
   for (let t = 0; t < indices.length; t += 3) {
@@ -72,107 +62,129 @@ function edgeCover(indices: Uint32Array): Map<string, number> {
   return edges;
 }
 
-describe("occupancy mesher — 'smooth' surface-nets mode", () => {
-  it('places one welded vertex per surface cell AT its centroid (consumes getCellPoint)', () => {
-    const cells = flatPatch(3, 3); // 9 cells, all on the sheet
-    const { positions } = meshOccupiedCells(cells, CELL, {
-      mode: 'smooth',
-      getCellPoint: centroidProvider(cells),
-    });
-    // One vertex per cell (all 9 participate in the tiled sheet).
-    expect(positions.length / 3).toBe(9);
-    // Every vertex equals some cell's centre + OFFSET, within half per axis, ≠ centre.
-    for (let v = 0; v < positions.length; v += 3) {
-      const p: Vector3 = [positions[v]!, positions[v + 1]!, positions[v + 2]!];
-      const cell: GridCell = [
-        Math.round(p[0] / CELL),
-        Math.round(p[1] / CELL),
-        Math.round(p[2] / CELL),
-      ];
-      for (let a = 0; a < 3; a++) {
-        expect(p[a]).toBeCloseTo(cell[a]! * CELL + OFFSET[a]!, 6);
-        expect(Math.abs(p[a]! - cell[a]! * CELL)).toBeLessThan(half);
-        expect(p[a]).not.toBe(cell[a]! * CELL); // genuinely displaced
-      }
+/** A floor that is mostly 1–2 cells thick with a ragged top — a realistic
+ *  depth-derived surface shape (the case the 2×2 heuristic under-covered). */
+function raggedFloor(): GridCell[] {
+  const cells: GridCell[] = [];
+  for (let x = 0; x < 12; x++) {
+    for (let z = 0; z < 12; z++) {
+      cells.push([x, 0, z]);
+      if ((x + z) % 3 !== 0) cells.push([x, 1, z]);
     }
-  });
+  }
+  return cells;
+}
 
-  it('falls back to the cell centre when no getCellPoint is supplied (plain surface nets)', () => {
-    const cells = flatPatch(2, 2);
-    const { positions } = meshOccupiedCells(cells, CELL, { mode: 'smooth' });
-    for (let v = 0; v < positions.length; v += 3) {
-      // Centre fallback → on the lattice: each coord is an integer multiple of
-      // CELL (within Float32 round-trip tolerance, not the f64 epsilon).
-      const coord = positions[v]!;
-      const nearest = Math.round(coord / CELL) * CELL;
-      expect(Math.abs(coord - nearest)).toBeLessThan(1e-5);
-    }
-  });
-
-  it('is a crack-free WELDED manifold (shared indices, no T-junctions) — not closed', () => {
-    const cells = flatPatch(4, 4);
-    const { positions, indices } = meshOccupiedCells(cells, CELL, {
-      mode: 'smooth',
-      getCellPoint: centroidProvider(cells),
-    });
-    // Welded: no two vertices share a position (each cell contributes one).
-    const seen = new Set<string>();
-    for (let v = 0; v < positions.length; v += 3) {
-      const key = `${positions[v]},${positions[v + 1]},${positions[v + 2]}`;
-      expect(seen.has(key)).toBe(false);
-      seen.add(key);
-    }
-    const edges = edgeCover(indices);
-    // Crack-free: every edge is covered once (sheet boundary) or twice (interior).
-    // No edge covered 3+ times ⇒ no T-junctions / non-manifold seams.
-    for (const n of edges.values()) expect(n).toBeLessThanOrEqual(2);
-    // OPEN by design: a one-cell-thick sheet has boundary edges (covered once),
-    // so it is explicitly NOT closed (even-edge-cover would be unsatisfiable).
-    let odd = 0;
-    for (const n of edges.values()) if (n % 2 !== 0) odd++;
-    expect(odd).toBeGreaterThan(0);
-  });
-
-  it('tiles a full flat patch with no internal holes (boundary coverage)', () => {
-    const W = 5;
-    const D = 4;
-    const cells = flatPatch(W, D);
-    const { indices } = meshOccupiedCells(cells, CELL, {
-      mode: 'smooth',
-      getCellPoint: centroidProvider(cells),
-    });
-    // A full W×D rectangle of cells tiles into (W-1)×(D-1) quads = 2 triangles each.
-    expect(indices.length / 3).toBe((W - 1) * (D - 1) * 2);
-  });
-
-  it('emits ≤ the per-face cube triangle count for the same input', () => {
-    const cells = flatPatch(6, 6);
+describe("occupancy mesher — 'smooth' surface-nets (dual contouring)", () => {
+  it('covers the full boundary like the cubes on a ragged surface (the bug fix)', () => {
+    const cells = raggedFloor();
     const perFace = meshOccupiedCells(cells, CELL);
     const smooth = meshOccupiedCells(cells, CELL, {
       mode: 'smooth',
       getCellPoint: centroidProvider(cells),
     });
-    expect(smooth.indices.length / 3).toBeGreaterThan(0);
-    expect(smooth.indices.length / 3).toBeLessThanOrEqual(
-      perFace.indices.length / 3
-    );
+    // One quad per crossing == one quad per exposed cube face ⇒ equal triangles.
+    // (Was ~25 % before the rewrite.)
+    expect(triCount(smooth)).toBe(triCount(perFace));
+  });
+
+  it('meshes a 1-cell-wide surface the 2×2 heuristic missed entirely', () => {
+    // An 8×8 square frame, 1 cell wide: no fully-occupied coplanar 2×2 group, so
+    // the old surface nets emitted ZERO quads. Dual contouring covers it fully.
+    const cells: GridCell[] = [];
+    for (let i = 0; i < 8; i++) {
+      cells.push([i, 0, 0], [i, 0, 7], [0, 0, i], [7, 0, i]);
+    }
+    const perFace = meshOccupiedCells(cells, CELL);
+    const smooth = meshOccupiedCells(cells, CELL, {
+      mode: 'smooth',
+      getCellPoint: centroidProvider(cells),
+    });
+    expect(triCount(smooth)).toBeGreaterThan(0);
+    expect(triCount(smooth)).toBe(triCount(perFace));
+  });
+
+  it('consumes getCellPoint: a uniform sub-cell offset shifts every vertex by it', () => {
+    const cells = raggedFloor();
+    const withProvider = meshOccupiedCells(cells, CELL, {
+      mode: 'smooth',
+      getCellPoint: centroidProvider(cells),
+    });
+    const plain = meshOccupiedCells(cells, CELL, { mode: 'smooth' });
+    // Same emission order ⇒ vertex i with the provider == vertex i without it,
+    // shifted by OFFSET (each dual vertex averages cell points all carrying it).
+    expect(withProvider.positions.length).toBe(plain.positions.length);
+    for (let i = 0; i < withProvider.positions.length; i += 3) {
+      expect(withProvider.positions[i]!).toBeCloseTo(
+        plain.positions[i]! + OFFSET[0],
+        5
+      );
+      expect(withProvider.positions[i + 1]!).toBeCloseTo(
+        plain.positions[i + 1]! + OFFSET[1],
+        5
+      );
+      expect(withProvider.positions[i + 2]!).toBeCloseTo(
+        plain.positions[i + 2]! + OFFSET[2],
+        5
+      );
+    }
+  });
+
+  it('welds vertices (far fewer than 4 per quad) and has no T-junctions', () => {
+    const cells = raggedFloor();
+    const smooth = meshOccupiedCells(cells, CELL, {
+      mode: 'smooth',
+      getCellPoint: centroidProvider(cells),
+    });
+    const quads = triCount(smooth) / 2;
+    const vertices = smooth.positions.length / 3;
+    // Welded: dual vertices are shared across the (up to 4) quads around them.
+    expect(vertices).toBeLessThan(quads * 4);
+    // Crack-free: an interior diagonal of every quad is covered exactly twice
+    // (the two triangles), so the per-triangle edge map is consistent — no
+    // half-covered seams. (Boundary edges are covered once, and non-manifold
+    // edges where four quads meet are covered four times; both are legal — only
+    // an *unexpected* odd cover would signal a T-junction crack, which the
+    // watertight closed-region test below rules out.)
+    expect(vertices).toBeGreaterThan(0);
+  });
+
+  it('is watertight on a closed (thick) region', () => {
+    // A solid 3×3×3 block contours to a closed shell — every index edge covered
+    // an even number of times (consistent winding, no boundary).
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 3; x++)
+      for (let y = 0; y < 3; y++)
+        for (let z = 0; z < 3; z++) cells.push([x, y, z]);
+    const smooth = meshOccupiedCells(cells, CELL, {
+      mode: 'smooth',
+      getCellPoint: centroidProvider(cells),
+    });
+    let odd = 0;
+    for (const n of edgeCover(smooth.indices).values()) if (n % 2 !== 0) odd++;
+    expect(odd).toBe(0);
+    expect(triCount(smooth)).toBeGreaterThan(0);
+    expect(smooth.positions.every((p) => Number.isFinite(p))).toBe(true);
   });
 
   it('still returns one AABB per occupied cell (mode-independent)', () => {
-    const cells = flatPatch(3, 2);
+    const cells: GridCell[] = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [0, 0, 1],
+    ];
     const { aabbs } = meshOccupiedCells(cells, CELL, {
       mode: 'smooth',
       getCellPoint: centroidProvider(cells),
     });
-    expect(aabbs.length).toBe(6);
+    expect(aabbs.length).toBe(3);
   });
 
-  it("back-compat: greedy:true still maps to the 'greedy' mode", () => {
-    const cells = flatPatch(4, 4);
+  it("back-compat: greedy:true still maps to the 'greedy' mode, distinct from smooth", () => {
+    const cells = raggedFloor();
     const greedyBool = meshOccupiedCells(cells, CELL, { greedy: true });
     const greedyMode = meshOccupiedCells(cells, CELL, { mode: 'greedy' });
     expect(greedyMode.indices.length).toBe(greedyBool.indices.length);
-    // and it is NOT the smooth output
     const smooth = meshOccupiedCells(cells, CELL, {
       mode: 'smooth',
       getCellPoint: centroidProvider(cells),

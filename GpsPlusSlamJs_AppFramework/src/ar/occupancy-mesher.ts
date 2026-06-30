@@ -64,11 +64,12 @@ export interface OccupancyMeshResult {
  * compared and a consumer can pick per use-case:
  * - `'per-face'` — blocky, watertight, exact cell volume; the strict baseline.
  * - `'greedy'` — fewest triangles, blocky; coplanar-face merge for memory.
- * - `'smooth'` — surface nets: one welded vertex per occupied surface cell at
- *   its measured centroid (`getCellPoint`); continuous, closest to the measured
- *   surface, typically fewest triangles, but an **open** sheet over thin
- *   features (the floor) — not closed. Requires `getCellPoint` to hug the
- *   surface (falls back to the cell centre = plain surface nets without it).
+ * - `'smooth'` — standard surface nets (dual contouring): one welded vertex per
+ *   boundary dual cell at the mean of its occupied corners' `getCellPoint`, with
+ *   one quad per occupied↔empty crossing — so coverage matches the cubes.
+ *   Continuous, hugs the measured surface, watertight for closed regions; a thin
+ *   feature (the floor) collapses to a single smooth sheet (the smoothest mode).
+ *   Uses `getCellPoint` to hug the surface (falls back to geometric centres).
  *
  * - `'corner-fit'` — the per-face cube mesher with each shared lattice corner
  *   nudged by the mean sub-cell offset (`getCellPoint − cellCentre`) of the cells
@@ -97,10 +98,10 @@ export interface MeshOccupiedCellsOptions {
   readonly mode?: MeshMode;
   /**
    * Per-cell measured surface point (the `OccupancyGrid.getCellPoint` bound
-   * method). Consumed by the surface-hugging modes `'smooth'` (vertex AT the
-   * centroid) and `'corner-fit'` (corners at the centroid mean) instead of the
-   * lattice centre. Ignored by `'per-face'`/`'greedy'`. When absent, `'smooth'`
-   * falls back to the cell centre and `'corner-fit'` to the geometric corner.
+   * method). Consumed by the surface-hugging modes `'smooth'` (dual vertex at the
+   * mean of its occupied corners' centroids) and `'corner-fit'` (corners nudged
+   * by the mean sub-cell offset) instead of the lattice centre. Ignored by
+   * `'per-face'`/`'greedy'`. When absent, both fall back to geometric positions.
    */
   readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
 }
@@ -347,58 +348,31 @@ function buildCulled(
   }
 }
 
-/** A new cell shifted by `delta` along `axis` (the other two coords unchanged). */
-function stepAxis(cell: GridCell, axis: Axis, delta: number): GridCell {
-  const out: [number, number, number] = [cell[0], cell[1], cell[2]];
-  out[axis] += delta;
-  return out;
-}
-
-/** True iff EVERY cell in `group` has an empty neighbour on the `sign`·`axis` side. */
-function sideIsEmpty(
-  occupied: Set<string>,
-  group: readonly GridCell[],
-  axis: Axis,
-  sign: 1 | -1
-): boolean {
-  for (const c of group) {
-    const n = stepAxis(c, axis, sign);
-    if (occupied.has(cellKey(n[0], n[1], n[2]))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 /**
- * 'smooth' mode — a minimal **Naive Surface Nets** pass that consumes the
- * per-cell measured centroid the cube meshers discard.
+ * 'smooth' mode — **standard Naive Surface Nets (dual contouring)** over the
+ * occupancy field, consuming the per-cell measured centroids the cube meshers
+ * discard.
  *
- * One **welded** vertex is placed per occupied cell that participates in the
- * surface, AT `getCellPoint(cell)` (the measured centroid, within `cellSize/2`
- * of the cell centre) — or the cell centre when no provider is given (plain
- * surface nets). Welding (a cell→vertex-index map) makes the sheet **crack-free**
- * by construction: adjacent quads reference the same vertex index, so there are
- * no coincident-but-duplicated boundary vertices and no occlusion-leaking
- * cracks.
+ * Treats occupancy as a binary field sampled at integer cell coordinates and
+ * contours the occupied/empty boundary:
+ *  - **Vertices** — one welded vertex per "dual cell" (a unit cube whose 8
+ *    corners are the cells `b … b+1`) that **straddles** the boundary (≥1
+ *    occupied AND ≥1 empty corner), placed at the **mean of its occupied
+ *    corners' `getCellPoint()`** (the measured surface points; the corners'
+ *    geometric centres without a provider). Welding by dual-cell key makes the
+ *    surface crack-free.
+ *  - **Quads** — one per occupied↔empty **crossing**: for every occupied-cell
+ *    face whose neighbour is empty (the SAME set the cube mesher emits), a quad
+ *    joins the 4 dual cells sharing that edge, wound to face the empty side.
  *
- * Faces are emitted as the **dual of coplanar surface patches**: for each axis
- * `d` and each coplanar 2×2 group of occupied cells (sharing a lattice edge
- * parallel to `d`), a single quad over the four cells' vertices is emitted iff
- * one `d`-side of the group is exposed (all four `+d` OR all four `−d`
- * neighbours empty). A one-cell-thick slab (the floor) is exposed on BOTH sides
- * but still yields ONE quad per group — an **open** sheet hugging the measured
- * surface, NOT a closed shell (so the cube mesher's even-edge-cover invariant is
- * deliberately unsatisfiable here; crack-free welding, not closedness, is what
- * prevents leaks). A thick solid yields a top sheet, a bottom sheet and side
- * sheets — closed where the geometry is thick.
- *
- * SCOPE: this connects coplanar surface cells, so flat/convex exposed surfaces
- * (the floor — the motivating case) are fully tiled. Bridging the **concave
- * seam** where two perpendicular surfaces meet (wall-meets-floor) is left to the
- * deferred full QEF/dual-contouring solver. The output occludes LESS volume than
- * the cubes (vertices sit inside the union-of-cubes hull) but hugs the measured
- * surface more accurately — by design.
+ * Because there is one quad per crossing, **coverage matches the cubes** — unlike
+ * the previous 2×2-fully-occupied-patch heuristic, which only meshed flat solid
+ * blocks and so missed 80–90 % of a real, ragged depth surface (the reported
+ * "barely any surfaces" bug; 2026-06-30 rewrite). The result is smooth (welded
+ * vertices pulled onto the measured surface) and watertight for closed regions;
+ * over a thin feature (a one-cell floor) the top and bottom dual vertices average
+ * the same cells and coincide, so it reads as a single smooth sheet — the
+ * smoothest of the modes.
  */
 function buildSmooth(
   occupied: Set<string>,
@@ -408,56 +382,89 @@ function buildSmooth(
   positions: number[],
   indices: number[]
 ): void {
-  // Lazy welded vertex per cell — only cells that actually bound an emitted quad
-  // get a vertex, so there are no orphan vertices.
+  const isOcc = (x: number, y: number, z: number): boolean =>
+    occupied.has(cellKey(x, y, z));
+
+  // One welded vertex per boundary dual cell (key = its min-corner cell `b`),
+  // created lazily and positioned at the mean of its OCCUPIED corner cells'
+  // measured surface points.
   const vertexIndex = new Map<string, number>();
-  const vertexFor = (cell: GridCell): number => {
-    const key = cellKey(cell[0], cell[1], cell[2]);
+  const dualVertex = (bx: number, by: number, bz: number): number => {
+    const key = cellKey(bx, by, bz);
     const existing = vertexIndex.get(key);
     if (existing !== undefined) {
       return existing;
     }
-    const cp = getCellPoint ? getCellPoint(cell) : null;
-    const px = cp ? cp[0] : cell[0] * cellSizeM;
-    const py = cp ? cp[1] : cell[1] * cellSizeM;
-    const pz = cp ? cp[2] : cell[2] * cellSizeM;
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let n = 0;
+    for (let dx = 0; dx <= 1; dx++) {
+      for (let dy = 0; dy <= 1; dy++) {
+        for (let dz = 0; dz <= 1; dz++) {
+          const cx = bx + dx;
+          const cy = by + dy;
+          const cz = bz + dz;
+          if (!isOcc(cx, cy, cz)) {
+            continue;
+          }
+          const cp = getCellPoint ? getCellPoint([cx, cy, cz]) : null;
+          sx += cp ? cp[0] : cx * cellSizeM;
+          sy += cp ? cp[1] : cy * cellSizeM;
+          sz += cp ? cp[2] : cz * cellSizeM;
+          n += 1;
+        }
+      }
+    }
+    // n ≥ 1: a dual vertex is only requested for a boundary dual cell, which by
+    // construction has at least one occupied corner (the crossing's solid side).
     const idx = positions.length / 3;
-    positions.push(px, py, pz);
+    positions.push(sx / n, sy / n, sz / n);
     vertexIndex.set(key, idx);
     return idx;
   };
 
-  for (const { d, u, v } of GREEDY_DIRS) {
-    for (const c0 of uniqueCells) {
-      // Treat c0 as the (u−,v−) min corner of a coplanar 2×2 group in the ⊥d
-      // plane; each group is reached exactly once (from its min corner).
-      const c1 = stepAxis(c0, u, 1);
-      const c2 = stepAxis(c0, v, 1);
-      const c3 = stepAxis(c1, v, 1);
-      if (
-        !occupied.has(cellKey(c1[0], c1[1], c1[2])) ||
-        !occupied.has(cellKey(c2[0], c2[1], c2[2])) ||
-        !occupied.has(cellKey(c3[0], c3[1], c3[2]))
-      ) {
-        continue; // not a full 2×2 occupied group
-      }
-      const group = [c0, c1, c2, c3] as const;
-      const plusExposed = sideIsEmpty(occupied, group, d, 1);
-      const minusExposed = sideIsEmpty(occupied, group, d, -1);
-      if (!plusExposed && !minusExposed) {
-        continue; // interior patch (solid on both sides) — no surface here
-      }
-      const i0 = vertexFor(c0);
-      const i1 = vertexFor(c1);
-      const i2 = vertexFor(c2);
-      const i3 = vertexFor(c3);
-      // Square corner order c0→c1(+u)→c3(+u+v)→c2(+v). With eu×ev = ed, the
-      // (c0,c1,c3)+(c0,c3,c2) winding faces +d; reverse it when only −d is
-      // exposed so the outward normal points away from the solid.
-      if (plusExposed) {
-        indices.push(i0, i1, i3, i0, i3, i2);
-      } else {
-        indices.push(i0, i3, i1, i0, i2, i3);
+  // One quad per occupied↔empty crossing (== the cube mesher's exposed faces).
+  // For an occupied cell C with an empty neighbour along d·sgn, the four dual
+  // cells sharing the (C, neighbour) edge have `base_d = (sgn>0 ? C_d : C_d−1)`
+  // and `base_{u,v} ∈ {C−1, C}`; they are wound to face the empty side.
+  for (const cell of uniqueCells) {
+    const cx = cell[0];
+    const cy = cell[1];
+    const cz = cell[2];
+    const c: [number, number, number] = [cx, cy, cz];
+    for (const { d, u, v } of GREEDY_DIRS) {
+      for (const sgn of [1, -1] as const) {
+        const nb: [number, number, number] = [cx, cy, cz];
+        nb[d] += sgn;
+        if (isOcc(nb[0], nb[1], nb[2])) {
+          continue; // interior face — no crossing here
+        }
+        const baseD = sgn > 0 ? c[d] : c[d] - 1;
+        // (s,t) index the u,v base offsets {0→−1, 1→0}; ordered CCW facing +d,
+        // reversed for −d so the normal points at the empty side either way.
+        const order: readonly (readonly [number, number])[] =
+          sgn > 0
+            ? [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+              ]
+            : [
+                [0, 0],
+                [0, 1],
+                [1, 1],
+                [1, 0],
+              ];
+        const q = order.map(([s, t]) => {
+          const b: [number, number, number] = [0, 0, 0];
+          b[d] = baseD;
+          b[u] = c[u] - 1 + s;
+          b[v] = c[v] - 1 + t;
+          return dualVertex(b[0], b[1], b[2]);
+        });
+        indices.push(q[0]!, q[1]!, q[2]!, q[0]!, q[2]!, q[3]!);
       }
     }
   }
