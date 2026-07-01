@@ -1,0 +1,162 @@
+/**
+ * Occlusion-mesh Web Worker protocol (framework-owned, reusable).
+ *
+ * The persistent occluder full-rebuilds the whole grid mesh every refresh —
+ * O(total cells), 100s of ms at hundreds of metres (see
+ * `2026-07-01-occluder-worker-and-chunked-remesh-plan.md`). Moving
+ * {@link meshOccupiedCells} to a Web Worker keeps rendering smooth regardless of
+ * mesh time. This module holds the **pure, transfer-friendly** halves so a
+ * consumer only needs a trivial worker *shell* (any app can copy ~5 lines):
+ *
+ * - {@link packMeshRequest} (main thread) — packs an occupied-cell snapshot (and,
+ *   for the surface-hugging modes, the per-cell measured centroids) into
+ *   **transferable** typed arrays.
+ * - {@link runMeshRequest} (worker) — unpacks, runs `meshOccupiedCells`, and
+ *   returns the geometry as transferable typed arrays.
+ *
+ * A `runMeshRequest(packMeshRequest(…))` round-trip is byte-identical to a direct
+ * `meshOccupiedCells` call (centroids are carried at full f64 precision).
+ */
+
+import type { Vector3 } from 'gps-plus-slam-js';
+import type { GridCell } from './bresenham3d';
+import { meshOccupiedCells, type MeshMode } from './occupancy-mesher';
+
+/** Main-thread → worker: an occupied-cell snapshot to mesh. */
+export interface MeshWorkerRequest {
+  /** Correlates a response with its request (the driver coalesces by newest id). */
+  readonly id: number;
+  /** Flat occupied cells `[x0,y0,z0, x1,y1,z1, …]`. */
+  readonly cells: Int32Array;
+  readonly cellSizeM: number;
+  readonly mode: MeshMode;
+  /**
+   * Per-cell measured surface point, flat and parallel to `cells`
+   * (`[cx,cy,cz, …]`), or `null` for the cube modes that ignore it. A `NaN`
+   * triple marks a cell whose `getCellPoint` was `null` (geometric fallback).
+   */
+  readonly centroids: Float64Array | null;
+}
+
+/** Worker → main thread: the meshed geometry (typed arrays, transferable). */
+export interface MeshWorkerResponse {
+  readonly id: number;
+  readonly positions: Float32Array;
+  readonly indices: Uint32Array;
+}
+
+/** Only the surface-hugging modes read `getCellPoint`. */
+function needsCentroids(mode: MeshMode): boolean {
+  return mode === 'smooth' || mode === 'corner-fit';
+}
+
+// Local numeric cell key (parallel-array lookup in the worker). Matches the
+// mesher's packable range (|coord| ≤ 32767); only ever called for in-range cells.
+const K_OFFSET = 65536;
+const K_FIELD = 131072;
+const K_FIELD_SQ = K_FIELD * K_FIELD;
+function packKey(x: number, y: number, z: number): number {
+  return (
+    (x + K_OFFSET) * K_FIELD_SQ + (y + K_OFFSET) * K_FIELD + (z + K_OFFSET)
+  );
+}
+
+/**
+ * Pack an occupied-cell snapshot into a transferable {@link MeshWorkerRequest}
+ * (main thread). `transfer` is the list to pass as the second `postMessage` arg
+ * so the buffers move (not copy) to the worker.
+ */
+export function packMeshRequest(
+  id: number,
+  cells: readonly GridCell[],
+  cellSizeM: number,
+  mode: MeshMode,
+  getCellPoint?: (cell: GridCell) => Vector3 | null
+): { request: MeshWorkerRequest; transfer: ArrayBufferLike[] } {
+  const n = cells.length;
+  const flat = new Int32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const c = cells[i]!;
+    flat[i * 3] = c[0];
+    flat[i * 3 + 1] = c[1];
+    flat[i * 3 + 2] = c[2];
+  }
+  let centroids: Float64Array | null = null;
+  if (needsCentroids(mode) && getCellPoint) {
+    centroids = new Float64Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const cp = getCellPoint(cells[i]!);
+      if (cp) {
+        centroids[i * 3] = cp[0];
+        centroids[i * 3 + 1] = cp[1];
+        centroids[i * 3 + 2] = cp[2];
+      } else {
+        centroids[i * 3] = NaN;
+        centroids[i * 3 + 1] = NaN;
+        centroids[i * 3 + 2] = NaN;
+      }
+    }
+  }
+  const request: MeshWorkerRequest = {
+    id,
+    cells: flat,
+    cellSizeM,
+    mode,
+    centroids,
+  };
+  const transfer: ArrayBufferLike[] = [flat.buffer];
+  if (centroids) {
+    transfer.push(centroids.buffer);
+  }
+  return { request, transfer };
+}
+
+/**
+ * Mesh a {@link MeshWorkerRequest} (worker side). Returns the geometry plus the
+ * transfer list for posting back. Byte-identical to a direct `meshOccupiedCells`.
+ */
+export function runMeshRequest(request: MeshWorkerRequest): {
+  response: MeshWorkerResponse;
+  transfer: ArrayBufferLike[];
+} {
+  const { id, cells: flat, cellSizeM, mode, centroids } = request;
+  const n = flat.length / 3;
+  const cells: GridCell[] = [];
+  for (let i = 0; i < n; i++) {
+    cells.push([flat[i * 3]!, flat[i * 3 + 1]!, flat[i * 3 + 2]!]);
+  }
+
+  let getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined;
+  const pts = centroids;
+  if (pts) {
+    const indexByKey = new Map<number, number>();
+    for (let i = 0; i < n; i++) {
+      indexByKey.set(
+        packKey(flat[i * 3]!, flat[i * 3 + 1]!, flat[i * 3 + 2]!),
+        i
+      );
+    }
+    getCellPoint = (cell: GridCell): Vector3 | null => {
+      const i = indexByKey.get(packKey(cell[0], cell[1], cell[2]));
+      if (i === undefined) {
+        return null;
+      }
+      const cx = pts[i * 3]!;
+      if (Number.isNaN(cx)) {
+        return null;
+      }
+      return [cx, pts[i * 3 + 1]!, pts[i * 3 + 2]!];
+    };
+  }
+
+  const mesh = meshOccupiedCells(cells, cellSizeM, { mode, getCellPoint });
+  const response: MeshWorkerResponse = {
+    id,
+    positions: mesh.positions,
+    indices: mesh.indices,
+  };
+  return {
+    response,
+    transfer: [mesh.positions.buffer, mesh.indices.buffer],
+  };
+}
