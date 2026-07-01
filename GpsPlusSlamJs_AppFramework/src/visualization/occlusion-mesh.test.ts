@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import type { GridCell } from '../ar/bresenham3d';
 import type { Vector3 } from 'gps-plus-slam-js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis';
+import { meshOccupiedCells } from '../ar/occupancy-mesher';
 import { OcclusionMesh } from './occlusion-mesh';
 
 function findMesh(parent: THREE.Object3D): THREE.Mesh | undefined {
@@ -120,6 +121,32 @@ describe('OcclusionMesh', () => {
 
     smooth.dispose();
     greedy.dispose();
+  });
+
+  it('applyMeshData swaps in precomputed geometry (the Web Worker offload path)', () => {
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 4; x++)
+      for (let z = 0; z < 4; z++) cells.push([x, 0, z]);
+    // Precompute geometry the way the worker would (a plain per-face mesh).
+    const { positions, indices } = meshOccupiedCells(cells, 0.15);
+
+    const occluder = new OcclusionMesh(new THREE.Group());
+    occluder.applyMeshData(positions, indices);
+
+    // Geometry is applied → triangle count matches the precomputed buffer…
+    expect(occluder.getTriangleCount()).toBe(indices.length / 3);
+    // …and equals what a synchronous update() of the same cells would produce.
+    const sync = new OcclusionMesh(new THREE.Group(), { greedy: false });
+    sync.update(cells, 0.15);
+    expect(occluder.getTriangleCount()).toBe(sync.getTriangleCount());
+    // The worker path does not populate the AABB physics hook (documented).
+    expect(occluder.getAabbs()).toHaveLength(0);
+
+    occluder.applyMeshData(new Float32Array(0), new Uint32Array(0));
+    expect(occluder.getTriangleCount()).toBe(0);
+
+    occluder.dispose();
+    sync.dispose();
   });
 
   it('clear() empties the geometry but keeps the node attached', () => {

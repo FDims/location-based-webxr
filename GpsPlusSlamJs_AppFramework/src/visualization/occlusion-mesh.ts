@@ -196,8 +196,32 @@ export class OcclusionMesh {
       meshOptions
     );
     this.lastAabbs = aabbs;
-    // Replace the geometry wholesale — a full rebuild is the simple first cut;
-    // dispose the old buffers to avoid leaking GPU memory across refreshes.
+    this.swapGeometry(positions, indices);
+  }
+
+  /**
+   * Apply **precomputed** geometry (positions/indices) without meshing — the
+   * entry point for the Web Worker offload: the driver posts the occupied-cell
+   * snapshot to a worker (`packMeshRequest`/`runMeshRequest`), and this swaps in
+   * the returned typed arrays off the render-critical path. Byte-identical result
+   * to {@link update} for the same input.
+   *
+   * The AABB physics hook is NOT populated on this path (the worker returns
+   * geometry only; AABBs are an export hook unused by rendering) — {@link getAabbs}
+   * returns empty here. Use the synchronous {@link update} if AABBs are needed.
+   */
+  applyMeshData(positions: Float32Array, indices: Uint32Array): void {
+    if (this.disposed) return;
+    this.lastAabbs = [];
+    this.swapGeometry(positions, indices);
+  }
+
+  /**
+   * Replace the geometry wholesale from typed arrays — a full rebuild is the
+   * simple first cut; dispose the old buffers to avoid leaking GPU memory across
+   * refreshes.
+   */
+  private swapGeometry(positions: Float32Array, indices: Uint32Array): void {
     const next = new THREE.BufferGeometry();
     next.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     next.setIndex(new THREE.BufferAttribute(indices, 1));
