@@ -388,12 +388,13 @@ describe('recording-options', () => {
      * recorder setting (2026-06-22 behind-surface-noise plan). It is forwarded
      * to `getOccupiedCells(minObservations)`, which expects a positive integer,
      * so validation must round, clamp to 1–10, and reject garbage to the
-     * default (default 5, not 1 — the filter is on out of the box; raised
-     * 3→5 in the 2026-06-30 occluder-tuning session for a more robust voxel
-     * noise floor, coupled with the denser depth sampling below).
+     * default (default 3, not 1 — the filter is on out of the box; set to 3 in
+     * the 2026-07-01 fast-reconstruction tuning: the fastest noise floor that
+     * still suppresses behind-surface phantoms, ~1.5s dwell before a surface
+     * meshes vs 2.5s at 5).
      */
-    it('defaults minConfidence to 5 for an empty object', () => {
-      expect(validateOccupancyOptions({}).minConfidence).toBe(5);
+    it('defaults minConfidence to 3 for an empty object', () => {
+      expect(validateOccupancyOptions({}).minConfidence).toBe(3);
     });
 
     it('preserves a valid in-range minConfidence', () => {
@@ -1269,19 +1270,18 @@ describe('recording-options', () => {
     });
 
     /**
-     * Why this matters: the 2026-06-30 occluder-tuning session re-tuned the
-     * depth/occupancy defaults as a coupled preset (denser + faster depth
-     * sampling makes the higher noise floor reachable quickly). These pin the
-     * locked decision: intervalMs 1000→500, gridSize 16→24, minConfidence 3→5;
-     * cellSizeM stays 0.15. See
-     * GpsPlusSlamJs_Docs/docs/2026-06-30-occluder-tuning-and-mesh-smoothness-user-feedback.md (F1).
-     * gridSize is 24 (not the slider max 32) to hedge the large-scene memory
-     * cost until the F3 perf harness measures it.
+     * Why this matters: the 2026-07-01 param-sweep (on a real recording) tuned
+     * the depth/occupancy defaults for FAST mesh reconstruction — surfaces
+     * should mesh ASAP. These pin that decision: intervalMs 500 (min cadence),
+     * gridSize 32 (max points/sample ⇒ cells confirm fastest), minConfidence 3
+     * (fastest noise floor that still suppresses phantoms — ~1.5s dwell),
+     * cellSizeM 0.15 (detail). See
+     * GpsPlusSlamJs_Docs/docs/2026-06-30-occluder-tuning-followups.md (Round 6).
      */
-    it('uses the 2026-06-30 re-tuned depth/occupancy defaults', () => {
+    it('uses the fast-reconstruction depth/occupancy defaults', () => {
       expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(500);
-      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(24);
-      expect(DEFAULT_RECORDING_OPTIONS.occupancy.minConfidence).toBe(5);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(32);
+      expect(DEFAULT_RECORDING_OPTIONS.occupancy.minConfidence).toBe(3);
       expect(DEFAULT_RECORDING_OPTIONS.occupancy.cellSizeM).toBe(0.15);
     });
 

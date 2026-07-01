@@ -102,11 +102,10 @@ test.describe('Settings Modal', () => {
 
     test('depth grid slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-grid-value');
-      // Default raised 16→24 in the 2026-06-30 occluder-tuning re-tune (denser
-      // occupancy-grid fill, coupled with the faster 0.5s cadence and the
-      // minConfidence 3→5 noise floor). 24, not the slider max 32, hedges the
-      // large-scene memory cost until the F3 perf harness measures it.
-      await expect(valueDisplay).toHaveText('24×24');
+      // Default raised to 32 (max points/sample) in the 2026-07-01
+      // fast-reconstruction tuning — cells confirm fastest. The slider max was
+      // also raised to 64 for on-device experimentation with higher densities.
+      await expect(valueDisplay).toHaveText('32×32');
     });
 
     test('images interval slider shows default value', async ({ page }) => {

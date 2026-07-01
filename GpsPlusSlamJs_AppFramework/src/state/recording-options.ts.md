@@ -61,20 +61,29 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ```typescript
 {
-  depth: { enabled: true, intervalMs: 500, gridSize: 24, rgb: true },
+  depth: { enabled: true, intervalMs: 500, gridSize: 32, rgb: true },
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
             motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 0.5, maxWaitMs: 4000 },
             qualityFilter: { enabled: false, blurRelativeThreshold: 0.5, minMeanLuminance: 10, maxWaitMs: 4000 } },
-  occupancy: { cellSizeM: 0.15, minConfidence: 5, persistentOcclusion: false, liveOcclusion: false, occluderDebugViz: false, occluderMeshMode: 'greedy' },
+  occupancy: { cellSizeM: 0.15, minConfidence: 3, persistentOcclusion: false, liveOcclusion: false, occluderDebugViz: false, occluderMeshMode: 'greedy' },
   frameTileDisplay: { divisor: 2 },
   visualization: { frameTiles: true, occupancyCubes: true, gpsAlignmentMarkers: true, compassCubes: true, headingUpMap: true },
   qr: { enabled: false, intervalMs: 125, captureSize: 1024 }
 }
 ```
 
-### Depth/occupancy default re-tune (2026-06-30 occluder-tuning session)
+### Depth/occupancy defaults — tuned for FAST mesh reconstruction (2026-07-01)
 
-`depth.intervalMs` (1000→**500**), `depth.gridSize` (16→**24**) and `occupancy.minConfidence` (3→**5**) were re-tuned together as a **coupled preset**, not three independent knobs: the denser, faster depth sampling (≈`(24/16)² × (1000/500)` ≈ **4.5×** the depth-point throughput vs. the old defaults) is what makes the higher noise floor of `minConfidence: 5` reachable quickly. `occupancy.cellSizeM` stays **0.15** (confirmed unchanged). `gridSize` is **24**, not the slider max **32**, to hedge the unmeasured large-scene memory/rebuild cost (the F1↔F3 coupling) until the F3 perf/memory harness measures it; 32 stays reachable via the slider. Rationale + decision trail: [2026-06-30-occluder-tuning-and-mesh-smoothness-user-feedback.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-occluder-tuning-and-mesh-smoothness-user-feedback.md) (F1 / Finding 5).
+The default `depth` + `occupancy` params are tuned so a usable occluder mesh
+builds up **as fast as possible** (param-sweep on a real recording — see
+[2026-06-30-occluder-tuning-followups.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-occluder-tuning-followups.md), Round 6):
+
+- `depth.intervalMs` **500** — the minimum cadence (2 samples/s), so points arrive fastest.
+- `depth.gridSize` **32** — the previous slider max (1024 points/sample); more observations per sample confirm cells fastest. **The slider max was raised to 64** (4096 points/sample) for on-device experimentation with even higher densities — measure the per-sample depth-readback cost before adopting a value above 32.
+- `occupancy.minConfidence` **3** — the key "time-to-mesh" lever: a cell needs this many observations before it is rendered, so it is ≈ the *dwell time* before a surface meshes (≈1.5 s at 500 ms sampling, vs 2.5 s at 5). 3 is the **fastest noise floor that still suppresses the behind-surface phantoms** the filter exists for (it was 5 in the 2026-06-30 robustness pass; lowered here for speed).
+- `occupancy.cellSizeM` **0.15** — kept; balances detail against area-coverage speed (coarser covers area faster but blockier, and the surface-hugging meshers like the resolution).
+
+Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [2026-06-30 session](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-occluder-tuning-and-mesh-smoothness-user-feedback.md) (F1: 1000→500 / 16→24 / 3→5). The 2026-07-01 sweep then reversed the memory/robustness hedges (24→32, 5→3) once the goal became fastest reconstruction.
 
 > **Not synced:** the library-level `DEFAULT_CONFIG` in [`ar/depth-sampler.ts`](../ar/depth-sampler.ts) intentionally keeps `intervalMs: 1000 / gridSize: 16`. That is the fallback for consumers that supply no config (MinimalExample / AnchorStarter); the re-tune is a recorder-specific decision sourced from `DEFAULT_RECORDING_OPTIONS`, so bumping the library default would silently re-tune unrelated apps.
 

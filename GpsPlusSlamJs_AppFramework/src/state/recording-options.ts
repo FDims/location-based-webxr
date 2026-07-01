@@ -369,9 +369,10 @@ export const STORAGE_KEY = 'gps-plus-slam-recorder-options';
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
-    // 2026-06-30 occluder-tuning re-tune (coupled preset; see recording-options.ts.md):
-    intervalMs: 500, // 2 samples per second (was 1000) — denser temporal sampling
-    gridSize: 24, // 24×24 = 576 points per sample (was 16 = 256) — denser occupancy-grid fill; 24 hedges large-scene memory vs the slider max 32
+    // Tuned for FAST mesh reconstruction (2026-07-01 param-sweep on a real
+    // recording; see recording-options.ts.md):
+    intervalMs: 500, // 2 samples per second — denser temporal sampling
+    gridSize: 32, // 32×32 = 1024 points per sample — confirms cells fastest (was 24; slider max raised to 64 for on-device experimentation)
     rgb: true, // RGB voxel coloring (Iter 8)
   },
   images: {
@@ -395,8 +396,8 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     applyChromiumProjectionLayerWorkaround: true,
   },
   occupancy: {
-    cellSizeM: 0.15, // 15 cm voxels — matches OccupancyGrid's own default (Unity parity); confirmed unchanged in the 2026-06-30 re-tune
-    minConfidence: 5, // ≥5 observations to render a voxel (was 3) — stronger noise floor, reachable quickly thanks to the denser depth sampling above (2026-06-30 re-tune; 1 = legacy/unfiltered)
+    cellSizeM: 0.15, // 15 cm voxels — matches OccupancyGrid's own default (Unity parity); balances detail vs speed
+    minConfidence: 3, // ≥3 observations to render a voxel — the FAST-reconstruction noise floor (2026-07-01; ~1.5s dwell before a surface meshes vs 2.5s at 5, +25% early coverage; 1 = legacy/unfiltered)
     persistentOcclusion: false, // persistent depth-only mesh occluder OFF by default (extra cost; on-device gate pending)
     liveOcclusion: false, // live CPU-depth occluder OFF by default (device-gated quality; replay no-op)
     occluderDebugViz: false, // matcap debug visualization of the persistent occluder mesh OFF by default
@@ -439,10 +440,12 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
 /** Validation constraints for depth options */
 export const DEPTH_CONSTRAINTS = {
   intervalMs: { min: 500, max: 5000, step: 100 },
-  // Max raised 10 → 32 with the occupancy-grid work: 32×32 = 1024
-  // getDepthInMeters reads per sample is the ceiling until the per-frame
-  // cost is measured on-device (port plan Iter 6 field verification).
-  gridSize: { min: 2, max: 32, step: 1 },
+  // Max raised 32 → 64 (2026-07-01) for on-device experimentation with faster
+  // mesh reconstruction: 64×64 = 4096 getDepthInMeters reads per sample (4× the
+  // 32² default). High values trade per-sample depth-readback cost + grid growth
+  // for faster cell confirmation — measure the per-frame cost on-device before
+  // adopting a value above the 32 default.
+  gridSize: { min: 2, max: 64, step: 1 },
 } as const;
 
 /** Validation constraints for image options */
