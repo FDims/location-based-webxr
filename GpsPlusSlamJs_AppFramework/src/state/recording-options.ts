@@ -44,9 +44,16 @@ export interface RecordingOptionsInput {
  * feature); Stage C + the WebXR-consistency gate stay experimental (default
  * OFF) until the §6a field-data matrix is in.
  *
- * On-device caveat: the resulting `gpsData` actions persist into the recording,
- * so a replay re-enables them. Record §6a field-calibration sets with
- * `coldStartOverride` OFF so the captured compass behaviour is unmodified.
+ * On-device caveat: the resulting `gpsData` opt-in actions persist into the
+ * recording, so the DEFAULT `replayAll` re-enables them. This does NOT modify the
+ * raw recorded stream (`rawAbsoluteOrientation`, GPS, odometry) — only the
+ * *derived* alignment — so an investigation that re-solves from the raw
+ * observations under a chosen `AlignmentConfig` (`recomputeAlignment`) is
+ * unaffected by the capture-time flag state. Turning the flags off during capture
+ * only matters if you want the LIVE app to behave as the GPS-only baseline; it is
+ * not required for clean §6a analysis data. See
+ * `GpsPlusSlamJs_Docs/docs/2026-06-26-stage0-field-collection-and-enablement.md`
+ * (2026-07-01 update).
  */
 export interface CompassDebugOptions {
   /** Stage 0 — cold-start compass yaw override (`setColdStartOverrideEnabled`). Default ON. */
