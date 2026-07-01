@@ -182,6 +182,59 @@ describe('OccluderMeshDriver', () => {
     expect(driver.busy).toBe(false); // sync completes immediately
   });
 
+  it('falls back to synchronous meshing when the worker errors BEFORE the first request (module load failure races ahead of the first post)', () => {
+    const { poster, posted, error } = makeFakePoster();
+    const onWorkerUnusable = vi.fn();
+    const onError = vi.fn();
+    const driver = new OccluderMeshDriver(poster, {
+      onWorkerUnusable,
+      onError,
+    });
+    const cells = box(3);
+
+    // The realistic module-load-failure ordering: the worker's module fails to
+    // load within a few ms of construction — BEFORE the first refresh posts any
+    // job (inFlightId === null). Posting to a load-failed worker is silently
+    // dropped (no second error), so if the driver ignored this error it would
+    // wedge the in-flight slot forever on the first post (the residual freeze).
+    error();
+    expect(onWorkerUnusable).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(posted).toHaveLength(0); // never posted to the dead worker
+
+    // The first (and every later) request now meshes synchronously.
+    let indices: Uint32Array | null = null;
+    driver.request(cells, CELL, 'per-face', undefined, (_p, i) => {
+      indices = i;
+    });
+    const direct = meshOccupiedCells(cells, CELL);
+    expect(indices).not.toBeNull();
+    expect(Array.from(indices!)).toEqual(Array.from(direct.indices));
+    expect(posted).toHaveLength(0); // still never posted to the worker
+    expect(driver.busy).toBe(false);
+  });
+
+  it('ignores a stray worker error with no job in flight after a prior success (keeps the proven-good worker)', () => {
+    const { poster, posted, respond, error } = makeFakePoster();
+    const onWorkerUnusable = vi.fn();
+    const driver = new OccluderMeshDriver(poster, { onWorkerUnusable });
+
+    driver.request(box(2), CELL, 'per-face', undefined, () => {});
+    respond(0); // worker proven good; the slot is now clear (inFlightId === null)
+    expect(driver.busy).toBe(false);
+
+    error(); // a stray / late error while nothing is in flight
+    // The worker meshed once, so it must NOT be declared unusable over a stray
+    // error — the fix for the pre-first-post freeze only fires when the worker
+    // has never succeeded.
+    expect(onWorkerUnusable).not.toHaveBeenCalled();
+
+    // The next request still posts to the (kept) worker, not synchronously.
+    driver.request(box(3), CELL, 'per-face', undefined, () => {});
+    expect(posted).toHaveLength(2);
+    expect(driver.busy).toBe(true);
+  });
+
   it('does not wedge when synchronous meshing throws (bad cellSize): reports via onError and recovers', () => {
     const onError = vi.fn();
     const driver = new OccluderMeshDriver(null, { onError });

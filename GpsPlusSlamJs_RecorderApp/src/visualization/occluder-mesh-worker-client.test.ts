@@ -99,4 +99,37 @@ describe('createOccluderMeshWorker', () => {
 
     dispose();
   });
+
+  it('recovers to synchronous meshing when the worker errors before the FIRST request (module load failure before any post)', () => {
+    const fakeWorker = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      onerror: null as ((event: unknown) => void) | null,
+      onmessageerror: null as ((event: unknown) => void) | null,
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+    };
+    const { driver, dispose } = createOccluderMeshWorker(
+      () => fakeWorker as unknown as Worker
+    );
+
+    // Realistic module-load-failure ordering: the module fails to load within a
+    // few ms of construction — BEFORE the first refresh posts any job. The
+    // driver must give up on the worker now (a load-failed worker silently
+    // discards posts), so the client terminates it and the first request meshes
+    // synchronously instead of wedging forever.
+    fakeWorker.onerror?.({ message: 'load failed' });
+    expect(fakeWorker.terminate).toHaveBeenCalledTimes(1);
+    expect(fakeWorker.postMessage).not.toHaveBeenCalled();
+
+    let indices: Uint32Array | null = null;
+    driver.request(CELLS, CELL, 'per-face', undefined, (_p, i) => {
+      indices = i;
+    });
+    const direct = meshOccupiedCells(CELLS, CELL);
+    expect(indices).not.toBeNull();
+    expect(Array.from(indices!)).toEqual(Array.from(direct.indices));
+    expect(fakeWorker.postMessage).not.toHaveBeenCalled();
+
+    dispose();
+  });
 });

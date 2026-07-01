@@ -183,12 +183,32 @@ export class OccluderMeshDriver {
     }
   }
 
-  /** A worker error event — recover the in-flight job (only one is ever in flight). */
+  /**
+   * A worker error event. If a job is in flight, recover it (only one ever is).
+   * If none is — the realistic ordering for a **module-load failure**, which
+   * errors within a few ms of construction, before the first (throttled)
+   * `request` posts anything — the worker is dead: posting to it would be
+   * silently dropped (no second error) and wedge the in-flight slot forever. So
+   * a pre-first-post error on a worker that has **never** succeeded is treated as
+   * a load failure right here — declare it unusable and switch to synchronous
+   * meshing so the first `request` never touches the dead worker. A stray/late
+   * error on a worker that has already meshed once is transient — kept, ignored.
+   */
   private handleWorkerError(error?: unknown): void {
-    if (this.disposed || this.inFlightId === null) {
-      return; // no job to fail (stray error / already recovered)
+    if (this.disposed) {
+      return;
     }
-    this.failInFlight(this.inFlightId, error);
+    if (this.inFlightId !== null) {
+      this.failInFlight(this.inFlightId, error);
+      return;
+    }
+    if (!this.syncMode && !this.hasSucceeded) {
+      if (error !== undefined) {
+        this.onError?.(error);
+      }
+      this.syncMode = true;
+      this.onWorkerUnusable?.();
+    }
   }
 
   /**
