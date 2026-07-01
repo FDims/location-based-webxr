@@ -857,6 +857,29 @@ export function validateImageOptions(
  * stays at its default. A present new field always wins over the legacy one.
  * See `2026-06-29-occupancy-mesh-followups.md`.
  */
+/**
+ * Resolve `persistentOcclusion` with legacy migration. A **present** new field
+ * always wins over the legacy `occlusionMeshEnabled` — even when its value is
+ * invalid: a present-but-corrupt value falls back to the default, never to the
+ * legacy flag, so corrupted saved options can't silently flip the occluder
+ * against the "new field wins" contract. Only an **absent** new field migrates
+ * the legacy boolean (`true → persistent on`); else the default.
+ */
+function resolvePersistentOcclusion(
+  options: Partial<OccupancyOptions>,
+  legacyOcclusionMeshEnabled: unknown,
+  defaultValue: boolean
+): boolean {
+  if ('persistentOcclusion' in options) {
+    return typeof options.persistentOcclusion === 'boolean'
+      ? options.persistentOcclusion
+      : defaultValue;
+  }
+  return typeof legacyOcclusionMeshEnabled === 'boolean'
+    ? legacyOcclusionMeshEnabled
+    : defaultValue;
+}
+
 export function validateOccupancyOptions(
   options: Partial<OccupancyOptions>
 ): OccupancyOptions {
@@ -885,14 +908,13 @@ export function validateOccupancyOptions(
       OCCUPANCY_CONSTRAINTS.minConfidence.min,
       OCCUPANCY_CONSTRAINTS.minConfidence.max
     ),
-    // New field wins; else migrate the legacy boolean (true → persistent on);
-    // else default off.
-    persistentOcclusion:
-      typeof options.persistentOcclusion === 'boolean'
-        ? options.persistentOcclusion
-        : typeof legacyOcclusionMeshEnabled === 'boolean'
-          ? legacyOcclusionMeshEnabled
-          : defaults.persistentOcclusion,
+    // Present new field wins (even if invalid → default); absent → migrate the
+    // legacy boolean. See resolvePersistentOcclusion.
+    persistentOcclusion: resolvePersistentOcclusion(
+      options,
+      legacyOcclusionMeshEnabled,
+      defaults.persistentOcclusion
+    ),
     // The legacy single-toggle never drove a live occluder, so there is nothing
     // to migrate here — boolean-or-default only.
     liveOcclusion:

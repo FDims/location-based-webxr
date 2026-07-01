@@ -502,6 +502,26 @@ describe('recording-options', () => {
     });
 
     /**
+     * The JSDoc contract is "a present new field always wins over the legacy
+     * one" — that must hold even when the present new field is INVALID. A blob
+     * like `{ persistentOcclusion: 'bad', occlusionMeshEnabled: … }` (corrupt
+     * saved options) must resolve to the DEFAULT, not silently fall through to
+     * the legacy flag (which could flip the occluder on/off against the
+     * contract). Pick a legacy value opposite the default so the assertion
+     * discriminates regardless of what the default is.
+     */
+    it('ignores the legacy field when persistentOcclusion is present-but-invalid (new field wins → default)', () => {
+      const legacy = !DEFAULT_RECORDING_OPTIONS.occupancy.persistentOcclusion;
+      const out = validateOccupancyOptions({
+        persistentOcclusion: 'bad' as unknown as boolean,
+        occlusionMeshEnabled: legacy,
+      } as unknown as Partial<OccupancyOptions>);
+      expect(out.persistentOcclusion).toBe(
+        DEFAULT_RECORDING_OPTIONS.occupancy.persistentOcclusion
+      );
+    });
+
+    /**
      * Debug-visualization toggle (2026-06-29 testing feedback): renders the
      * persistent occluder mesh as a visible (matcap) surface so its shape can be
      * judged on-device. A new, independent boolean — default OFF, boolean-or-
