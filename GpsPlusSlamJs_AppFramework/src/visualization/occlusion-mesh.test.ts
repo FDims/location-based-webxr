@@ -234,6 +234,25 @@ describe('OcclusionMesh', () => {
       occluder.dispose();
     });
 
+    it('clear() rebinds the debug skin to the new empty geometry (no stale skin left on screen)', () => {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent);
+      occluder.update([[0, 0, 0]], 0.15);
+      occluder.setDebugVisualization(true);
+
+      // clear() (e.g. a store swap) must keep the visible matcap skin in sync
+      // with the depth-only mesh — otherwise the skin keeps rendering the old,
+      // now-disposed geometry, so a stale debug surface stays on screen after
+      // the clear. swapGeometry() already rebinds the skin; clear() must too.
+      occluder.clear();
+
+      const skin = debugSkin(parent)!;
+      const depth = occluderMesh(parent)!;
+      expect(skin.geometry).toBe(depth.geometry); // shared new empty geometry
+      expect(skin.geometry.getIndex()?.count ?? 0).toBe(0); // nothing left to draw
+      occluder.dispose();
+    });
+
     it('is idempotent and safe after dispose', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);

@@ -22,7 +22,7 @@ can use it; the recorder owns only the off-by-default toggle + scene wiring. See
 - `getTriangleCount(): number` — triangles currently drawn.
 - `getAabbs(): readonly Aabb[]` — the AABB list from the last `update` (physics-export hook).
 - `setDebugVisualization(enabled: boolean): void` — toggle a **visible** matcap debug rendering of the meshed surface (shiny, semi-transparent) so its shape can be judged on-device. **Additive:** adds/removes a separate skin mesh sharing the occluder's geometry and **never touches the invisible depth-only mesh**, so occlusion is byte-for-byte unchanged either way. Backs the recorder's `occupancy.occluderDebugViz` toggle. Idempotent; safe before `update` (no-op until geometry exists) and after `dispose`.
-- `clear(): void` — empty the geometry; node stays attached (e.g. on store swap).
+- `clear(): void` — empty the geometry; node stays attached (e.g. on store swap). Rebinds the debug skin (when present) to the new empty geometry, like `update`/`swapGeometry`, so no stale debug surface lingers after a clear.
 - `dispose(): void` — detach the mesh and free GPU resources; idempotent; `update` is a no-op afterwards.
 
 ## Invariants & assumptions

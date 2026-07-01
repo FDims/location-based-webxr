@@ -285,6 +285,10 @@ export class OcclusionMesh {
     this.geometry.dispose();
     this.geometry = next;
     this.mesh.geometry = next;
+    // Keep the visible debug skin in sync with the depth-only mesh (as
+    // swapGeometry does) — otherwise it keeps rendering the old, now-disposed
+    // geometry and a stale debug surface lingers on screen after a clear.
+    if (this.debugSkin) this.debugSkin.geometry = next;
     this.lastAabbs = [];
   }
 
