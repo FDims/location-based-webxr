@@ -205,6 +205,42 @@ describe('wireOccupancyGridSubscribers', () => {
     dispose();
   });
 
+  it('retries a same-revision refresh after a transient sink failure (does not get stuck)', () => {
+    // Why this matters: `lastRenderedRevision` must not advance until the sinks
+    // actually succeed. If a refresh throws once while the revision was already
+    // marked rendered, every later same-revision sample (a settled scene) would
+    // short-circuit at the revision guard forever — a transient render failure
+    // becomes permanently sticky until the occupied set changes again.
+    const grid = makeRevisionGridSpy(0);
+    const visualizer = makeVisualizerSpy();
+    const onError = vi.fn();
+    const dispose = wireOccupancyGridSubscribers({
+      storeRef,
+      grid,
+      visualizer,
+      onError,
+      refreshIntervalMs: 1000,
+    });
+
+    // Leading-edge refresh throws once (transient render failure).
+    visualizer.refresh.mockImplementationOnce(() => {
+      throw new Error('render boom');
+    });
+    grid.setRevision(1);
+    storeRef.get().dispatch(recordDepthSample(makeSample(1)));
+    expect(visualizer.refresh).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    // Same revision, next sample after the throttle interval: the failed render
+    // MUST be retried (was: stuck at 1 call because the revision had already
+    // been marked rendered before the sink threw).
+    vi.advanceTimersByTime(2000);
+    storeRef.get().dispatch(recordDepthSample(makeSample(2)));
+    expect(visualizer.refresh).toHaveBeenCalledTimes(2);
+
+    dispose();
+  });
+
   it('forwards the freshest sample pose to the trailing refresh of a burst (Issue B1)', () => {
     // Why this matters: the wirer must remember the LAST sample's pose even
     // while refreshes are throttled, so the single trailing refresh ranks

@@ -24,6 +24,7 @@ Plan: `GpsPlusSlamJs_Docs/docs/2026-06-11-depth-occupancy-grid-port-plan.md` §3
 3. **Best-effort:** `addSample`/`refresh`/`clear` failures go to `onError`; a failed `addSample` skips that refresh (and the pose update) but later samples still flow. On swap, `grid.clear()` and `visualizer.clear()` are **independent** best-effort calls — a throwing `grid.clear()` still runs `visualizer.clear()`, so the cube view never keeps rendering a stale grid.
 4. Uses `Date.now()` + `setTimeout` (fake-timer friendly).
 5. **Viewer pose (Issue B1):** the remembered pose updates on every successfully-folded sample — even throttled ones — so the single trailing refresh of a burst ranks against the freshest head pose. It is reset to `null` on store swap (defensive: a refresh is always preceded by a sample that overwrites it, so the old recording's pose never reaches the new store's cubes).
+6. **Settled-scene revision skip + retry-on-failure:** when the grid exposes `getRevision()`, a refresh whose revision equals the last one _rendered_ is skipped (a re-observed settled scene costs no cube re-build / occluder re-mesh). Crucially, `lastRenderedRevision` advances **only after the sinks actually succeed** — if a refresh throws (surfaced via `onError`), the revision is left unchanged so the next throttled same-revision sample **retries** instead of short-circuiting forever. Reset to `null` on store swap to force the first refresh of the new grid.
 
 ## Examples
 
@@ -42,5 +43,5 @@ const dispose = wireOccupancyGridSubscribers({
 
 ## Tests
 
-- `wire-occupancy-grid-subscribers.test.ts` — exact-once folding, pre-wiring seed, leading+trailing throttle behavior (fake timers), store-swap clearing + re-attach, dispose, both error paths, and **viewer-pose forwarding (Issue B1): the leading-edge refresh carries the sample's pose, the trailing refresh of a burst carries the freshest pose, and a swap does not leak the old store's pose into the new one.**
+- `wire-occupancy-grid-subscribers.test.ts` — exact-once folding, pre-wiring seed, leading+trailing throttle behavior (fake timers), store-swap clearing + re-attach, dispose, both error paths, the **settled-scene revision skip** (unchanged revision ⇒ neither sink re-derives) and its **retry-on-failure** guard (a once-throwing refresh is retried on the next same-revision sample, not stuck forever), and **viewer-pose forwarding (Issue B1): the leading-edge refresh carries the sample's pose, the trailing refresh of a burst carries the freshest pose, and a swap does not leak the old store's pose into the new one.**
 - Call-site forwarding of `refreshIntervalMs` from `depth.intervalMs` (Issue A) is pinned at both wiring sites: `main.occupancy-cubes-wiring.test.ts` (live) and `replay/replay-mode.test.ts` (replay).

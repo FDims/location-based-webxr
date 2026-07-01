@@ -115,11 +115,18 @@ export function wireOccupancyGridSubscribers<TGrid extends OccupancyGridSink>(
     if (revision !== undefined && revision === lastRenderedRevision) {
       return;
     }
-    lastRenderedRevision = revision ?? null;
     lastRefreshTime = Date.now();
+    // Only mark this revision rendered once the sinks actually succeed. Advancing
+    // it up front means a single throwing refresh (caught below) would leave the
+    // revision recorded as rendered, so every later same-revision sample (a
+    // settled scene) short-circuits at the guard above forever — a transient
+    // failure becomes permanently sticky. On failure we keep the previous
+    // revision so the next throttled sample retries.
+    let rendered = true;
     try {
       visualizer.refresh(grid, lastViewerPose ?? undefined);
     } catch (err) {
+      rendered = false;
       onError?.(err);
     }
     // Independent best-effort: a throwing visualizer must not skip the
@@ -128,8 +135,12 @@ export function wireOccupancyGridSubscribers<TGrid extends OccupancyGridSink>(
       try {
         occluder.refresh(grid);
       } catch (err) {
+        rendered = false;
         onError?.(err);
       }
+    }
+    if (rendered) {
+      lastRenderedRevision = revision ?? null;
     }
   };
 
