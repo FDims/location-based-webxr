@@ -199,3 +199,131 @@ describe('meshOccupiedCells — properties', () => {
     );
   });
 });
+
+/**
+ * 'smooth' surface-nets properties with the single-corner nudge active
+ * (SINGLE_CORNER_NUDGE_K, 2026-07-02). Why these tests matter: the nudge was
+ * added because count-based assertions let entirely ZERO-AREA thin features
+ * ship in the default occluder mode — these properties pin, over arbitrary
+ * connected occupied sets, that (1) the mesh always has non-zero area, and
+ * that the nudge did not break (2) the measured-offset invariant or (3) vertex
+ * welding. See 2026-07-01-followup-smooth-mesher-single-corner-degeneracy.md.
+ */
+describe("meshOccupiedCells — 'smooth' mode properties (nudge active)", () => {
+  const STEP_DIRS: readonly GridCell[] = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+
+  /** Connected random sets via a walk from the origin (dupes are de-duped). */
+  const connectedCellsArb = fc
+    .array(fc.integer({ min: 0, max: 5 }), { minLength: 0, maxLength: 30 })
+    .map((steps) => {
+      const cells: GridCell[] = [[0, 0, 0]];
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      for (const s of steps) {
+        const d = STEP_DIRS[s]!;
+        x += d[0];
+        y += d[1];
+        z += d[2];
+        cells.push([x, y, z]);
+      }
+      return cells;
+    });
+
+  /** Uniform-offset centroid provider (each |·| < cellSize/2). */
+  function uniformOffsetProvider(offset: readonly [number, number, number]) {
+    return (cell: GridCell): [number, number, number] => [
+      cell[0] * CELL_SIZE + offset[0],
+      cell[1] * CELL_SIZE + offset[1],
+      cell[2] * CELL_SIZE + offset[2],
+    ];
+  }
+
+  /** Total mesh area in m² — ½·‖(b−a)×(c−a)‖ summed over all triangles. */
+  function totalTriArea(m: {
+    positions: Float32Array;
+    indices: Uint32Array;
+  }): number {
+    const p = m.positions;
+    let area = 0;
+    for (let t = 0; t < m.indices.length; t += 3) {
+      const ia = m.indices[t]! * 3;
+      const ib = m.indices[t + 1]! * 3;
+      const ic = m.indices[t + 2]! * 3;
+      const abx = p[ib]! - p[ia]!;
+      const aby = p[ib + 1]! - p[ia + 1]!;
+      const abz = p[ib + 2]! - p[ia + 2]!;
+      const acx = p[ic]! - p[ia]!;
+      const acy = p[ic + 1]! - p[ia + 1]!;
+      const acz = p[ic + 2]! - p[ia + 2]!;
+      const cx = aby * acz - abz * acy;
+      const cy = abz * acx - abx * acz;
+      const cz = abx * acy - aby * acx;
+      area += 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz);
+    }
+    return area;
+  }
+
+  const offsetArb = fc.tuple(
+    fc.double({ min: -0.07, max: 0.07, noNaN: true }),
+    fc.double({ min: -0.07, max: 0.07, noNaN: true }),
+    fc.double({ min: -0.07, max: 0.07, noNaN: true })
+  );
+
+  it('emits non-zero total area for ANY connected occupied set', () => {
+    // The zero-area collapse property: before the nudge, a walk that stays
+    // thin in ≥2 dimensions (e.g. a straight line) meshed to area 0.
+    fc.assert(
+      fc.property(connectedCellsArb, offsetArb, (cells, offset) => {
+        const smooth = meshOccupiedCells(cells, CELL_SIZE, {
+          mode: 'smooth',
+          getCellPoint: uniformOffsetProvider(offset),
+        });
+        expect(totalTriArea(smooth)).toBeGreaterThan(0);
+      })
+    );
+  });
+
+  it('measured-offset invariant: a uniform provider offset shifts every vertex by it', () => {
+    // The nudge is a pure function of the dual cell (provider-independent), so
+    // withProvider − plain must still equal the offset exactly, per vertex.
+    fc.assert(
+      fc.property(connectedCellsArb, offsetArb, (cells, offset) => {
+        const withProvider = meshOccupiedCells(cells, CELL_SIZE, {
+          mode: 'smooth',
+          getCellPoint: uniformOffsetProvider(offset),
+        });
+        const plain = meshOccupiedCells(cells, CELL_SIZE, { mode: 'smooth' });
+        expect(withProvider.positions.length).toBe(plain.positions.length);
+        for (let i = 0; i < withProvider.positions.length; i += 3) {
+          for (let a = 0; a < 3; a++) {
+            expect(withProvider.positions[i + a]!).toBeCloseTo(
+              plain.positions[i + a]! + offset[a]!,
+              5
+            );
+          }
+        }
+      })
+    );
+  });
+
+  it('welds vertices: strictly fewer vertices than 4 per quad', () => {
+    // Welding survives the nudge: dual vertices stay shared across the quads
+    // around them (each boundary dual cell borders ≥3 crossings — the minimum
+    // edge boundary of a non-empty proper subset of a cube's corners is 3).
+    fc.assert(
+      fc.property(connectedCellsArb, (cells) => {
+        const smooth = meshOccupiedCells(cells, CELL_SIZE, { mode: 'smooth' });
+        const quads = smooth.indices.length / 6;
+        expect(smooth.positions.length / 3).toBeLessThan(quads * 4);
+      })
+    );
+  });
+});
