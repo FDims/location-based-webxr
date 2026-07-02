@@ -68,7 +68,9 @@ export interface OccupancyMeshResult {
  *   boundary dual cell at the mean of its occupied corners' `getCellPoint`, with
  *   one quad per occupied↔empty crossing — so coverage matches the cubes.
  *   Continuous, hugs the measured surface, watertight for closed regions; a thin
- *   feature (the floor) collapses to a single smooth sheet (the smoothest mode).
+ *   feature (the floor) collapses to a single smooth sheet (the smoothest mode),
+ *   with only its single-occupied-corner dual vertices nudged apart so features
+ *   thin in ≥2 dimensions keep a non-zero area (see SINGLE_CORNER_NUDGE_K).
  *   Uses `getCellPoint` to hug the surface (falls back to geometric centres).
  *
  * - `'corner-fit'` — the per-face cube mesher with each shared lattice corner
@@ -402,8 +404,32 @@ function buildCulled(
  * vertices pulled onto the measured surface) and watertight for closed regions;
  * over a thin feature (a one-cell floor) the top and bottom dual vertices average
  * the same cells and coincide, so it reads as a single smooth sheet — the
- * smoothest of the modes.
+ * smoothest of the modes. Exception: a dual cell with exactly ONE occupied
+ * corner is nudged toward its dual-cell centre ({@link SINGLE_CORNER_NUDGE_K}),
+ * so features thin in ≥2 dimensions (isolated voxels, line/pillar ends) keep a
+ * non-zero area instead of collapsing onto a single point; on a thin floor this
+ * puffs only the perimeter-corner vertices by ±0.25·cell.
  */
+/**
+ * 'smooth' single-occupied-corner fallback strength: a dual cell with exactly
+ * one occupied corner places its vertex ON that corner's cell point, so every
+ * dual cell around a feature thin in ≥2 dimensions (an isolated voxel, the end
+ * of a 1-cell line/pillar) coincided with its neighbours → all-degenerate
+ * (zero-area) triangles → thin features were invisible to the occluder despite
+ * a full per-face triangle count. Nudging the `n === 1` vertex toward the
+ * dual-cell centre by this fraction of the corner→centre distance (0.5 ⇒
+ * ±0.25·cell per axis) keeps it a pure function of the dual cell, so welding /
+ * watertightness and the measured-offset invariant are preserved. Trade-off
+ * (accepted 2026-07-02): the `n === 1` perimeter corners of a thin floor (and
+ * of a solid box) puff by ±0.25·cell — imperceptible for AR occlusion. Known
+ * residual: the `n === 2` shaft rings of a long 1×1×N feature still collapse
+ * (locally indistinguishable from a thin floor's intentionally-flat edges).
+ * 0.25 was rejected as too close to imperceptibly-non-zero; 1.0 discards the
+ * measured centroid exactly where data is sparsest. See
+ * 2026-07-01-followup-smooth-mesher-single-corner-degeneracy.md.
+ */
+const SINGLE_CORNER_NUDGE_K = 0.5;
+
 function buildSmooth(
   occupied: Set<number>,
   uniqueCells: readonly GridCell[],
@@ -460,6 +486,11 @@ function buildSmooth(
     let sy = 0;
     let sz = 0;
     let n = 0;
+    // Local offset of the (last seen) occupied corner within the dual cell —
+    // only consumed when n === 1, where it identifies THE single corner.
+    let odx = 0;
+    let ody = 0;
+    let odz = 0;
     for (let dx = 0; dx <= 1; dx++) {
       for (let dy = 0; dy <= 1; dy++) {
         for (let dz = 0; dz <= 1; dz++) {
@@ -475,13 +506,28 @@ function buildSmooth(
           sy += p[1];
           sz += p[2];
           n += 1;
+          odx = dx;
+          ody = dy;
+          odz = dz;
         }
       }
     }
     // n ≥ 1: a dual vertex is only requested for a boundary dual cell, which by
     // construction has at least one occupied corner (the crossing's solid side).
+    let px = sx / n;
+    let py = sy / n;
+    let pz = sz / n;
+    if (n === 1) {
+      // Single-corner fallback: pull the vertex off the lone cell point toward
+      // the dual-cell centre so neighbouring dual vertices no longer coincide
+      // (see SINGLE_CORNER_NUDGE_K above for the full rationale/trade-off).
+      const nudge = cellSizeM * SINGLE_CORNER_NUDGE_K;
+      px += (0.5 - odx) * nudge;
+      py += (0.5 - ody) * nudge;
+      pz += (0.5 - odz) * nudge;
+    }
     const idx = positions.length / 3;
-    positions.push(sx / n, sy / n, sz / n);
+    positions.push(px, py, pz);
     vertexIndex.set(dkey, idx);
     return idx;
   };

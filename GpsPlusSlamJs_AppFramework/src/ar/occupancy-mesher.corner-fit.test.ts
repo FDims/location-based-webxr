@@ -142,12 +142,19 @@ describe("occupancy mesher — 'corner-fit' deformed-corner cube mode", () => {
     expect(maxY - minY).toBeGreaterThan(CELL * 0.9);
   });
 
-  it('keeps cube thickness on a thin floor where surface nets collapses', () => {
-    // Both modes now fully cover the boundary (same triangle count), so the
-    // distinction is GEOMETRY: corner-fit retains the cube's thickness, while
-    // dual-contouring surface nets collapses a one-cell floor to a single sheet
-    // (its top and bottom dual vertices average the same cells). This is what
-    // makes the two modes visibly different on a floor.
+  it('keeps cube thickness on a thin floor where surface nets stays a corner-puffed sheet', () => {
+    // Why this test matters: both modes fully cover the boundary (same
+    // triangle count), so the distinction is GEOMETRY — corner-fit retains the
+    // cube's thickness, while dual-contouring surface nets collapses a
+    // one-cell floor to a single sheet (top and bottom dual vertices average
+    // the same cells). Since the smooth mesher's single-corner nudge
+    // (SINGLE_CORNER_NUDGE_K = 0.5, 2026-07-02 decision) the sheet is no
+    // longer PERFECTLY flat: exactly the floor's perimeter-corner dual cells
+    // are n === 1 (4 corners × above/below = 8 vertices) and puff ±0.25·cell
+    // vertically. Split assertions keep the strongest invariant that still
+    // holds: (a) every non-corner vertex stays exactly in the sheet plane,
+    // (b) the corner puff is bounded at K·cell overall — still far below
+    // corner-fit's full cube thickness, so the mode distinction survives.
     const cells: GridCell[] = [];
     for (let x = 0; x < 4; x++)
       for (let z = 0; z < 4; z++) cells.push([x, 0, z]);
@@ -170,7 +177,31 @@ describe("occupancy mesher — 'corner-fit' deformed-corner cube mode", () => {
       return hi - lo;
     };
     expect(yExtent(cornerFit)).toBeGreaterThan(CELL * 0.9); // ~full cell thick
-    expect(yExtent(smooth)).toBeLessThan(CELL * 0.1); // collapsed flat sheet
+
+    // The uniform provider offset puts every un-nudged dual vertex exactly at
+    // the sheet plane y = OFFSET[1]; only n === 1 (corner) vertices may move.
+    const sheetY = OFFSET[1];
+    const nudge = CELL * 0.5 * 0.5; // K·0.5·cell — keep in sync with SINGLE_CORNER_NUDGE_K
+    const flatYs: number[] = [];
+    const movedYs: number[] = [];
+    for (let v = 1; v < smooth.positions.length; v += 3) {
+      const y = smooth.positions[v]!;
+      if (Math.abs(y - sheetY) <= 1e-6) flatYs.push(y);
+      else movedYs.push(y);
+    }
+    // (a) interior + edge vertices stay flat (well under the old 0.1·cell bar).
+    expect(flatYs.length).toBeGreaterThan(0);
+    expect(Math.max(...flatYs) - Math.min(...flatYs)).toBeLessThan(CELL * 0.1);
+    // Exactly the 8 perimeter-corner vertices move, each by exactly the nudge.
+    expect(movedYs.length).toBe(8);
+    for (const y of movedYs) {
+      expect(Math.abs(Math.abs(y - sheetY) - nudge)).toBeLessThan(1e-6);
+    }
+    // (b) overall corner puff bounded: yExtent ≤ K·cell + ε (±K·0.5·cell about
+    // the sheet), still a fraction of corner-fit's ~1·cell thickness.
+    const smoothYExtent = yExtent(smooth);
+    expect(smoothYExtent).toBeLessThanOrEqual(CELL * 0.5 + 1e-6);
+    expect(smoothYExtent).toBeLessThan(yExtent(cornerFit));
   });
 
   it('is watertight (even-edge-cover) on a closed region', () => {

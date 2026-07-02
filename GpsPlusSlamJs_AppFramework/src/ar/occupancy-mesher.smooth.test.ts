@@ -45,6 +45,31 @@ function centroidProvider(cells: Iterable<GridCell>) {
 
 const triCount = (m: { indices: Uint32Array }): number => m.indices.length / 3;
 
+/** Total mesh surface area in m² — ½·‖(b−a)×(c−a)‖ summed over all triangles. */
+function totalTriArea(m: {
+  positions: Float32Array;
+  indices: Uint32Array;
+}): number {
+  const p = m.positions;
+  let area = 0;
+  for (let t = 0; t < m.indices.length; t += 3) {
+    const ia = m.indices[t]! * 3;
+    const ib = m.indices[t + 1]! * 3;
+    const ic = m.indices[t + 2]! * 3;
+    const abx = p[ib]! - p[ia]!;
+    const aby = p[ib + 1]! - p[ia + 1]!;
+    const abz = p[ib + 2]! - p[ia + 2]!;
+    const acx = p[ic]! - p[ia]!;
+    const acy = p[ic + 1]! - p[ia + 1]!;
+    const acz = p[ic + 2]! - p[ia + 2]!;
+    const cx = aby * acz - abz * acy;
+    const cy = abz * acx - abx * acz;
+    const cz = abx * acy - aby * acx;
+    area += 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz);
+  }
+  return area;
+}
+
 /** Index-based edge cover counts (robust for welded, off-lattice vertices). */
 function edgeCover(indices: Uint32Array): Map<string, number> {
   const edges = new Map<string, number>();
@@ -102,6 +127,45 @@ describe("occupancy mesher — 'smooth' surface-nets (dual contouring)", () => {
     });
     expect(triCount(smooth)).toBeGreaterThan(0);
     expect(triCount(smooth)).toBe(triCount(perFace));
+  });
+
+  it('emits non-zero AREA for features thin in ≥2 dimensions (single-corner nudge)', () => {
+    // Why this test matters: without the SINGLE_CORNER_NUDGE_K fallback, all
+    // dual cells around a feature thin in ≥2 dimensions average the SAME set
+    // of occupied corners, so their welded vertices coincide — an isolated
+    // voxel, a 4×1×1 line and a 1×1×3 pillar emitted the full per-face
+    // triangle COUNT but ZERO total area, i.e. they were invisible to the
+    // (default-on) occluder. Count-only assertions can never catch that, so
+    // this area assertion is the permanent regression gate (see
+    // 2026-07-01-followup-smooth-mesher-single-corner-degeneracy.md).
+    // Guaranteed: non-zero total area (the n === 1 end/corner vertices spread
+    // apart). NOT guaranteed, by design: interior shaft segments of a 1×1×N
+    // feature stay degenerate — their n === 2 rings are locally
+    // indistinguishable from a thin floor's intentionally-flat edges.
+    const thinFeatures: GridCell[][] = [
+      [[0, 0, 0]], // isolated voxel
+      [
+        // 4×1×1 line
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0, 0],
+        [3, 0, 0],
+      ],
+      [
+        // 1×1×3 pillar
+        [0, 0, 0],
+        [0, 1, 0],
+        [0, 2, 0],
+      ],
+    ];
+    for (const cells of thinFeatures) {
+      const smooth = meshOccupiedCells(cells, CELL, {
+        mode: 'smooth',
+        getCellPoint: centroidProvider(cells),
+      });
+      expect(triCount(smooth)).toBeGreaterThan(0);
+      expect(totalTriArea(smooth)).toBeGreaterThan(0);
+    }
   });
 
   it('consumes getCellPoint: a uniform sub-cell offset shifts every vertex by it', () => {
