@@ -15,7 +15,7 @@
     "preview": "vite preview --config config/vite.config.ts",
     "test": "pnpm run test:core && pnpm run test:e2e",
     "test:core": "pnpm run format && pnpm run lint && pnpm run lint:css && pnpm run check:all && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
-    "test:unit": "vitest run --coverage --config config/vitest.config.ts",
+    "test:unit": "node ../scripts/run-vitest-scoped.mjs run --coverage --config=config/vitest.config.ts",
     "test:investigation": "pnpm --filter gps-plus-slam-investigation test",
     "test:watch": "vitest --config config/vitest.config.ts",
     "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
