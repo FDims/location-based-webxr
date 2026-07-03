@@ -101,11 +101,17 @@ export interface OccluderMeshDriverOptions {
 }
 
 interface Job {
-  readonly cells: readonly GridCell[];
+  /** Tuple snapshot, or the flat Int32Array from `getOccupiedCellsFlat` (Step 1.3). */
+  readonly cells: readonly GridCell[] | Int32Array;
   readonly cellSizeM: number;
   readonly mode: MeshMode;
   readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
   readonly onMesh: OnMesh;
+}
+
+/** Cell count of a snapshot in either representation. */
+function cellCountOf(cells: readonly GridCell[] | Int32Array): number {
+  return cells instanceof Int32Array ? cells.length / 3 : cells.length;
 }
 
 export class OccluderMeshDriver {
@@ -157,11 +163,13 @@ export class OccluderMeshDriver {
   }
 
   /**
-   * Request a mesh of `cells`. If a job is already in flight, this becomes the
+   * Request a mesh of `cells` (tuple array, or a flat Int32Array snapshot —
+   * see `packMeshRequest`; a flat snapshot's buffer is transferred/detached,
+   * so pass a fresh array). If a job is already in flight, this becomes the
    * (single) pending job — the newest request wins; intermediates are dropped.
    */
   request(
-    cells: readonly GridCell[],
+    cells: readonly GridCell[] | Int32Array,
     cellSizeM: number,
     mode: MeshMode,
     getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined,
@@ -186,7 +194,7 @@ export class OccluderMeshDriver {
     // failure, which also clears this record), so capturing it here is safe.
     this.inFlightStats = {
       startedMs: this.now(),
-      cellCount: job.cells.length,
+      cellCount: cellCountOf(job.cells),
       mode: job.mode,
       synchronous: this.syncMode || this.poster === null,
     };

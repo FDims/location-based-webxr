@@ -65,27 +65,61 @@ function packKey(x: number, y: number, z: number): number {
  * Pack an occupied-cell snapshot into a transferable {@link MeshWorkerRequest}
  * (main thread). `transfer` is the list to pass as the second `postMessage` arg
  * so the buffers move (not copy) to the worker.
+ *
+ * `cells` may be the classic tuple array or an already-flat
+ * `[x0,y0,z0, x1,y1,z1, …]` Int32Array (Step 1.3 of the 2026-07-03
+ * long-session fps plan — `OccupancyGrid.getOccupiedCellsFlat` hands the
+ * snapshot over flat, deleting the tuple intermediate this function used to
+ * re-flatten). A flat snapshot is used **zero-copy**: its buffer lands in
+ * `transfer` and is DETACHED after posting — callers must pass a fresh array
+ * they do not reuse. Throws `RangeError` when a flat snapshot's length is not
+ * a multiple of 3 (a truncated buffer must fail loudly, not mesh garbage).
  */
 export function packMeshRequest(
   id: number,
-  cells: readonly GridCell[],
+  cells: readonly GridCell[] | Int32Array,
   cellSizeM: number,
   mode: MeshMode,
   getCellPoint?: (cell: GridCell) => Vector3 | null
 ): { request: MeshWorkerRequest; transfer: ArrayBufferLike[] } {
-  const n = cells.length;
-  const flat = new Int32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const c = cells[i]!;
-    flat[i * 3] = c[0];
-    flat[i * 3 + 1] = c[1];
-    flat[i * 3 + 2] = c[2];
+  let flat: Int32Array;
+  let n: number;
+  if (cells instanceof Int32Array) {
+    if (cells.length % 3 !== 0) {
+      throw new RangeError(
+        `flat cell snapshot length must be a multiple of 3, got ${cells.length}`
+      );
+    }
+    flat = cells;
+    n = cells.length / 3;
+  } else {
+    n = cells.length;
+    flat = new Int32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const c = cells[i]!;
+      flat[i * 3] = c[0];
+      flat[i * 3 + 1] = c[1];
+      flat[i * 3 + 2] = c[2];
+    }
   }
   let centroids: Float64Array | null = null;
   if (needsCentroids(mode) && getCellPoint) {
     centroids = new Float64Array(n * 3);
+    // One reusable lookup tuple for the flat path — getCellPoint implementations
+    // key off the coordinates and never retain the tuple, so mutation is safe
+    // and saves n short-lived allocations on the hot pack path.
+    const scratch: [number, number, number] = [0, 0, 0];
     for (let i = 0; i < n; i++) {
-      const cp = getCellPoint(cells[i]!);
+      let cell: GridCell;
+      if (cells instanceof Int32Array) {
+        scratch[0] = flat[i * 3]!;
+        scratch[1] = flat[i * 3 + 1]!;
+        scratch[2] = flat[i * 3 + 2]!;
+        cell = scratch;
+      } else {
+        cell = cells[i]!;
+      }
+      const cp = getCellPoint(cell);
       if (cp) {
         centroids[i * 3] = cp[0];
         centroids[i * 3 + 1] = cp[1];

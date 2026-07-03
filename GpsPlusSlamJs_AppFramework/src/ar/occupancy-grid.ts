@@ -225,6 +225,52 @@ export class OccupancyGrid {
     return result;
   }
 
+  /**
+   * Flat `[x0,y0,z0, x1,y1,z1, …]` variant of {@link getOccupiedCells} for the
+   * mesh-worker pack path (Step 1.3 of the 2026-07-03 long-session fps plan):
+   * `packMeshRequest` ships the snapshot to the worker as a transferable
+   * Int32Array, so handing it over flat deletes the tuple-array intermediate
+   * it used to re-flatten. Same cells, same order as the tuple API.
+   *
+   * Unlike {@link getOccupiedCells} this returns a **fresh array every call**
+   * — the pack path TRANSFERS the buffer to the worker (detaching it), so a
+   * shared/cached array would be destroyed under the grid. When the tuple
+   * memo is warm (the cubes refresh just snapshotted the same floor) the
+   * fresh array is flattened from it in O(matching cells) without a re-walk.
+   */
+  getOccupiedCellsFlat(minObservations = 1): Int32Array {
+    const cache = this.snapshotCache;
+    if (
+      cache &&
+      cache.revision === this.revision &&
+      cache.minObservations === minObservations
+    ) {
+      const cells = cache.cells;
+      const flat = new Int32Array(cells.length * 3);
+      for (let i = 0; i < cells.length; i++) {
+        const c = cells[i]!;
+        flat[i * 3] = c[0];
+        flat[i * 3 + 1] = c[1];
+        flat[i * 3 + 2] = c[2];
+      }
+      return flat;
+    }
+    // Cold path: one Map walk into a worst-case-sized buffer, trimmed at the
+    // end (a slice copy of the used prefix beats a second counting walk).
+    const flat = new Int32Array(this.cells.size * 3);
+    let used = 0;
+    for (const record of this.cells.values()) {
+      if (record.count >= minObservations) {
+        const c = record.cell;
+        flat[used] = c[0];
+        flat[used + 1] = c[1];
+        flat[used + 2] = c[2];
+        used += 3;
+      }
+    }
+    return used === flat.length ? flat : flat.slice(0, used);
+  }
+
   /** Quantize a raw-WebXR position to its grid cell (round per axis). */
   cellForPosition(pos: Vector3): GridCell {
     // `+ 0` normalizes Math.round's -0 so cell coordinates compare cleanly

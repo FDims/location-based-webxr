@@ -103,4 +103,55 @@ describe('occlusion mesh worker — pack/run round-trip', () => {
     expect(transfer).toContain(request.cells.buffer);
     expect(transfer).toContain(request.centroids!.buffer);
   });
+
+  // --- Flat snapshot input (Step 1.3 of the 2026-07-03 long-session fps plan) ---
+  // Why these tests matter: the tuple-array input made pack re-flatten a
+  // snapshot the grid can now hand over flat (`getOccupiedCellsFlat`). A flat
+  // Int32Array must produce a byte-identical request WITHOUT copying, and the
+  // centroid fill must still resolve every cell.
+
+  function flatten(cells: readonly GridCell[]): Int32Array {
+    const flat = new Int32Array(cells.length * 3);
+    cells.forEach((c, i) => {
+      flat[i * 3] = c[0];
+      flat[i * 3 + 1] = c[1];
+      flat[i * 3 + 2] = c[2];
+    });
+    return flat;
+  }
+
+  it('accepts a flat Int32Array snapshot without copying and meshes identically', () => {
+    const cells = solidBox(4, 2, 3);
+    const flat = flatten(cells);
+    const getCellPoint = centroidProvider(cells);
+
+    const fromFlat = packMeshRequest(9, flat, CELL, 'smooth', getCellPoint);
+    const fromTuples = packMeshRequest(9, cells, CELL, 'smooth', getCellPoint);
+
+    // Zero-copy: the request carries the caller's flat array itself.
+    expect(fromFlat.request.cells).toBe(flat);
+    expect(fromFlat.transfer).toContain(flat.buffer);
+    // Byte-identical request → byte-identical mesh.
+    expect(Array.from(fromFlat.request.cells)).toEqual(
+      Array.from(fromTuples.request.cells)
+    );
+    expect(Array.from(fromFlat.request.centroids!)).toEqual(
+      Array.from(fromTuples.request.centroids!)
+    );
+    const { response } = runMeshRequest(fromFlat.request);
+    const direct = meshOccupiedCells(cells, CELL, {
+      mode: 'smooth',
+      getCellPoint,
+    });
+    expect(Array.from(response.positions)).toEqual(
+      Array.from(direct.positions)
+    );
+    expect(Array.from(response.indices)).toEqual(Array.from(direct.indices));
+  });
+
+  it('rejects a flat snapshot whose length is not a multiple of 3', () => {
+    expect(() =>
+      packMeshRequest(1, new Int32Array([1, 2, 3, 4]), CELL, 'greedy')
+    ).toThrow(RangeError);
+  });
 });

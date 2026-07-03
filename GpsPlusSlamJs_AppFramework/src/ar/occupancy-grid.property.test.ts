@@ -181,4 +181,32 @@ describe('OccupancyGrid properties', () => {
       )
     );
   });
+
+  it('getOccupiedCellsFlat is exactly the flattened tuple snapshot for any observation history and floor (Step 1.3)', () => {
+    // Why this property matters: the flat API feeds the mesh-worker pack path
+    // and must never drift from the tuple API the cubes/COLMAP consumers read
+    // — same cells, same order, for any interleaving of observations and any
+    // minObservations floor (including floors above the memoized range).
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.array(fc.double({ min: 0.6, max: 12, noNaN: true }), {
+            minLength: 1,
+            maxLength: 5,
+          }),
+          { minLength: 1, maxLength: 8 }
+        ),
+        fc.integer({ min: 1, max: 12 }),
+        (samples, minObservations) => {
+          const grid = new OccupancyGrid();
+          for (const depths of samples) {
+            grid.addSample(makeSample([0, 0, 0], depths));
+          }
+          const tuples = grid.getOccupiedCells(minObservations);
+          const flat = grid.getOccupiedCellsFlat(minObservations);
+          expect(Array.from(flat)).toEqual(tuples.flat());
+        }
+      )
+    );
+  });
 });

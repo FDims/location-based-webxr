@@ -1410,13 +1410,15 @@ async function handleEnterAR(): Promise<void> {
             // if a worker can't be created.
             (occluderMeshWorker = createOccluderMeshWorker()),
             {
-              // getOccupiedCells + getCellPoint stay main-thread (the grid lives
-              // here); only meshOccupiedCells runs in the worker, its geometry
-              // applied back here. getCellPoint is read only by the
+              // Flat snapshot (Step 1.3, 2026-07-03 fps plan): hands the cells
+              // to the pack path as the transferable Int32Array it ships
+              // anyway — no tuple intermediate. Snapshot + getCellPoint stay
+              // main-thread; only meshOccupiedCells runs in the worker, its
+              // geometry applied back here. getCellPoint is read only by the
               // surface-hugging modes (the cube modes ignore it).
               refresh: (g: OccupancyGrid) =>
                 occluderMeshWorker?.driver.request(
-                  g.getOccupiedCells(minConfidence),
+                  g.getOccupiedCellsFlat(minConfidence),
                   g.cellSizeM,
                   occluderMode,
                   (cell) => g.getCellPoint(cell),

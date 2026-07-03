@@ -465,6 +465,33 @@ describe('OccupancyGrid', () => {
       expect(grid.getOccupiedCells(1)).toHaveLength(0);
     });
 
+    it('getOccupiedCellsFlat matches the tuple API and returns a FRESH array every call (Step 1.3)', () => {
+      // Why this test matters: the flat snapshot feeds packMeshRequest, which
+      // TRANSFERS its buffer to the mesh worker (detaching it). Serving a
+      // cached/shared array would detach the grid's own state — so unlike
+      // getOccupiedCells, every call must mint a new Int32Array. Content-wise
+      // it must be exactly the tuple snapshot, flattened, both when the tuple
+      // memo is warm (post-cubes-refresh order) and cold.
+      const grid = new OccupancyGrid();
+      grid.addSample(makeSample([0, 0, 0], [5.3, 4.2, 2.0]));
+
+      // Cold: no tuple walk has happened at this floor yet.
+      const flatCold = grid.getOccupiedCellsFlat(1);
+      const tuples = grid.getOccupiedCells(1);
+      expect(Array.from(flatCold)).toEqual(tuples.flat());
+
+      // Warm: the tuple memo is populated now; flat must agree and be fresh.
+      const flatWarm = grid.getOccupiedCellsFlat(1);
+      expect(Array.from(flatWarm)).toEqual(tuples.flat());
+      expect(flatWarm).not.toBe(flatCold);
+
+      // Floor filtering matches the tuple API.
+      expect(Array.from(grid.getOccupiedCellsFlat(2))).toEqual(
+        grid.getOccupiedCells(2).flat()
+      );
+      expect(grid.getOccupiedCellsFlat(99)).toHaveLength(0);
+    });
+
     it('does not memoize floors above the revision-tracked maximum (10)', () => {
       // Once a cell's count passes 10, further observations no longer bump
       // the revision — so a floor > 10 keyed on the revision could go stale.

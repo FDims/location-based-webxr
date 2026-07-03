@@ -250,11 +250,12 @@ export async function startReplayMode(
         // coalesces to the latest while busy (synchronous fallback if no worker).
         (occluderMeshWorker = createOccluderMeshWorker()),
         {
-          // getOccupiedCells + getCellPoint stay main-thread; only the mesh runs
-          // in the worker. getCellPoint is read only by the surface-hugging modes.
+          // Flat snapshot (Step 1.3, 2026-07-03 fps plan — parity with main.ts):
+          // snapshot + getCellPoint stay main-thread; only the mesh runs in the
+          // worker. getCellPoint is read only by the surface-hugging modes.
           refresh: (g: OccupancyGrid) =>
             occluderMeshWorker?.driver.request(
-              g.getOccupiedCells(occluderMinConfidence),
+              g.getOccupiedCellsFlat(occluderMinConfidence),
               g.cellSizeM,
               occluderMode,
               (cell) => g.getCellPoint(cell),
