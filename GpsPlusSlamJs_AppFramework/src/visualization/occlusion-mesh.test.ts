@@ -426,6 +426,16 @@ describe('OcclusionMesh', () => {
       occluder.dispose();
     });
 
+    it("three.js's matcap fragment shader still contains the injection anchor", () => {
+      // onBeforeCompile's string replace silently no-ops when the anchor is
+      // missing (e.g. a three.js upgrade renames the chunk) — the style would
+      // degrade to plain matcap with no error. Pin the anchor against the
+      // installed three version so an upgrade fails loudly here instead.
+      expect(THREE.ShaderChunk.meshmatcap_frag).toContain(
+        '#include <opaque_fragment>'
+      );
+    });
+
     it('uses a custom program cache key so three.js does not reuse the plain matcap program', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);
