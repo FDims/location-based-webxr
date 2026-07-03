@@ -274,6 +274,29 @@ describe('settings-modal', () => {
       expect(checkbox.checked).toBe(false);
     });
 
+    it('populates the live tile-cap slider (Step 4) and updates the working copy, labelling 0 as unlimited', () => {
+      // Why: the FIFO cap bounds live draw calls/GPU memory on long walks —
+      // the slider must round-trip the stored value and make the 0 opt-out
+      // legible as "unlimited" rather than a confusing "0 tiles".
+      localStorageMock.getItem.mockReturnValueOnce(
+        JSON.stringify({ frameTileDisplay: { maxTiles: 250 } })
+      );
+      initSettingsModal();
+      showSettingsModal();
+
+      const slider = document.getElementById(
+        'frame-tile-max-tiles'
+      ) as HTMLInputElement;
+      const label = document.getElementById('frame-tile-max-tiles-value');
+      expect(slider.value).toBe('250');
+      expect(label?.textContent).toBe('250');
+
+      slider.value = '0';
+      slider.dispatchEvent(new Event('input'));
+      expect(getWorkingOptions()?.frameTileDisplay.maxTiles).toBe(0);
+      expect(label?.textContent).toBe('unlimited');
+    });
+
     it('includes "Clear Reference Point Cache" button', () => {
       // Why this test matters:
       // The cache reset button must be present in production HTML so users

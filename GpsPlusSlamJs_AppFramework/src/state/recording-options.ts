@@ -309,6 +309,17 @@ export interface FrameTileDisplayOptions {
    * `images.resolutionDivisor`.
    */
   divisor: number;
+  /**
+   * FIFO cap on the **live** frame-tile planes (Step 4 of the 2026-07-03
+   * long-session fps plan): adding a tile over the cap removes + disposes the
+   * oldest, bounding draw calls / GPU texture memory / scene-graph size for
+   * arbitrarily long sessions while keeping the recent-path breadcrumb.
+   * `0` = unlimited. Default 100 (a ~5-min walk captures 112–145 frames, so
+   * the cap binds on real walks). **Live only** (2026-07-03 interview): in
+   * replay the tiles audit coverage of the full recorded path, so the replay
+   * wiring stays uncapped regardless of this value.
+   */
+  maxTiles: number;
 }
 
 /**
@@ -462,6 +473,8 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // Half-resolution display texture by default (D7): a noticeable per-tile
     // memory saving with little perceptual cost on the small floating tiles.
     divisor: 2,
+    // Live FIFO tile cap (2026-07-03 fps plan Step 4); 0 = unlimited.
+    maxTiles: 100,
   },
   visualization: {
     // All overlays ON so the group is purely additive (DB-1b) — no behaviour
@@ -579,6 +592,10 @@ export const OCCUPANCY_CONSTRAINTS = {
  */
 export const FRAME_TILE_DISPLAY_CONSTRAINTS = {
   divisor: { min: 1, max: 8, step: 1 },
+  // Live tile cap: 0 = unlimited; 2000 is far past any sane on-device tile
+  // budget (each tile is one draw call + one texture) but keeps a corrupt
+  // stored value from making the cap effectively unbounded by accident.
+  maxTiles: { min: 0, max: 2000, step: 10 },
 } as const;
 
 /**
@@ -1040,6 +1057,14 @@ export function validateFrameTileDisplayOptions(
         : defaults.divisor,
       FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.min,
       FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.max
+    ),
+    // Same number-or-default policy; 0 stays 0 (the explicit "unlimited").
+    maxTiles: clamp(
+      typeof options.maxTiles === 'number' && Number.isFinite(options.maxTiles)
+        ? Math.round(options.maxTiles)
+        : defaults.maxTiles,
+      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.min,
+      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.max
     ),
   };
 }

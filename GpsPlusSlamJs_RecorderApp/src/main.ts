@@ -1305,7 +1305,12 @@ async function handleEnterAR(): Promise<void> {
           // Parent under arWorldGroup (NOT the scene root): the selector
           // emits raw-WebXR poses, so tiles must ride the camera's
           // alignment × WEBXR_TO_NUE chain. See the followup frame-check doc.
-          frameTileVisualizer = new FrameTileVisualizer(arWorldGroup);
+          // maxTiles: LIVE-ONLY FIFO cap (Step 4, 2026-07-03 fps plan) — the
+          // replay wiring deliberately omits it so coverage auditing sees the
+          // full recorded path.
+          frameTileVisualizer = new FrameTileVisualizer(arWorldGroup, {
+            maxTiles: recordingOptions.frameTileDisplay.maxTiles,
+          });
           // D7-resolution: downscale the live display texture by the
           // configured frameTileDisplay divisor (default ÷2) to cut per-tile
           // GPU memory. Read once here at Enter-AR alongside the other viz

@@ -116,7 +116,7 @@ const {
       images: { enabled: false, intervalMs: 1000, quality: 0.8 },
       depth: { enabled: false, intervalMs: 1000 },
       occupancy: { cellSizeM: 0.15, minConfidence: 3 },
-      frameTileDisplay: { divisor: 2 },
+      frameTileDisplay: { divisor: 2, maxTiles: 100 },
       visualization: {
         frameTiles: true,
         occupancyCubes: true,
@@ -496,6 +496,7 @@ describe('Visualization overlay toggles in live AR (Finding B)', () => {
     vi.clearAllMocks();
     frameTileDisposers.length = 0;
     occupancyDisposers.length = 0;
+    mockRecordingOptions.frameTileDisplay.maxTiles = 100;
     // Reset to the additive default (all overlays ON, stats OFF) before each
     // test — statsOverlay is the group's one off-by-default field.
     mockRecordingOptions.visualization = {
@@ -544,6 +545,19 @@ describe('Visualization overlay toggles in live AR (Finding B)', () => {
 
       expect(mockFrameTileVisualizerCtor).toHaveBeenCalledTimes(1);
       expect(mockWireFrameTileSubscribers).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the LIVE-only frameTileDisplay.maxTiles cap to the visualizer (Step 4, 2026-07-03 fps plan)', async () => {
+      // Why: the FIFO tile cap is a live-session bound; the replay wiring
+      // deliberately omits it (asserted in replay-mode.test.ts). This pins
+      // that the live constructor actually receives the stored setting.
+      mockRecordingOptions.frameTileDisplay.maxTiles = 42;
+      await handleEnterARForTesting();
+
+      expect(mockFrameTileVisualizerCtor).toHaveBeenCalledWith(
+        expect.anything(),
+        { maxTiles: 42 }
+      );
     });
   });
 

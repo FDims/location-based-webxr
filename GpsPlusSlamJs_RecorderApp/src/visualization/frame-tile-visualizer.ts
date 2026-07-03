@@ -72,6 +72,17 @@ export interface FrameTileVisualizerOptions {
    * separate display-resolution divisor (Slice 4b) does.
    */
   readonly sizeMeters?: number;
+  /**
+   * FIFO cap on rendered tiles (Step 4 of the 2026-07-03 long-session fps
+   * plan): adding a tile over the cap removes + disposes the OLDEST, bounding
+   * draw calls / GPU texture memory / scene-graph size for arbitrarily long
+   * sessions while keeping the recent-path breadcrumb. `0`, omitted, or any
+   * non-finite/negative value = unlimited (the legacy behaviour) — the replay
+   * wiring relies on that to keep full-path coverage auditing uncapped
+   * (live-only cap, 2026-07-03 interview decision; the live wiring passes
+   * `frameTileDisplay.maxTiles`).
+   */
+  readonly maxTiles?: number;
 }
 
 const DEFAULT_SIZE = 0.1;
@@ -82,6 +93,9 @@ const BASIS_NODE_NAME = 'frame-tile-basis';
 export class FrameTileVisualizer {
   private readonly arSpaceNode: THREE.Object3D;
   private readonly sizeMeters: number;
+  /** FIFO tile cap; `Infinity` = unlimited (see the option's docs). */
+  private readonly maxTiles: number;
+  /** Insertion-ordered (JS `Map` guarantee) — the FIFO the cap evicts from. */
   private readonly tiles = new Map<string, THREE.Mesh>();
   /**
    * Static basis-change node carrying the constant `WEBXR_TO_NUE` matrix,
@@ -104,6 +118,11 @@ export class FrameTileVisualizer {
   ) {
     this.arSpaceNode = arSpaceNode;
     this.sizeMeters = options.sizeMeters ?? DEFAULT_SIZE;
+    // 0 / negative / non-finite ⇒ unlimited (defensive: a corrupt cap must
+    // never evict everything or throw — it just degrades to legacy behaviour).
+    const cap = options.maxTiles ?? 0;
+    this.maxTiles =
+      Number.isFinite(cap) && cap > 0 ? Math.floor(cap) : Infinity;
 
     this.basisNode = new THREE.Group();
     this.basisNode.name = BASIS_NODE_NAME;
@@ -157,6 +176,18 @@ export class FrameTileVisualizer {
     );
     this.basisNode.add(mesh);
     this.tiles.set(frame.imageFile, mesh);
+    // FIFO cap (Step 4, 2026-07-03 fps plan): evict oldest-first so draw
+    // calls / GPU textures stay bounded while the recent path keeps its
+    // breadcrumb. `while` (not `if`) so a lowered cap on a reused instance
+    // still converges.
+    while (this.tiles.size > this.maxTiles) {
+      const oldest = this.tiles.entries().next().value;
+      if (!oldest) break; // unreachable: size > cap ≥ 1 implies an entry
+      const [key, oldMesh] = oldest;
+      this.basisNode.remove(oldMesh);
+      disposeTileMaterial(oldMesh);
+      this.tiles.delete(key);
+    }
   }
 
   /**

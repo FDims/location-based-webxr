@@ -679,6 +679,41 @@ describe('recording-options', () => {
         }).divisor
       ).toBe(DEFAULT_RECORDING_OPTIONS.frameTileDisplay.divisor);
     });
+
+    // maxTiles (Step 4 of the 2026-07-03 long-session fps plan): the LIVE
+    // FIFO cap on rendered frame-tile planes. Default 100 — the 2026-07-02
+    // corpus walks captured 112–145 frames, so the cap binds on a real walk.
+    // 0 = unlimited (the explicit opt-out). Replay ignores the setting
+    // entirely (full-path coverage auditing) — that scope is pinned at the
+    // wiring sites, not here.
+    it('maxTiles defaults to 100 and preserves valid values including 0 (unlimited)', () => {
+      expect(validateFrameTileDisplayOptions({}).maxTiles).toBe(100);
+      expect(DEFAULT_RECORDING_OPTIONS.frameTileDisplay.maxTiles).toBe(100);
+      expect(validateFrameTileDisplayOptions({ maxTiles: 250 }).maxTiles).toBe(
+        250
+      );
+      expect(validateFrameTileDisplayOptions({ maxTiles: 0 }).maxTiles).toBe(0);
+    });
+
+    it('maxTiles clamps/rounds bad values and falls back to default for non-numbers', () => {
+      expect(validateFrameTileDisplayOptions({ maxTiles: -5 }).maxTiles).toBe(
+        0
+      );
+      expect(validateFrameTileDisplayOptions({ maxTiles: 12.7 }).maxTiles).toBe(
+        13
+      );
+      expect(validateFrameTileDisplayOptions({ maxTiles: 1e9 }).maxTiles).toBe(
+        FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.max
+      );
+      expect(validateFrameTileDisplayOptions({ maxTiles: NaN }).maxTiles).toBe(
+        100
+      );
+      expect(
+        validateFrameTileDisplayOptions({
+          maxTiles: 'lots' as unknown as number,
+        }).maxTiles
+      ).toBe(100);
+    });
   });
 
   describe('validateCompassDebugOptions', () => {
@@ -1507,7 +1542,7 @@ describe('recording-options', () => {
           occluderDebugStyle: 'depth-shaded-wireframe',
           occluderMeshMode: 'smooth',
         },
-        frameTileDisplay: { divisor: 4 },
+        frameTileDisplay: { divisor: 4, maxTiles: 250 },
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },

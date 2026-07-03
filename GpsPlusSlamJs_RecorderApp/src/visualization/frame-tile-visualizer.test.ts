@@ -320,6 +320,80 @@ describe('FrameTileVisualizer', () => {
     expect(findTile(arSpaceNode, 'frames/after-clear.jpg').parent).toBe(basis);
   });
 
+  // --- maxTiles FIFO cap (Step 4 of the 2026-07-03 long-session fps plan) ---
+  // Why these tests matter: each tile is one draw call + one GPU texture,
+  // added forever on a long live walk (112–145 frames in the 2026-07-02
+  // corpus). The cap must evict OLDEST-first (keep the recent-path
+  // breadcrumb), actually release GPU resources, and stay out of the way when
+  // 0/omitted (replay wiring relies on that for full-path coverage auditing).
+
+  it('evicts the oldest tile (mesh removed, texture+material disposed) when adding over maxTiles', () => {
+    const viz = new FrameTileVisualizer(arSpaceNode, { maxTiles: 2 });
+    const tex1 = new THREE.Texture();
+    let tex1Disposed = false;
+    tex1.addEventListener('dispose', () => {
+      tex1Disposed = true;
+    });
+    viz.addTile(makeFrame({ imageFile: 'frames/f1.jpg' }), tex1);
+    const mesh1 = findTile(arSpaceNode, 'frames/f1.jpg');
+    const mat1 = mesh1.material as THREE.MeshBasicMaterial;
+    let mat1Disposed = false;
+    mat1.addEventListener('dispose', () => {
+      mat1Disposed = true;
+    });
+    viz.addTile(makeFrame({ imageFile: 'frames/f2.jpg' }), new THREE.Texture());
+    expect(viz.getCount()).toBe(2);
+
+    // Third tile crosses the cap: f1 (the oldest) must go, f2 + f3 stay.
+    viz.addTile(makeFrame({ imageFile: 'frames/f3.jpg' }), new THREE.Texture());
+    expect(viz.getCount()).toBe(2);
+    const basis = findBasisNode(arSpaceNode);
+    expect(basis.getObjectByName('frame-tile-frames/f1.jpg')).toBeUndefined();
+    expect(basis.getObjectByName('frame-tile-frames/f2.jpg')).toBeDefined();
+    expect(basis.getObjectByName('frame-tile-frames/f3.jpg')).toBeDefined();
+    expect(tex1Disposed).toBe(true);
+    expect(mat1Disposed).toBe(true);
+
+    // FIFO continues: a fourth tile evicts f2.
+    viz.addTile(makeFrame({ imageFile: 'frames/f4.jpg' }), new THREE.Texture());
+    expect(basis.getObjectByName('frame-tile-frames/f2.jpg')).toBeUndefined();
+    expect(viz.getCount()).toBe(2);
+  });
+
+  it('maxTiles 0 (or omitted) means unlimited — the replay contract', () => {
+    const unlimited = new FrameTileVisualizer(arSpaceNode, { maxTiles: 0 });
+    for (let i = 0; i < 10; i++) {
+      unlimited.addTile(
+        makeFrame({ imageFile: `frames/u${i}.jpg` }),
+        new THREE.Texture()
+      );
+    }
+    expect(unlimited.getCount()).toBe(10);
+    unlimited.dispose();
+
+    const omitted = new FrameTileVisualizer(arSpaceNode);
+    for (let i = 0; i < 10; i++) {
+      omitted.addTile(
+        makeFrame({ imageFile: `frames/o${i}.jpg` }),
+        new THREE.Texture()
+      );
+    }
+    expect(omitted.getCount()).toBe(10);
+    omitted.dispose();
+  });
+
+  it('a non-finite or negative maxTiles is treated as unlimited (defensive)', () => {
+    const viz = new FrameTileVisualizer(arSpaceNode, { maxTiles: -3 });
+    for (let i = 0; i < 5; i++) {
+      viz.addTile(
+        makeFrame({ imageFile: `frames/n${i}.jpg` }),
+        new THREE.Texture()
+      );
+    }
+    expect(viz.getCount()).toBe(5);
+    viz.dispose();
+  });
+
   // Why (D2 geometry-elimination — 2026-06-13 upside-down report): the user
   // reported tiles render *vertically flipped* while the raw JPEG on disk is
   // upright (not mirrored, not 90°). The leading cause is the

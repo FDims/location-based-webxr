@@ -1100,6 +1100,24 @@ No errors</pre
                   by “Resolution” above.
                 </p>
               </div>
+              <!-- Live frame-tile cap (Step 4, 2026-07-03 long-session fps    -->
+              <!-- plan): FIFO bound on live tiles; replay is never capped.    -->
+              <div class="space-y-1">
+                <div class="flex justify-between text-xs text-gray-400">
+                  <span>Max live tiles (0 = unlimited)</span>
+                  <span id="frame-tile-max-tiles-value">100</span>
+                </div>
+                <input
+                  type="range"
+                  id="frame-tile-max-tiles"
+                  class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <p class="text-xs text-gray-500">
+                  During recording, only the newest tiles stay in the scene
+                  (oldest are removed) so long walks keep a steady framerate.
+                  Replay always shows every captured frame.
+                </p>
+              </div>
             </div>
           </div>
 

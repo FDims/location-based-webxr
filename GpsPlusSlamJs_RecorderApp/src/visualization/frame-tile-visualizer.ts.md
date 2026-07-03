@@ -21,7 +21,10 @@ class FrameTileVisualizer {
   // matrix (`arWorldGroup` live / `replaySceneState.arWorldGroup` replay) —
   // NOT the scene root. The visualizer creates a child `WEBXR_TO_NUE` basis
   // node and parents tiles under it.
-  constructor(arSpaceNode: THREE.Object3D, options?: { sizeMeters?: number });
+  constructor(
+    arSpaceNode: THREE.Object3D,
+    options?: { sizeMeters?: number; maxTiles?: number }
+  );
   // `FrameTile` is a local alias for the framework's `ArImageCapture`
   // (the shape `selectFrameTilesInWebXR` produces).
   addTile(frame: FrameTile, texture: THREE.Texture): void;
@@ -36,6 +39,14 @@ class FrameTileVisualizer {
 - **AR-space node is injected** (no `getArWorldGroup()` call). Same P3
   rule as `syncGpsAnchoredMeshes`, `ref-point-visualizer`, and
   `OccupancyCubesVisualizer`.
+- **`maxTiles` FIFO cap (Step 4 of the [2026-07-03 long-session fps plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-03-long-session-fps-and-voxel-grid-scaling-plan.md)):**
+  adding a tile over the cap removes + disposes the OLDEST (the `tiles` Map is
+  insertion-ordered), bounding draw calls / GPU texture memory / scene-graph
+  size on long live sessions while keeping the recent-path breadcrumb. `0`,
+  omitted, or a non-finite/negative value = unlimited (legacy). **Live-only by
+  wiring** (2026-07-03 interview): `main.ts` passes
+  `frameTileDisplay.maxTiles`; the replay wiring passes no options so coverage
+  auditing always sees the full recorded path.
 - **Shared geometry** — one `PlaneGeometry(1, 1)` at module scope,
   reused by every tile. Per-tile size comes from `mesh.scale`.
 - **Default plane size `DEFAULT_SIZE = 0.1` m** (halved from 0.2, D7,

@@ -80,6 +80,8 @@ let occupancyOccluderDebugStyleSelect: HTMLSelectElement | null = null;
 let occupancyOccluderMeshModeSelect: HTMLSelectElement | null = null;
 let frameTileDisplayDivisorSlider: HTMLInputElement | null = null;
 let frameTileDisplayDivisorValue: HTMLElement | null = null;
+let frameTileMaxTilesSlider: HTMLInputElement | null = null;
+let frameTileMaxTilesValue: HTMLElement | null = null;
 let vizFrameTilesCheckbox: HTMLInputElement | null = null;
 let vizOccupancyCubesCheckbox: HTMLInputElement | null = null;
 let vizGpsAlignmentMarkersCheckbox: HTMLInputElement | null = null;
@@ -221,6 +223,12 @@ export function initSettingsModal(
   ) as HTMLSelectElement;
   occupancyMinConfidenceValue = document.getElementById(
     'occupancy-min-confidence-value'
+  );
+  frameTileMaxTilesSlider = document.getElementById(
+    'frame-tile-max-tiles'
+  ) as HTMLInputElement;
+  frameTileMaxTilesValue = document.getElementById(
+    'frame-tile-max-tiles-value'
   );
   frameTileDisplayDivisorSlider = document.getElementById(
     'frame-tile-display-divisor'
@@ -422,6 +430,16 @@ export function initSettingsModal(
       const value = parseInt(frameTileDisplayDivisorSlider.value, 10);
       workingOptions.frameTileDisplay.divisor = value;
       frameTileDisplayDivisorValue.textContent = formatResolutionDivisor(value);
+    }
+  });
+
+  // Live frame-tile FIFO cap (Step 4, 2026-07-03 long-session fps plan).
+  // Live-only: replay never applies it (full-path coverage auditing).
+  frameTileMaxTilesSlider?.addEventListener('input', () => {
+    if (workingOptions && frameTileMaxTilesSlider && frameTileMaxTilesValue) {
+      const value = parseInt(frameTileMaxTilesSlider.value, 10);
+      workingOptions.frameTileDisplay.maxTiles = value;
+      frameTileMaxTilesValue.textContent = formatMaxTiles(value);
     }
   });
 
@@ -643,6 +661,11 @@ export function initSettingsModal(
  * Format the resolution divisor value for display.
  * 1 → "1× (full)", 2 → "÷2 (half)", 4 → "÷4 (quarter)", etc.
  */
+/** Label for the live frame-tile cap: 0 is the explicit "unlimited". */
+function formatMaxTiles(maxTiles: number): string {
+  return maxTiles === 0 ? 'unlimited' : String(maxTiles);
+}
+
 function formatResolutionDivisor(divisor: number): string {
   if (divisor <= 1) {
     return '1× (full)';
@@ -948,6 +971,24 @@ function populateForm(options: RecordingOptions): void {
   if (frameTileDisplayDivisorValue) {
     frameTileDisplayDivisorValue.textContent = formatResolutionDivisor(
       options.frameTileDisplay.divisor
+    );
+  }
+  // Live frame-tile FIFO cap (Step 4, 2026-07-03 fps plan)
+  if (frameTileMaxTilesSlider) {
+    frameTileMaxTilesSlider.min = String(
+      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.min
+    );
+    frameTileMaxTilesSlider.max = String(
+      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.max
+    );
+    frameTileMaxTilesSlider.step = String(
+      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.step
+    );
+    frameTileMaxTilesSlider.value = String(options.frameTileDisplay.maxTiles);
+  }
+  if (frameTileMaxTilesValue) {
+    frameTileMaxTilesValue.textContent = formatMaxTiles(
+      options.frameTileDisplay.maxTiles
     );
   }
 

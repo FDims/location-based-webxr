@@ -95,8 +95,8 @@ vi.mock('../visualization/frame-tile-visualizer', () => ({
     getCount() {
       return 0;
     }
-    constructor(scene: unknown) {
-      mockFrameTileVisualizerCtor(scene);
+    constructor(scene: unknown, ...options: unknown[]) {
+      mockFrameTileVisualizerCtor(scene, ...options);
     }
   },
 }));
@@ -119,7 +119,7 @@ const { mockReplayRecordingOptions } = vi.hoisted(() => ({
     // cadence/locality plan §2).
     depth: { enabled: true, intervalMs: 500 },
     occupancy: { cellSizeM: 0.15, minConfidence: 3 },
-    frameTileDisplay: { divisor: 2 },
+    frameTileDisplay: { divisor: 2, maxTiles: 100 },
     // Stats overlay defaults OFF (Step 0 of the 2026-07-03 long-session fps
     // plan); the dedicated tests below flip it on.
     visualization: { statsOverlay: false },
@@ -220,6 +220,7 @@ describe('replay-mode', () => {
     // Stats overlay back to its OFF default (a leaked ON would add a rAF
     // loop that breaks the runAllTimers-based playback tests below).
     mockReplayRecordingOptions.visualization.statsOverlay = false;
+    mockReplayRecordingOptions.frameTileDisplay = { divisor: 2, maxTiles: 100 };
     // Default: loadRecording returns our fixture wrapped in the LoadedRecording shape.
     const fixtureEntries = makeMockZipActions();
     vi.mocked(loadRecording).mockResolvedValue({
@@ -557,6 +558,19 @@ describe('replay-mode', () => {
     expect(wireFrameTileSubscribers).toHaveBeenCalledTimes(1);
     const opts = vi.mocked(wireFrameTileSubscribers).mock.calls[0][0];
     expect(opts.storeRef.get()).toBe(controller.getStore());
+  });
+
+  it('constructs the replay frame-tile visualizer WITHOUT a tile cap (full-path coverage, Step 4)', async () => {
+    // Why (2026-07-03 fps plan, Step 4 — live-only decision): in replay the
+    // tiles audit coverage of the WHOLE recorded path, so the FIFO cap that
+    // bounds live sessions must never reach the replay constructor — no
+    // options argument at all, regardless of the stored maxTiles setting.
+    mockReplayRecordingOptions.frameTileDisplay = { divisor: 2, maxTiles: 5 };
+    const config = makeConfig();
+    await startReplayMode(fakeZipData, config);
+
+    expect(mockFrameTileVisualizerCtor).toHaveBeenCalledTimes(1);
+    expect(mockFrameTileVisualizerCtor.mock.calls[0]).toHaveLength(1);
   });
 
   it('dispose tears down frame-tile subscribers and visualizer (F3.5c)', async () => {
