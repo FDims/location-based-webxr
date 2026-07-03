@@ -100,11 +100,12 @@ export interface ArCrashIsolationOptions {
 export interface DepthCaptureOptions {
   /** Whether to capture depth samples. Default: true */
   enabled: boolean;
-  /** Interval between samples in milliseconds. Default: 1000 */
+  /** Interval between samples in milliseconds. Default: 500 (FAST-reconstruction tuning, 2026-07-01). */
   intervalMs: number;
   /**
-   * Grid size (N×N points per sample). Default: 16 — dense enough to
-   * populate the AR-space occupancy grid (2026-06-11 port plan §1).
+   * Grid size (N×N points per sample). Default: 32 (FAST-reconstruction
+   * tuning, 2026-07-01) — dense enough to populate the AR-space occupancy
+   * grid (2026-06-11 port plan §1).
    */
   gridSize: number;
   /**
@@ -316,12 +317,15 @@ export interface FrameTileDisplayOptions {
  *
  * These gate **only what is drawn live during recording** — they never change
  * what is captured (frame blobs, depth samples, occupancy data, GPS events all
- * continue regardless) and they never affect replay (where reviewing the
- * captured overlays is the whole point). Read once at Enter-AR: toggling
- * mid-session applies on the next Enter-AR, not retroactively.
+ * continue regardless) and, with one exception, they never affect replay
+ * (where reviewing the captured overlays is the whole point). Read once at
+ * Enter-AR: toggling mid-session applies on the next Enter-AR, not
+ * retroactively.
  *
- * All four default ON, so adding this group is purely additive — every overlay
- * still renders until the operator opts out.
+ * The debug overlays default ON, so the group is purely additive — every
+ * overlay still renders until the operator opts out. The exception on both
+ * counts is {@link VisualizationOptions.statsOverlay}: a perf-measurement tool
+ * that defaults OFF and, when on, also runs in replay (see its docs).
  */
 export interface VisualizationOptions {
   /** Live frame-tile planes (`FrameTileVisualizer`). Default: true */
@@ -340,6 +344,16 @@ export interface VisualizationOptions {
    * Default: true. See the 2026-06-29 heading-up plan.
    */
   headingUpMap: boolean;
+  /**
+   * Performance stats overlay (Stats.js: FPS / frame ms / MB panels) for
+   * long-session fps attribution (2026-07-03 long-session fps plan §0).
+   * Two exceptions to this group's rules: it is a debug tool, so it defaults
+   * **OFF** (must not cost the default path), and unlike the live-only
+   * overlays it also runs in **replay** (frame time matters there too).
+   * In immersive AR it composites via the dom-overlay feature, so it is
+   * invisible when `arCrashIsolation.enableDomOverlay` is off.
+   */
+  statsOverlay: boolean;
 }
 
 /**
@@ -458,6 +472,9 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     compassCubes: true,
     // Heading-up minimap ON by default in live (2026-06-29 user decision).
     headingUpMap: true,
+    // Perf stats overlay OFF by default — a debug tool must not cost the
+    // default path (2026-07-03 long-session fps plan §0).
+    statsOverlay: false,
   },
   qr: {
     // OFF by default (§0): QR capture/detection is opt-in so existing
@@ -670,6 +687,12 @@ export function validateVisualizationOptions(
       typeof options.headingUpMap === 'boolean'
         ? options.headingUpMap
         : defaults.headingUpMap,
+    // Same boolean-or-default policy, but the default is OFF (debug tool) — a
+    // corrupt value must never switch the overlay on by itself.
+    statsOverlay:
+      typeof options.statsOverlay === 'boolean'
+        ? options.statsOverlay
+        : defaults.statsOverlay,
   };
 }
 

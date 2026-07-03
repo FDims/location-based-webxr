@@ -759,6 +759,9 @@ describe('recording-options', () => {
         gpsAlignmentMarkers: true,
         compassCubes: true,
         headingUpMap: true,
+        // Exception to the all-ON rule: the stats overlay is a debug tool and
+        // must not cost the default path (2026-07-03 long-session fps plan §0).
+        statsOverlay: false,
       });
     });
 
@@ -769,6 +772,9 @@ describe('recording-options', () => {
         gpsAlignmentMarkers: false,
         compassCubes: false,
         headingUpMap: false,
+        // true is the non-default for statsOverlay — proves it is preserved,
+        // not silently reset to its OFF default.
+        statsOverlay: true,
       });
       expect(result).toEqual({
         frameTiles: false,
@@ -776,6 +782,7 @@ describe('recording-options', () => {
         gpsAlignmentMarkers: false,
         compassCubes: false,
         headingUpMap: false,
+        statsOverlay: true,
       });
     });
 
@@ -804,6 +811,18 @@ describe('recording-options', () => {
       expect(
         validateVisualizationOptions({ headingUpMap: false }).headingUpMap
       ).toBe(false);
+      // statsOverlay is the one OFF-default field in the group: a corrupt or
+      // pre-feature persisted value must fall back to OFF (a debug overlay must
+      // never turn itself on), while a genuine true must survive.
+      expect(
+        validateVisualizationOptions({
+          statsOverlay: 'yes' as unknown as boolean,
+        }).statsOverlay
+      ).toBe(false);
+      expect(validateVisualizationOptions({}).statsOverlay).toBe(false);
+      expect(
+        validateVisualizationOptions({ statsOverlay: true }).statsOverlay
+      ).toBe(true);
     });
   });
 
@@ -904,6 +923,7 @@ describe('recording-options', () => {
         visualization: { frameTiles: false },
       });
       expect(result.visualization.frameTiles).toBe(false);
+      expect(result.visualization.statsOverlay).toBe(false);
       // Other overlays stay ON; other groups untouched.
       expect(result.visualization.occupancyCubes).toBe(true);
       expect(result.visualization.gpsAlignmentMarkers).toBe(true);
@@ -1380,6 +1400,9 @@ describe('recording-options', () => {
         gpsAlignmentMarkers: true,
         compassCubes: true,
         headingUpMap: true,
+        // Deliberate exception: the perf stats overlay is debug-only and OFF
+        // by default (2026-07-03 long-session fps plan §0).
+        statsOverlay: false,
       });
     });
   });
