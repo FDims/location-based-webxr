@@ -50,7 +50,12 @@
             <span class="text-gray-400">Sync:</span>
             <span id="sync-status" class="text-green-400">--</span>
           </div>
-          <div id="abs-compass-info" class="text-sm mt-1 hidden">
+          <div
+            id="abs-compass-info"
+            class="text-sm mt-1 hidden"
+            role="status"
+            aria-live="polite"
+          >
             <span class="text-gray-400">🧭 AbsCompass:</span>
             <span id="abs-compass-status" class="text-green-400">--</span>
           </div>
@@ -889,7 +894,7 @@ No errors</pre
 
             <!-- Enter AR Hint - explains why the button is disabled -->
             <p id="enter-ar-hint" class="text-xs text-yellow-400 text-center">
-              Select a folder to continue
+              Choose a save location for this recording
             </p>
 
             <!-- Primary action (D6 item 9: dominant CTA — larger, bold). -->
@@ -991,6 +996,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-max-angular"
+                  aria-label="Max rotation speed"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1002,6 +1008,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-max-linear"
+                  aria-label="Max move speed"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1032,6 +1039,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-blur-threshold"
+                  aria-label="Blur sensitivity"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1043,6 +1051,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-min-luminance"
+                  aria-label="Black cutoff"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1054,6 +1063,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-interval"
+                  aria-label="Image capture interval"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1065,6 +1075,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-quality"
+                  aria-label="Image quality"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1076,6 +1087,7 @@ No errors</pre
                 <input
                   type="range"
                   id="images-resolution-divisor"
+                  aria-label="Image resolution"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1091,6 +1103,7 @@ No errors</pre
                 <input
                   type="range"
                   id="frame-tile-display-divisor"
+                  aria-label="Display resolution (AR tiles)"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
                 <p class="text-xs text-gray-500">
@@ -1110,6 +1123,7 @@ No errors</pre
                 <input
                   type="range"
                   id="frame-tile-max-tiles"
+                  aria-label="Max live tiles"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
                 <p class="text-xs text-gray-500">
@@ -1145,6 +1159,7 @@ No errors</pre
                 <input
                   type="range"
                   id="depth-interval"
+                  aria-label="Depth sampling interval"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1156,6 +1171,7 @@ No errors</pre
                 <input
                   type="range"
                   id="depth-grid"
+                  aria-label="Depth grid size"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -1210,10 +1226,12 @@ No errors</pre
                 />
               </div>
               <p class="text-[11px] text-gray-400">
-                How many times a voxel must be observed before it is drawn.
-                Higher hides single-frame depth noise (e.g. phantom voxels below
-                the floor) but may drop briefly-seen surfaces. 1 = unfiltered.
-                Applies the next time you enter AR or load a replay.
+                How many times a voxel must be observed before it counts as
+                occupied — the same floor gates the debug cubes, the occluder
+                mesh and the COLMAP export. Higher hides single-frame depth
+                noise (e.g. phantom voxels below the floor) but may drop
+                briefly-seen surfaces. 1 = unfiltered. Applies the next time you
+                enter AR or load a replay.
               </p>
               <label class="flex items-center gap-2 cursor-pointer mt-1">
                 <input
@@ -1249,7 +1267,9 @@ No errors</pre
                 off-thread, so it no longer stalls rendering). Applies the next
                 time you enter AR or load a replay.
               </p>
-              <label class="block text-sm text-gray-200 mt-1"
+              <label
+                class="block text-sm text-gray-200 mt-1"
+                for="occupancy-occluder-mesh-mode"
                 >Occluder mesh style</label
               >
               <select
@@ -1310,6 +1330,7 @@ No errors</pre
                 <input
                   type="range"
                   id="occupancy-occluder-radius"
+                  aria-label="Occluder radius"
                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
                 <p class="text-[11px] text-gray-400">
