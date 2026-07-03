@@ -240,47 +240,54 @@ export async function startReplayMode(
     // Camera-local occluder window (Step 2, 2026-07-03 fps plan) — replay
     // parity with main.ts; 0 = unbounded.
     const occluderRadiusM = occupancyOptions.occluderRadiusM;
-    const occluderSink = occupancyOptions.persistentOcclusion
-      ? ((occlusionMesh = new OcclusionMesh(replaySceneState.arWorldGroup, {
-          // Mesher style (occupancy.occluderMeshMode), re-read per replay like
-          // the cubes — so the surface-hugging meshers can be inspected on a
-          // recorded session, not only live.
-          mode: occluderMode,
-        })),
-        // Debug style (occupancy.occluderDebugStyle): visible debug skin(s) —
-        // matcap / depth-shaded / wireframe — so the mesh's shape and structure
-        // can be judged on replay too (additive skins; occlusion unchanged),
-        // re-read per replay like the cubes.
-        occlusionMesh.setDebugStyle(occupancyOptions.occluderDebugStyle),
-        // Mesh off the main thread so a large replay grid never stalls playback;
-        // coalesces to the latest while busy (synchronous fallback if no worker).
-        (occluderMeshWorker = createOccluderMeshWorker()),
-        {
-          // Flat snapshot (Step 1.3, 2026-07-03 fps plan — parity with main.ts):
-          // snapshot + getCellPoint stay main-thread; only the mesh runs in the
-          // worker. getCellPoint is read only by the surface-hugging modes.
-          // Windowed around the replayed camera pose when a radius is set
-          // (Step 2); unbounded fallback for a missing/non-finite pose.
-          refresh: (g: OccupancyGrid, pose?: ViewerPose) =>
-            occluderMeshWorker?.driver.request(
-              occluderRadiusM > 0 &&
-                pose &&
-                pose.cameraPos.every(Number.isFinite)
-                ? g.getOccupiedCellsWithinFlat(
-                    [pose.cameraPos[0], pose.cameraPos[1], pose.cameraPos[2]],
-                    occluderRadiusM,
-                    occluderMinConfidence
-                  )
-                : g.getOccupiedCellsFlat(occluderMinConfidence),
-              g.cellSizeM,
-              occluderMode,
-              (cell) => g.getCellPoint(cell),
-              (positions, indices) =>
-                occlusionMesh?.applyMeshData(positions, indices)
-            ),
-          clear: () => occlusionMesh?.clear(),
-        })
-      : undefined;
+    let occluderSink:
+      | {
+          refresh(grid: OccupancyGrid, pose?: ViewerPose): void;
+          clear(): void;
+        }
+      | undefined;
+    if (occupancyOptions.persistentOcclusion) {
+      occlusionMesh = new OcclusionMesh(replaySceneState.arWorldGroup, {
+        // Mesher style (occupancy.occluderMeshMode), re-read per replay like
+        // the cubes — so the surface-hugging meshers can be inspected on a
+        // recorded session, not only live.
+        mode: occluderMode,
+      });
+      // Debug style (occupancy.occluderDebugStyle): visible debug skin(s) —
+      // matcap / depth-shaded / wireframe — so the mesh's shape and structure
+      // can be judged on replay too (additive skins; occlusion unchanged),
+      // re-read per replay like the cubes.
+      occlusionMesh.setDebugStyle(occupancyOptions.occluderDebugStyle);
+      // Mesh off the main thread so a large replay grid never stalls playback;
+      // coalesces to the latest while busy (synchronous fallback if no worker).
+      occluderMeshWorker = createOccluderMeshWorker();
+      // The sink closures re-read the module-level `occluderMeshWorker` /
+      // `occlusionMesh` through `?.` — they run asynchronously and must no-op
+      // after replay teardown nulls both.
+      occluderSink = {
+        // Flat snapshot (Step 1.3, 2026-07-03 fps plan — parity with main.ts):
+        // snapshot + getCellPoint stay main-thread; only the mesh runs in the
+        // worker. getCellPoint is read only by the surface-hugging modes.
+        // Windowed around the replayed camera pose when a radius is set
+        // (Step 2); unbounded fallback for a missing/non-finite pose.
+        refresh: (g: OccupancyGrid, pose?: ViewerPose) =>
+          occluderMeshWorker?.driver.request(
+            occluderRadiusM > 0 && pose && pose.cameraPos.every(Number.isFinite)
+              ? g.getOccupiedCellsWithinFlat(
+                  [pose.cameraPos[0], pose.cameraPos[1], pose.cameraPos[2]],
+                  occluderRadiusM,
+                  occluderMinConfidence
+                )
+              : g.getOccupiedCellsFlat(occluderMinConfidence),
+            g.cellSizeM,
+            occluderMode,
+            (cell) => g.getCellPoint(cell),
+            (positions, indices) =>
+              occlusionMesh?.applyMeshData(positions, indices)
+          ),
+        clear: () => occlusionMesh?.clear(),
+      };
+    }
     unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
       storeRef: createStoreRef(store),
       grid: occupancyGrid,
