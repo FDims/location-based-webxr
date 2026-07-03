@@ -30,12 +30,14 @@ to satisfy P4 of the C# port survey
 
 - Plain functions, no class. There is exactly one frame loop per
   session; a class would only add ceremony.
-- `runFrameUpdates` snapshots the registry (`Array.from`) before
-  iterating. A handler may safely register or unregister callbacks
-  during its own tick; the change takes effect on the next frame. This
-  removes a subtle non-determinism trap where iterating the live `Set`
-  would skip a not-yet-visited entry that an earlier handler
-  unregistered.
+- `runFrameUpdates` snapshots the registry before iterating. A handler
+  may safely register or unregister callbacks during its own tick; the
+  change takes effect on the next frame. This removes a subtle
+  non-determinism trap where iterating the live `Set` would skip a
+  not-yet-visited entry that an earlier handler unregistered. The
+  snapshot array is **cached** between registry mutations (2026-07-04,
+  PR #67 review) — same deferral semantics, without re-allocating an
+  identical array at 60–90 Hz. `xr-frame-loop.ts` mirrors this.
 - Each callback runs in its own `try/catch`. A throwing `FrameUpdate` is
   isolated (error logged via `createLogger('FrameLoop').error`, which also
   reports to Sentry) so it cannot abort the remaining callbacks nor propagate

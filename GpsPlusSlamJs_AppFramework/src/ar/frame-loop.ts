@@ -18,6 +18,13 @@ const log = createLogger('FrameLoop');
 export type FrameUpdate = (dt: number, elapsed: number) => void;
 
 const updates = new Set<FrameUpdate>();
+/**
+ * Cached iteration snapshot of {@link updates}, invalidated on every registry
+ * mutation. The snapshot SEMANTICS (a register/unregister during a tick defers
+ * to the next frame) are unchanged — caching only avoids re-allocating an
+ * identical array at 60–90 Hz between (rare) registry changes (PR #67 review).
+ */
+let snapshot: readonly FrameUpdate[] | null = null;
 
 /**
  * Register a per-frame callback. Returns an unregister function.
@@ -27,8 +34,10 @@ const updates = new Set<FrameUpdate>();
  */
 export function registerFrameUpdate(fn: FrameUpdate): () => void {
   updates.add(fn);
+  snapshot = null;
   return () => {
     updates.delete(fn);
+    snapshot = null;
   };
 }
 
@@ -50,8 +59,8 @@ export function registerFrameUpdate(fn: FrameUpdate): () => void {
  * logged and the loop continues — mirrored by `runXrFrameUpdates`.
  */
 export function runFrameUpdates(dt: number, elapsed: number): void {
-  const snapshot = Array.from(updates);
-  for (const fn of snapshot) {
+  const fns = snapshot ?? (snapshot = Array.from(updates));
+  for (const fn of fns) {
     try {
       fn(dt, elapsed);
     } catch (error) {
@@ -67,4 +76,5 @@ export function runFrameUpdates(dt: number, elapsed: number): void {
  */
 export function clearFrameUpdates(): void {
   updates.clear();
+  snapshot = null;
 }
