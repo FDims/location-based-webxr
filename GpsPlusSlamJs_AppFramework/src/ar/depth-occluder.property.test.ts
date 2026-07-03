@@ -16,7 +16,6 @@ import {
   screenUvToDepthUv,
   unpackLuminanceAlphaToMeters,
   selectDepthTextureFormat,
-  occlusionStrength,
 } from './depth-occluder.js';
 
 /** A real WebXR-style column-major perspective projection matrix. */
@@ -133,83 +132,6 @@ describe('selectDepthTextureFormat (property)', () => {
           expect(selectDepthTextureFormat(w, h, w * h * 2)).toBe(
             'luminance-alpha'
           );
-        }
-      )
-    );
-  });
-});
-
-describe('occlusionStrength (property)', () => {
-  it('is always bounded to [0, 1]', () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: -10, max: 10, noNaN: true }),
-        fc.double({ min: -10, max: 10, noNaN: true }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        (real, frag, margin) => {
-          const s = occlusionStrength(real, frag, margin);
-          expect(s).toBeGreaterThanOrEqual(0);
-          expect(s).toBeLessThanOrEqual(1);
-        }
-      )
-    );
-  });
-
-  it('never occludes on holes / invalid real depth', () => {
-    fc.assert(
-      fc.property(
-        fc.constantFrom(0, -1, -100, NaN, Infinity, -Infinity),
-        fc.double({ min: -10, max: 10, noNaN: true }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        (real, frag, margin) => {
-          expect(occlusionStrength(real, frag, margin)).toBe(0);
-        }
-      )
-    );
-  });
-
-  it('is monotonic non-decreasing in fragment depth (positive margin)', () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: 0.1, max: 10, noNaN: true }), // real (valid)
-        fc.double({ min: -5, max: 5, noNaN: true }),
-        fc.double({ min: -5, max: 5, noNaN: true }),
-        fc.double({ min: 0.001, max: 1, noNaN: true }), // margin > 0
-        (real, fragA, fragB, margin) => {
-          const lo = Math.min(fragA, fragB);
-          const hi = Math.max(fragA, fragB);
-          expect(occlusionStrength(real, lo, margin)).toBeLessThanOrEqual(
-            occlusionStrength(real, hi, margin) + 1e-12
-          );
-        }
-      )
-    );
-  });
-
-  it('fully hides well behind, fully shows well in front', () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: 0.1, max: 10, noNaN: true }),
-        fc.double({ min: 0.01, max: 0.2, noNaN: true }),
-        (real, margin) => {
-          // Far behind the surface (> margin) ⇒ fully occluded.
-          expect(occlusionStrength(real, real + 10 * margin, margin)).toBe(1);
-          // Far in front of the surface (< -margin) ⇒ fully visible.
-          expect(occlusionStrength(real, real - 10 * margin, margin)).toBe(0);
-        }
-      )
-    );
-  });
-
-  it('degrades to a hard step when the margin is non-positive', () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: 0.1, max: 10, noNaN: true }),
-        fc.double({ min: -5, max: 5, noNaN: true }),
-        fc.constantFrom(0, -0.1, -1),
-        (real, frag, margin) => {
-          const expected = frag - real > 0 ? 1 : 0;
-          expect(occlusionStrength(real, frag, margin)).toBe(expected);
         }
       )
     );

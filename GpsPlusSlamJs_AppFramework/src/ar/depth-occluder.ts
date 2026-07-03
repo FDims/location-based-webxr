@@ -17,23 +17,23 @@
  *    selection, and the soft-margin / holes occlusion-strength policy. These are
  *    deterministic and property-tested.
  *  - The **{@link DepthOccluder} class** owns the per-frame `THREE.DataTexture`
- *    upload, the shared uniform block, the lifecycle (enable / dispose), and **two
- *    render paths**:
- *      - **v1 — full-screen depth write ({@link DepthOccluder.getOcclusionMesh}).**
- *        A clip-space quad that writes `gl_FragDepth` from the live depth map, so the
- *        normal depth test hides **all** virtual content behind real surfaces — the
- *        "do what the persistent mesh does" path the recorder uses (2026-06-29
- *        occlusion-debug-viz-and-live-occluder feedback Finding 2). Hard-edged.
- *      - **Phase B — per-material soft injection ({@link DepthOccluder.patch} /
- *        {@link injectOcclusionGlsl}).** Soft-margin alpha fade + per-object opt-out;
- *        retained for the eventual quality upgrade, **not** wired today. (Its draft
- *        body is still a first-light placeholder — see `injectOcclusionGlsl`.)
- *    The JS-observable behaviour (texture (re)creation, uniform updates, mesh/patch
+ *    upload, the shared uniform block, the lifecycle (enable / dispose), and the
+ *    **full-screen depth-write render path** ({@link DepthOccluder.getOcclusionMesh}):
+ *    a clip-space quad that writes `gl_FragDepth` from the live depth map, so the
+ *    normal depth test hides **all** virtual content behind real surfaces — the
+ *    "do what the persistent mesh does" path the recorder uses (2026-06-29
+ *    occlusion-debug-viz-and-live-occluder feedback Finding 2). Hard-edged.
+ *    The JS-observable behaviour (texture (re)creation, uniform updates, mesh
  *    construction, disposal) is unit-tested in jsdom, but the **actual GLSL occlusion
  *    is device-gated** (plan §8 Iter 2–3): no headless GL renders it, so the shader is
  *    a first-light draft to verify/tune on-device (the `gl_FragDepth` sanity check,
  *    the depth-UV Y orientation, the float-vs-packed default). Keep
  *    `occupancy.liveOcclusion` OFF by default until that verification lands.
+ *
+ *    (A second render path — a per-material soft-margin `onBeforeCompile`
+ *    injection, "Phase B" — existed here as a never-wired draft until 2026-07-04
+ *    and was deleted: dead code that review bots kept re-flagging. Recover it
+ *    from git history if a per-material fade is ever actually built.)
  *
  * @see depth-occluder.ts.md for detailed documentation
  * @see ar/depth-sampler.ts — `DepthInfo` / `wrapXRDepthInfo` (the per-frame source)
@@ -41,10 +41,6 @@
 
 import * as THREE from 'three';
 import type { DepthInfo } from './depth-sampler.js';
-
-/** Default soft-occlusion band half-width (metres). A few cm hides the coarse,
- *  noisy depth map's frame-to-frame shimmer at the silhouette (plan §3c). */
-export const DEFAULT_SOFT_MARGIN_M = 0.05;
 
 /** Render order of the full-screen depth writer — before virtual content
  *  (≥ 0) and at/after the persistent mesh (−2), so it composes with the mesh
@@ -147,49 +143,13 @@ export function selectDepthTextureFormat(
   return 'luminance-alpha';
 }
 
-/**
- * The soft-margin occlusion policy (plan §3c) as a pure function — the single
- * source of truth the GLSL mirrors and the tests pin. Returns the occlusion
- * **strength** in `[0, 1]` (0 = fully visible, 1 = fully hidden):
- *
- *  - **Holes / invalid real depth** (`≤ 0` or non-finite) ⇒ **0** (never occlude),
- *    so virtual content does not flicker out where depth is missing, and the
- *    persistent mesh can show through (plan §5).
- *  - With a positive `softMarginMeters`, a symmetric band centred on the surface:
- *    `0.5 + (fragment − real) / (2·margin)`, clamped — fragments well in front are
- *    visible, well behind are hidden, and the silhouette fades instead of
- *    shimmering. Monotonic non-decreasing in `fragmentDepthMeters`.
- *  - With `softMarginMeters ≤ 0`, a hard step (`behind ⇒ 1`, else `0`) — the
- *    Iter-2 first-light behaviour before the soft band is tuned.
- */
-export function occlusionStrength(
-  realDepthMeters: number,
-  fragmentDepthMeters: number,
-  softMarginMeters: number
-): number {
-  if (!Number.isFinite(realDepthMeters) || realDepthMeters <= 0) return 0;
-  if (!Number.isFinite(fragmentDepthMeters)) return 0;
-  const delta = fragmentDepthMeters - realDepthMeters; // >0 ⇒ fragment behind real surface
-  if (!(softMarginMeters > 0)) {
-    return delta > 0 ? 1 : 0;
-  }
-  const a = 0.5 + delta / (2 * softMarginMeters);
-  return a < 0 ? 0 : a > 1 ? 1 : a;
-}
-
-export interface DepthOccluderOptions {
-  /** Soft-occlusion band half-width (metres). Default {@link DEFAULT_SOFT_MARGIN_M}. */
-  readonly softMarginMeters?: number;
-}
-
-/** Shared uniform block injected into every patched material / the full-screen
- *  occluder. Held by reference so {@link DepthOccluder.update} reaches both. */
+/** Shared uniform block of the full-screen occluder. Held by reference so
+ *  {@link DepthOccluder.update} reaches the mounted material every frame. */
 interface DepthOccluderUniforms {
   uDepthTexture: { value: THREE.DataTexture | null };
   uRawValueToMeters: { value: number };
   uDepthUvFromScreenUv: { value: THREE.Matrix4 };
   uProjectionMatrix: { value: THREE.Matrix4 };
-  uSoftMarginMeters: { value: number };
   uOccluderEnabled: { value: number };
   /** 1 when the depth texture is packed luminance-alpha (RG8), 0 for float R32F.
    *  Tells the shader how to reconstruct metres from a texel. */
@@ -270,18 +230,17 @@ void main() {
 
 /**
  * Manages the live occluder's GPU side: one small per-frame depth `DataTexture`,
- * the shared uniform block, and an `onBeforeCompile` patch applied to occludable
- * materials. Construct once per AR session, `update(depthInfo)` each frame from
- * the wrapped `XRCPUDepthInformation`, `patch()` the materials that should be
- * occluded, and `dispose()` on session end.
+ * the shared uniform block, and the full-screen depth-write mesh. Construct once
+ * per AR session, `update(depthInfo)` each frame from the wrapped
+ * `XRCPUDepthInformation`, mount {@link getOcclusionMesh} in the AR scene, and
+ * `dispose()` on session end.
  *
- * The injected GLSL is a **device-gated first-light draft** (see the file header):
- * its CPU-observable effects are unit-tested, but the on-device occlusion must be
+ * The GLSL is a **device-gated first-light draft** (see the file header): its
+ * CPU-observable effects are unit-tested, but the on-device occlusion must be
  * verified and tuned (plan §8 Iter 2–3) before `liveOcclusion` ships on.
  */
 export class DepthOccluder {
   private readonly uniforms: DepthOccluderUniforms;
-  private readonly patched = new Set<THREE.Material>();
   private fullscreenMesh: THREE.Mesh | null = null;
   private texture: THREE.DataTexture | null = null;
   private textureFormat: DepthTextureFormat | null = null;
@@ -289,17 +248,14 @@ export class DepthOccluder {
   private textureHeight = 0;
   private disposed = false;
 
-  constructor(options: DepthOccluderOptions = {}) {
+  constructor() {
     this.uniforms = {
       uDepthTexture: { value: null },
       uRawValueToMeters: { value: 1 },
       uDepthUvFromScreenUv: { value: new THREE.Matrix4() },
       uProjectionMatrix: { value: new THREE.Matrix4() },
-      uSoftMarginMeters: {
-        value: options.softMarginMeters ?? DEFAULT_SOFT_MARGIN_M,
-      },
-      // Disabled until the first valid depth frame lands, so a patched material
-      // never samples a null texture.
+      // Disabled until the first valid depth frame lands, so the shader never
+      // samples a null texture.
       uOccluderEnabled: { value: 0 },
       // Set per frame in update() from the resolved upload format.
       uPackedDepth: { value: 0 },
@@ -361,7 +317,7 @@ export class DepthOccluder {
       !depthInfo.projectionMatrix
     ) {
       // Insufficient metadata → never occlude with this frame (holes policy at
-      // the frame level; complements the per-texel policy in occlusionStrength).
+      // the frame level; complements the shader's per-texel discard on holes).
       this.uniforms.uOccluderEnabled.value = 0;
       return;
     }
@@ -423,38 +379,7 @@ export class DepthOccluder {
     }
   }
 
-  /**
-   * Patch a material so its fragment shader discards/fades where the real surface
-   * is in front. Idempotent per material; the shared uniforms are injected by
-   * reference so {@link update} reaches every patched material.
-   *
-   * The GLSL is the device-gated draft — see the file header. Per-object opt-out
-   * is "don't patch it" (in-world HUD, etc.).
-   */
-  patch(material: THREE.Material): void {
-    if (this.disposed || this.patched.has(material)) return;
-    this.patched.add(material);
-    const uniforms = this.uniforms;
-    const softMargin = uniforms.uSoftMarginMeters.value;
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms['uDepthTexture'] = uniforms.uDepthTexture;
-      shader.uniforms['uRawValueToMeters'] = uniforms.uRawValueToMeters;
-      shader.uniforms['uDepthUvFromScreenUv'] = uniforms.uDepthUvFromScreenUv;
-      shader.uniforms['uProjectionMatrix'] = uniforms.uProjectionMatrix;
-      shader.uniforms['uSoftMarginMeters'] = uniforms.uSoftMarginMeters;
-      shader.uniforms['uOccluderEnabled'] = uniforms.uOccluderEnabled;
-      shader.fragmentShader = injectOcclusionGlsl(shader.fragmentShader);
-    };
-    material.customProgramCacheKey = () => `depth-occluder:${softMargin}`;
-    material.needsUpdate = true;
-  }
-
-  /** Whether a material is currently patched (test/inspection hook). */
-  isPatched(material: THREE.Material): boolean {
-    return this.patched.has(material);
-  }
-
-  /** Release the depth texture, the full-screen mesh, and forget patches. */
+  /** Release the depth texture and the full-screen mesh. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -468,55 +393,5 @@ export class DepthOccluder {
       (this.fullscreenMesh.material as THREE.Material).dispose();
       this.fullscreenMesh = null;
     }
-    this.patched.clear();
   }
-}
-
-/**
- * Inject the occlusion decision into a three.js fragment shader (device-gated
- * draft — see the file header). Mirrors {@link occlusionStrength} /
- * {@link metricDepthToWindowDepth} / {@link screenUvToDepthUv} so the on-device
- * behaviour matches the CI-tested CPU policy. Exported for the unit test that
- * asserts the uniforms + decision are spliced in before `main`'s closing brace.
- */
-export function injectOcclusionGlsl(fragmentShader: string): string {
-  const decls = `
-uniform sampler2D uDepthTexture;
-uniform float uRawValueToMeters;
-uniform mat4 uDepthUvFromScreenUv;
-uniform mat4 uProjectionMatrix;
-uniform float uSoftMarginMeters;
-uniform float uOccluderEnabled;
-`;
-  // Fade alpha by the occlusion strength at this fragment. The view-space
-  // fragment depth comes from the rasterizer; the real surface depth is sampled
-  // from the depth texture (R32F: .r×rawValueToMeters; RG8: lo+hi*256 unpack).
-  // This is the first-light injection to verify on-device (plan §8 Iter 2).
-  const body = `
-{
-  if (uOccluderEnabled > 0.5) {
-    vec2 screenUv = gl_FragCoord.xy / vec2(textureSize(uDepthTexture, 0));
-    vec2 depthUv = (uDepthUvFromScreenUv * vec4(screenUv, 0.0, 1.0)).xy;
-    vec4 texel = texture2D(uDepthTexture, depthUv);
-    float realDepth = texel.r * uRawValueToMeters;
-    float fragDepth = -1.0; // device-gated: reconstruct view-space depth on-device
-    if (realDepth > 0.0) {
-      float delta = fragDepth - realDepth;
-      float strength = clamp(0.5 + delta / (2.0 * uSoftMarginMeters), 0.0, 1.0);
-      gl_FragColor.a *= (1.0 - strength);
-    }
-  }
-}
-`;
-  // Splice before the final closing brace of main().
-  const lastBrace = fragmentShader.lastIndexOf('}');
-  if (lastBrace === -1) {
-    return decls + fragmentShader;
-  }
-  return (
-    decls +
-    fragmentShader.slice(0, lastBrace) +
-    body +
-    fragmentShader.slice(lastBrace)
-  );
 }

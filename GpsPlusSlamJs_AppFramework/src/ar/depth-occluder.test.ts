@@ -1,6 +1,6 @@
 /**
  * Live depth occluder — unit tests for the {@link DepthOccluder} class and the
- * GLSL injection.
+ * full-screen shader source.
  *
  * Why this test matters: the on-device occlusion is device-gated (plan §8 Iter
  * 2–3) and cannot run headless, but the class's CPU-observable contract CAN be
@@ -9,9 +9,9 @@
  *    holes policy) — otherwise virtual content would occlude against stale/absent
  *    depth;
  *  - the upload format is chosen from the resolved byte layout;
- *  - the uniforms are injected BY REFERENCE so a per-frame `update` reaches every
- *    patched material (the whole point of the shared uniform block);
- *  - patch is idempotent and dispose is clean (no leaks across sessions).
+ *  - the uniforms are shared BY REFERENCE so a per-frame `update` reaches the
+ *    mounted full-screen material (the whole point of the shared uniform block);
+ *  - dispose is clean (no leaks across sessions).
  * The pure occlusion math has its own property tests (`*.property.test.ts`).
  */
 
@@ -19,10 +19,8 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
   DepthOccluder,
-  injectOcclusionGlsl,
   buildFullscreenOcclusionShader,
   OCCLUDER_RENDER_ORDER,
-  DEFAULT_SOFT_MARGIN_M,
 } from './depth-occluder.js';
 import type { DepthInfo } from './depth-sampler.js';
 
@@ -47,23 +45,6 @@ function makeDepthInfo(
     projectionMatrix: IDENTITY16,
     ...overrides,
   } as unknown as DepthInfo;
-}
-
-/** Capture the shader object three.js would hand to `onBeforeCompile`. */
-function compile(material: THREE.Material): {
-  uniforms: Record<string, { value: unknown }>;
-  fragmentShader: string;
-} {
-  const shader = {
-    uniforms: {} as Record<string, { value: unknown }>,
-    fragmentShader: 'void main() {\n  gl_FragColor = vec4(1.0);\n}',
-    vertexShader: '',
-  };
-  material.onBeforeCompile?.(
-    shader as unknown as THREE.WebGLProgramParametersWithUniforms,
-    undefined as unknown as THREE.WebGLRenderer
-  );
-  return shader;
 }
 
 describe('DepthOccluder', () => {
@@ -123,79 +104,15 @@ describe('DepthOccluder', () => {
     occ.dispose();
   });
 
-  it('patches a material idempotently and reports patched state', () => {
+  it('dispose clears enablement and is idempotent', () => {
     const occ = new DepthOccluder();
-    const mat = new THREE.MeshBasicMaterial();
-    expect(occ.isPatched(mat)).toBe(false);
-    occ.patch(mat);
-    expect(occ.isPatched(mat)).toBe(true);
-    const firstHook = mat.onBeforeCompile;
-    occ.patch(mat); // idempotent — no re-patch
-    expect(mat.onBeforeCompile).toBe(firstHook);
-    occ.dispose();
-  });
-
-  it('injects the shared uniforms BY REFERENCE so update reaches patched materials', () => {
-    const occ = new DepthOccluder();
-    const mat = new THREE.MeshBasicMaterial();
-    occ.patch(mat);
-    const shader = compile(mat);
-    // Before any update the occluder is disabled.
-    expect(
-      (shader.uniforms['uOccluderEnabled'] as { value: number }).value
-    ).toBe(0);
-    // A valid frame must flip the SAME uniform object the shader captured.
-    occ.update(makeDepthInfo(8, 6, 'r32f'));
-    expect(
-      (shader.uniforms['uOccluderEnabled'] as { value: number }).value
-    ).toBe(1);
-    expect(
-      (shader.uniforms['uRawValueToMeters'] as { value: number }).value
-    ).toBeCloseTo(0.001);
-    occ.dispose();
-  });
-
-  it('splices the occlusion uniforms + decision into the fragment shader', () => {
-    const occ = new DepthOccluder();
-    const mat = new THREE.MeshBasicMaterial();
-    occ.patch(mat);
-    const { fragmentShader } = compile(mat);
-    expect(fragmentShader).toContain('uniform sampler2D uDepthTexture;');
-    expect(fragmentShader).toContain('uOccluderEnabled');
-    expect(fragmentShader).toContain('gl_FragColor.a');
-    occ.dispose();
-  });
-
-  it('dispose clears enablement and patched materials, and is idempotent', () => {
-    const occ = new DepthOccluder();
-    const mat = new THREE.MeshBasicMaterial();
-    occ.patch(mat);
     occ.update(makeDepthInfo(8, 6, 'r32f'));
     occ.dispose();
     expect(occ.isEnabled()).toBe(false);
-    expect(occ.isPatched(mat)).toBe(false);
     expect(() => occ.dispose()).not.toThrow();
     // Post-dispose update is a no-op (no re-enable).
     occ.update(makeDepthInfo(8, 6, 'r32f'));
     expect(occ.isEnabled()).toBe(false);
-  });
-
-  it('honours a custom soft margin in the program cache key', () => {
-    const occ = new DepthOccluder({ softMarginMeters: 0.12 });
-    const mat = new THREE.MeshBasicMaterial();
-    occ.patch(mat);
-    expect(mat.customProgramCacheKey()).toContain('0.12');
-    occ.dispose();
-  });
-
-  it('defaults the soft margin to DEFAULT_SOFT_MARGIN_M', () => {
-    const occ = new DepthOccluder();
-    const mat = new THREE.MeshBasicMaterial();
-    occ.patch(mat);
-    expect(mat.customProgramCacheKey()).toContain(
-      String(DEFAULT_SOFT_MARGIN_M)
-    );
-    occ.dispose();
   });
 });
 
@@ -286,25 +203,5 @@ describe('buildFullscreenOcclusionShader', () => {
     // Screen UV → depth-buffer UV via normDepthBufferFromNormView + persp divide.
     expect(fragmentShader).toContain('uDepthUvFromScreenUv * vec4(vScreenUv');
     expect(fragmentShader).toContain('duv.xy / duv.w');
-  });
-});
-
-describe('injectOcclusionGlsl', () => {
-  it('prepends the uniform declarations and inserts the body before the last brace', () => {
-    const src = 'void main() {\n  gl_FragColor = vec4(1.0);\n}';
-    const out = injectOcclusionGlsl(src);
-    expect(out.indexOf('uniform float uOccluderEnabled;')).toBeLessThan(
-      out.indexOf('void main()')
-    );
-    // The injected body sits inside main (before its closing brace).
-    expect(out.lastIndexOf('gl_FragColor.a')).toBeLessThan(
-      out.lastIndexOf('}')
-    );
-  });
-
-  it('degrades gracefully when there is no closing brace', () => {
-    const out = injectOcclusionGlsl('precision highp float;');
-    expect(out).toContain('uniform sampler2D uDepthTexture;');
-    expect(out).toContain('precision highp float;');
   });
 });
