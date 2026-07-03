@@ -381,6 +381,88 @@ describe('OccluderMeshDriver', () => {
     expect(done).toEqual(['ok']);
   });
 
+  it('coalesces a synchronously reentrant request() from onMesh (newest-wins) instead of double-posting', () => {
+    // Why this test matters (PR #147 review, recorded 2026-07-02): handleResponse
+    // used to clear the in-flight slot BEFORE invoking onMesh and draining
+    // `pending` — a consumer onMesh that synchronously re-requests saw an idle
+    // driver and posted immediately, then the pending drain posted AGAIN,
+    // putting two jobs in the worker and dropping the reentrant one's response
+    // as stale. The slot must stay reserved across the callback so a reentrant
+    // request coalesces into `pending` under the documented newest-wins policy.
+    const { poster, posted, respond } = makeFakePoster();
+    const driver = new OccluderMeshDriver(poster);
+    const done: string[] = [];
+    let reentered = false;
+    driver.request(box(2), CELL, 'per-face', undefined, () => {
+      done.push('A');
+      if (!reentered) {
+        reentered = true;
+        driver.request(box(4), CELL, 'per-face', undefined, () =>
+          done.push('B')
+        );
+      }
+    });
+    driver.request(box(3), CELL, 'per-face', undefined, () => done.push('C'));
+    expect(posted).toHaveLength(1); // A in flight; C pending
+
+    respond(0); // A completes; its onMesh re-requests B (newer than C)
+    // Exactly ONE follow-up post: B replaced C as the pending job (newest wins).
+    expect(posted).toHaveLength(2);
+    expect(driver.busy).toBe(true);
+    respond(1);
+    expect(done).toEqual(['A', 'B']); // C dropped as intermediate; B delivered
+    expect(driver.busy).toBe(false);
+  });
+
+  it('does not wedge when onMesh throws: the slot clears and the pending job still posts', () => {
+    // Why this test matters: keeping the slot reserved across the callback (see
+    // the reentrancy test above) must not let a THROWING onMesh wedge the
+    // driver — the clear + pending drain happen in a finally.
+    const { poster, posted, respond } = makeFakePoster();
+    const driver = new OccluderMeshDriver(poster);
+    const done: string[] = [];
+    driver.request(box(2), CELL, 'per-face', undefined, () => {
+      throw new Error('consumer boom');
+    });
+    driver.request(box(3), CELL, 'per-face', undefined, () => done.push('C'));
+
+    // The consumer's throw propagates (a real Worker.onmessage would surface it
+    // as an uncaught error), but the driver must have recovered underneath.
+    expect(() => respond(0)).toThrow('consumer boom');
+    expect(posted).toHaveLength(2); // pending C was still drained
+    expect(driver.busy).toBe(true); // …and is now in flight
+    respond(1);
+    expect(done).toEqual(['C']);
+  });
+
+  it('coalesces a synchronously reentrant request() from onError instead of double-posting', () => {
+    // failInFlight mirrors handleResponse: onError runs with the slot still
+    // reserved, so a consumer that reacts to a failure by re-requesting
+    // coalesces (newest-wins) instead of racing the pending drain.
+    const { poster, posted, respond, error } = makeFakePoster();
+    const done: string[] = [];
+    let driverRef: OccluderMeshDriver | null = null;
+    const onError = vi.fn(() => {
+      driverRef?.request(box(4), CELL, 'per-face', undefined, () =>
+        done.push('B')
+      );
+    });
+    const driver = new OccluderMeshDriver(poster, { onError });
+    driverRef = driver;
+
+    driver.request(box(2), CELL, 'per-face', undefined, () => done.push('A'));
+    respond(0); // prove the worker good
+    driver.request(box(3), CELL, 'per-face', undefined, () => done.push('D'));
+    driver.request(box(5), CELL, 'per-face', undefined, () => done.push('C'));
+    expect(posted).toHaveLength(2); // A, D; C pending
+
+    error(); // D fails; onError reentrantly requests B (newer than C)
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(posted).toHaveLength(3); // exactly one follow-up post (B, not B+C)
+    respond(2);
+    expect(done).toEqual(['A', 'B']);
+  });
+
   // Mesh-time stats — the freshness instrumentation for the Phase-2 gate
   // (2026-07-01-occluder-worker-and-chunked-remesh-plan.md §"Next step"): the
   // on-device walk reads the occluder's freshness latency off these numbers

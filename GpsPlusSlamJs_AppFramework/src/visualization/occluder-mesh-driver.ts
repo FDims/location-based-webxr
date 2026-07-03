@@ -252,19 +252,29 @@ export class OccluderMeshDriver {
     this.hasSucceeded = true;
     const callback = this.inFlightCallback;
     const stats = this.inFlightStats;
-    this.inFlightId = null;
-    this.inFlightCallback = null;
-    this.inFlightStats = null;
-    if (stats && this.onMeshStats) {
-      const { startedMs, ...rest } = stats;
-      this.onMeshStats({ ...rest, durationMs: this.now() - startedMs });
-    }
-    callback?.(response.positions, response.indices);
-    // Post the coalesced latest, if one arrived while we were busy.
-    if (!this.disposed && this.pending) {
-      const next = this.pending;
-      this.pending = null;
-      this.post(next);
+    // Invoke the consumer callbacks while the slot is STILL reserved, so a
+    // synchronously reentrant `request()` from either callback coalesces into
+    // `pending` (the documented newest-wins policy) instead of posting
+    // immediately and then racing the drain below into a double-post whose
+    // reentrant response would be dropped as stale (PR #147 review). The clear
+    // + drain sit in a `finally` so a THROWING callback cannot wedge the slot
+    // or strand the pending job.
+    try {
+      if (stats && this.onMeshStats) {
+        const { startedMs, ...rest } = stats;
+        this.onMeshStats({ ...rest, durationMs: this.now() - startedMs });
+      }
+      callback?.(response.positions, response.indices);
+    } finally {
+      this.inFlightId = null;
+      this.inFlightCallback = null;
+      this.inFlightStats = null;
+      // Post the coalesced latest, if one arrived while we were busy.
+      if (!this.disposed && this.pending) {
+        const next = this.pending;
+        this.pending = null;
+        this.post(next);
+      }
     }
   }
 
@@ -313,27 +323,34 @@ export class OccluderMeshDriver {
     if (this.disposed || id !== this.inFlightId) {
       return; // stale
     }
-    this.inFlightId = null;
-    this.inFlightCallback = null;
-    this.inFlightStats = null; // failed jobs report no stats (onError covers them)
-    if (error !== undefined) {
-      this.onError?.(error);
-    }
-    if (
-      (options.workerAtFault ?? true) &&
-      !this.syncMode &&
-      !this.hasSucceeded
-    ) {
-      // The worker errored before ever meshing — treat it as unusable (we will
-      // not get a second error to act on, and further posts would vanish into a
-      // dead worker). Switch to synchronous main-thread meshing.
-      this.syncMode = true;
-      this.onWorkerUnusable?.();
-    }
-    if (this.pending) {
-      const next = this.pending;
-      this.pending = null;
-      this.post(next);
+    // Mirror of handleResponse: `onError` runs with the slot still reserved so
+    // a consumer that reacts to a failure by re-requesting coalesces into
+    // `pending` (newest-wins) instead of double-posting; the clear + fallback
+    // decision + drain sit in a `finally` so a throwing `onError` cannot wedge.
+    try {
+      if (error !== undefined) {
+        this.onError?.(error);
+      }
+    } finally {
+      this.inFlightId = null;
+      this.inFlightCallback = null;
+      this.inFlightStats = null; // failed jobs report no stats (onError covers them)
+      if (
+        (options.workerAtFault ?? true) &&
+        !this.syncMode &&
+        !this.hasSucceeded
+      ) {
+        // The worker errored before ever meshing — treat it as unusable (we
+        // will not get a second error to act on, and further posts would vanish
+        // into a dead worker). Switch to synchronous main-thread meshing.
+        this.syncMode = true;
+        this.onWorkerUnusable?.();
+      }
+      if (this.pending) {
+        const next = this.pending;
+        this.pending = null;
+        this.post(next);
+      }
     }
   }
 
