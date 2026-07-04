@@ -195,3 +195,4 @@ Unit tests are in [browser-mocks.test.ts](browser-mocks.test.ts) and cover the g
 - Use `vi.unstubAllGlobals()` in `afterEach` to clean up global stubs
 - Mocks are designed to be minimal but extensible
 - For full WebXR emulation in E2E tests, consider using the `webxr-polyfill` package (already installed)
+- `MockOPFSDirectoryHandle.getDirectoryHandle`/`getFileHandle` are spec-faithful on **kind mismatch** (PR #158 review): when the name is taken by an entry of the other kind they reject with a `TypeMismatchError` `DOMException` — with AND without `create: true` — instead of silently replacing the entry. Production code branches on this error name (e.g. `opfs-storage`'s `createSession` collision probe treats it as "name taken").
