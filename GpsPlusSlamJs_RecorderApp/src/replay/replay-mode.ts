@@ -48,12 +48,12 @@ import { decodeFrameTexture } from '../visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import { loadRecordingOptions } from 'gps-plus-slam-app-framework/state/recording-options';
+import { OccupancyCubesVisualizer } from '../visualization/occupancy-cubes-visualizer';
 import {
-  OccupancyCubesVisualizer,
-  type ViewerPose,
-} from '../visualization/occupancy-cubes-visualizer';
-import { OcclusionMesh } from 'gps-plus-slam-app-framework/visualization';
-import { createOccluderMeshWorker } from '../visualization/occluder-mesh-worker-client';
+  createOccluderSink,
+  type OccluderSink,
+  type OccluderSinkHandle,
+} from '../visualization/occluder-sink';
 import { wireOccupancyGridSubscribers } from '../visualization/wire-occupancy-grid-subscribers';
 import { createZipFrameBlobSource } from '../storage/zip-frame-blob-source';
 import {
@@ -209,10 +209,9 @@ export async function startReplayMode(
   // Best-effort like the frame tiles above.
   let unsubscribeOccupancyGrid: (() => void) | null = null;
   let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
-  let occlusionMesh: OcclusionMesh | null = null;
-  // Off-main-thread occluder mesher (falls back to synchronous meshing).
-  let occluderMeshWorker: ReturnType<typeof createOccluderMeshWorker> | null =
-    null;
+  // Persistent occluder handle (occluder-sink.ts — the wiring shared with the
+  // live path); dispose() releases mesh + worker and no-ops the sink callbacks.
+  let occluderSinkHandle: OccluderSinkHandle | null = null;
   try {
     // Re-derive the grid from the recorded depth points at the user's current
     // voxel size (recording-options `occupancy.cellSizeM`, clamped 1–20 cm).
@@ -231,62 +230,19 @@ export async function startReplayMode(
       replaySceneState.arWorldGroup,
       { minObservations: occupancyOptions.minConfidence }
     );
-    // Persistent depth-only occluder (ON by default), re-quantizable
-    // per replay like the cubes. Snapshots the same minConfidence floor.
-    // (Live occlusion is live-AR-only — replay has no live depth stream — so
-    // only the persistent flag is honoured here.)
-    const occluderMode = occupancyOptions.occluderMeshMode;
-    const occluderMinConfidence = occupancyOptions.minConfidence;
-    // Camera-local occluder window (Step 2, 2026-07-03 fps plan) — replay
-    // parity with main.ts; 0 = unbounded.
-    const occluderRadiusM = occupancyOptions.occluderRadiusM;
-    let occluderSink:
-      | {
-          refresh(grid: OccupancyGrid, pose?: ViewerPose): void;
-          clear(): void;
-        }
-      | undefined;
+    // Persistent depth-only occluder (ON by default), re-quantizable per
+    // replay like the cubes — the shared factory (occluder-sink.ts, one wiring
+    // for live AND replay) reads the mesher/debug styles, radius and the same
+    // minConfidence floor from the options group. (Live occlusion is
+    // live-AR-only — replay has no live depth stream — so only the persistent
+    // flag is honoured here.)
+    let occluderSink: OccluderSink | undefined;
     if (occupancyOptions.persistentOcclusion) {
-      occlusionMesh = new OcclusionMesh(replaySceneState.arWorldGroup, {
-        // Mesher style (occupancy.occluderMeshMode), re-read per replay like
-        // the cubes — so the surface-hugging meshers can be inspected on a
-        // recorded session, not only live.
-        mode: occluderMode,
-      });
-      // Debug style (occupancy.occluderDebugStyle): visible debug skin(s) —
-      // matcap / depth-shaded / wireframe — so the mesh's shape and structure
-      // can be judged on replay too (additive skins; occlusion unchanged),
-      // re-read per replay like the cubes.
-      occlusionMesh.setDebugStyle(occupancyOptions.occluderDebugStyle);
-      // Mesh off the main thread so a large replay grid never stalls playback;
-      // coalesces to the latest while busy (synchronous fallback if no worker).
-      occluderMeshWorker = createOccluderMeshWorker();
-      // The sink closures re-read the module-level `occluderMeshWorker` /
-      // `occlusionMesh` through `?.` — they run asynchronously and must no-op
-      // after replay teardown nulls both.
-      occluderSink = {
-        // Flat snapshot (Step 1.3, 2026-07-03 fps plan — parity with main.ts):
-        // snapshot + getCellPoint stay main-thread; only the mesh runs in the
-        // worker. getCellPoint is read only by the surface-hugging modes.
-        // Windowed around the replayed camera pose when a radius is set
-        // (Step 2); unbounded fallback for a missing/non-finite pose.
-        refresh: (g: OccupancyGrid, pose?: ViewerPose) =>
-          occluderMeshWorker?.driver.request(
-            occluderRadiusM > 0 && pose && pose.cameraPos.every(Number.isFinite)
-              ? g.getOccupiedCellsWithinFlat(
-                  [pose.cameraPos[0], pose.cameraPos[1], pose.cameraPos[2]],
-                  occluderRadiusM,
-                  occluderMinConfidence
-                )
-              : g.getOccupiedCellsFlat(occluderMinConfidence),
-            g.cellSizeM,
-            occluderMode,
-            (cell) => g.getCellPoint(cell),
-            (positions, indices) =>
-              occlusionMesh?.applyMeshData(positions, indices)
-          ),
-        clear: () => occlusionMesh?.clear(),
-      };
+      occluderSinkHandle = createOccluderSink(
+        replaySceneState.arWorldGroup,
+        occupancyOptions
+      );
+      occluderSink = occluderSinkHandle.sink;
     }
     unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
       storeRef: createStoreRef(store),
@@ -472,8 +428,8 @@ export async function startReplayMode(
       frameTileVisualizer?.dispose();
       unsubscribeOccupancyGrid?.();
       occupancyCubesVisualizer?.dispose();
-      occlusionMesh?.dispose();
-      occluderMeshWorker?.dispose();
+      occluderSinkHandle?.dispose();
+      occluderSinkHandle = null;
       if (statsRafId !== null) {
         cancelAnimationFrame(statsRafId);
         statsRafId = null;

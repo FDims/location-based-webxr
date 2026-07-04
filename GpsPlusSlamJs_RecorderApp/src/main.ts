@@ -153,12 +153,12 @@ import { decodeFrameTexture } from './visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from './visualization/wire-frame-tile-subscribers';
 import { FrameBlobCache } from './visualization/frame-blob-cache';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import { OccupancyCubesVisualizer } from './visualization/occupancy-cubes-visualizer';
 import {
-  OccupancyCubesVisualizer,
-  type ViewerPose,
-} from './visualization/occupancy-cubes-visualizer';
-import { OcclusionMesh } from 'gps-plus-slam-app-framework/visualization';
-import { createOccluderMeshWorker } from './visualization/occluder-mesh-worker-client';
+  createOccluderSink,
+  type OccluderSink,
+  type OccluderSinkHandle,
+} from './visualization/occluder-sink';
 import { wireOccupancyGridSubscribers } from './visualization/wire-occupancy-grid-subscribers';
 import { setOccupancyGrid } from './state/occupancy-grid-provider';
 import { SESSION_IMAGES_DIR } from 'gps-plus-slam-app-framework/storage/file-system-utils';
@@ -286,14 +286,12 @@ let statsOverlay: StatsOverlayHandle | null = null;
 let occupancyGrid: OccupancyGrid | null = null;
 let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
 // Persistent depth-only occluder (ON by default — occupancy.persistentOcclusion).
-let occlusionMesh: OcclusionMesh | null = null;
-// Web Worker driver that meshes the occluder off the main thread (falls back to
-// synchronous meshing if a worker can't be created). Lifecycle mirrors
-// `occlusionMesh` — disposed on re-enter + in resetMainState.
-let occluderMeshWorker: ReturnType<typeof createOccluderMeshWorker> | null =
-  null;
+// One handle owns the mesh + off-thread worker + sink (occluder-sink.ts, the
+// wiring shared with replay); dispose() releases all three and no-ops the
+// async sink callbacks. Disposed on re-enter + in resetMainState.
+let occluderSinkHandle: OccluderSinkHandle | null = null;
 // Live CPU-depth occluder (off by default — occupancy.liveOcclusion). Lifecycle
-// mirrors `occlusionMesh`: disposed on re-enter + in resetMainState (not via the
+// mirrors `occluderSinkHandle`: disposed on re-enter + in resetMainState (not via the
 // framework session-disposer registry). `liveOccluderUnregisterFrame` unhooks
 // the per-frame depth feed alongside the dispose.
 let liveOccluder: DepthOccluder | null = null;
@@ -592,7 +590,7 @@ export function setCurrentScenarioName(name: string): void {
  * Tear down the live CPU-depth occluder: unhook its per-frame depth feed and
  * dispose it (which removes its full-screen mesh from `arWorldGroup`). Safe to
  * call when nothing is wired. Used on re-enter and in `resetMainState`, mirroring
- * how `occlusionMesh` is managed.
+ * how `occluderSinkHandle` is managed.
  */
 function disposeLiveOccluder(): void {
   liveOccluderUnregisterFrame?.();
@@ -650,12 +648,8 @@ export function resetMainState(): void {
     occupancyCubesVisualizer.dispose();
     occupancyCubesVisualizer = null;
   }
-  if (occlusionMesh) {
-    occlusionMesh.dispose();
-    occlusionMesh = null;
-  }
-  occluderMeshWorker?.dispose();
-  occluderMeshWorker = null;
+  occluderSinkHandle?.dispose();
+  occluderSinkHandle = null;
   disposeLiveOccluder();
   occupancyGrid = null;
   setOccupancyGrid(null);
@@ -1353,10 +1347,8 @@ async function handleEnterAR(): Promise<void> {
         unsubscribeOccupancyGrid = null;
         occupancyCubesVisualizer?.dispose();
         occupancyCubesVisualizer = null;
-        occlusionMesh?.dispose();
-        occlusionMesh = null;
-        occluderMeshWorker?.dispose();
-        occluderMeshWorker = null;
+        occluderSinkHandle?.dispose();
+        occluderSinkHandle = null;
         occupancyGrid = null;
         setOccupancyGrid(null);
 
@@ -1398,75 +1390,17 @@ async function handleEnterAR(): Promise<void> {
         // Persistent depth-only occluder (ON by default). When on, it
         // re-meshes the grid on the same throttle as the cubes and writes depth
         // (no color) under arWorldGroup so real geometry hides virtual content
-        // placed behind it. The adapter snapshots the SAME minConfidence floor
-        // the cubes/COLMAP use, so the three consumers can't silently diverge.
-        const minConfidence = recordingOptions.occupancy.minConfidence;
-        // Mesher style (occupancy.occluderMeshMode): blocky greedy cubes by
-        // default; 'corner-fit'/'smooth' opt into the surface-hugging meshers.
-        const occluderMode = recordingOptions.occupancy.occluderMeshMode;
-        // Camera-local occluder window (Step 2, 2026-07-03 fps plan): each
-        // re-mesh reads only the cells within this radius of the camera, so
-        // snapshot/pack/mesh cost stays bounded by the neighbourhood. 0 =
-        // unbounded (pre-Step-2 behaviour). The grid forgets nothing —
-        // walking back re-meshes far geometry from memory.
-        const occluderRadiusM = recordingOptions.occupancy.occluderRadiusM;
-        let occluderSink:
-          | {
-              refresh(grid: OccupancyGrid, pose?: ViewerPose): void;
-              clear(): void;
-            }
-          | undefined;
+        // placed behind it. The shared factory (occluder-sink.ts — one wiring
+        // for live AND replay) snapshots the SAME minConfidence floor the
+        // cubes/COLMAP use, so the three consumers can't silently diverge; its
+        // handle owns mesh + worker teardown (endARSession disposes it).
+        let occluderSink: OccluderSink | undefined;
         if (recordingOptions.occupancy.persistentOcclusion) {
-          occlusionMesh = new OcclusionMesh(arWorldGroup, {
-            mode: occluderMode,
-          });
-          // Debug style (occupancy.occluderDebugStyle): render the occluder
-          // mesh with visible debug skin(s) — matcap / depth-shaded /
-          // wireframe — so its shape and structure can be judged on-device.
-          // No effect on occlusion (additive skins); read here like the other
-          // occupancy knobs so a change applies on the next Enter-AR.
-          occlusionMesh.setDebugStyle(
-            recordingOptions.occupancy.occluderDebugStyle
+          occluderSinkHandle = createOccluderSink(
+            arWorldGroup,
+            recordingOptions.occupancy
           );
-          // Mesh off the main thread so a large-grid re-mesh (100s of ms at
-          // hundreds of metres) never stalls the render; coalesces to the
-          // latest snapshot while busy, and falls back to synchronous meshing
-          // if a worker can't be created.
-          occluderMeshWorker = createOccluderMeshWorker();
-          // The sink closures deliberately re-read the module-level
-          // `occluderMeshWorker`/`occlusionMesh` through `?.` — they run
-          // asynchronously (throttled refreshes, worker callbacks) and must
-          // no-op after session teardown nulls both.
-          occluderSink = {
-            // Flat snapshot (Step 1.3, 2026-07-03 fps plan): hands the cells
-            // to the pack path as the transferable Int32Array it ships
-            // anyway — no tuple intermediate. Snapshot + getCellPoint stay
-            // main-thread; only meshOccupiedCells runs in the worker, its
-            // geometry applied back here. getCellPoint is read only by the
-            // surface-hugging modes (the cube modes ignore it).
-            refresh: (g: OccupancyGrid, pose?: ViewerPose) =>
-              occluderMeshWorker?.driver.request(
-                // Windowed snapshot around the camera when a radius is set
-                // and the pose is usable; unbounded fallback otherwise (a
-                // tracking-glitch pose must degrade gracefully, never
-                // blank the occluder).
-                occluderRadiusM > 0 &&
-                  pose &&
-                  pose.cameraPos.every(Number.isFinite)
-                  ? g.getOccupiedCellsWithinFlat(
-                      [pose.cameraPos[0], pose.cameraPos[1], pose.cameraPos[2]],
-                      occluderRadiusM,
-                      minConfidence
-                    )
-                  : g.getOccupiedCellsFlat(minConfidence),
-                g.cellSizeM,
-                occluderMode,
-                (cell) => g.getCellPoint(cell),
-                (positions, indices) =>
-                  occlusionMesh?.applyMeshData(positions, indices)
-              ),
-            clear: () => occlusionMesh?.clear(),
-          };
+          occluderSink = occluderSinkHandle.sink;
         }
         // With any camera-relative window active (the cubes window by
         // default; the occluder when occluderRadiusM > 0), a settled grid
@@ -1476,7 +1410,7 @@ async function handleEnterAR(): Promise<void> {
         const anyWindowedConsumer =
           viz.occupancyCubes ||
           (recordingOptions.occupancy.persistentOcclusion &&
-            occluderRadiusM > 0);
+            recordingOptions.occupancy.occluderRadiusM > 0);
         unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
           storeRef,
           grid: occupancyGrid,
@@ -1517,7 +1451,7 @@ async function handleEnterAR(): Promise<void> {
       // callback) must never break the AR session. The on-device occlusion render
       // is still being brought up, so the checkbox stays experimental.
       try {
-        disposeLiveOccluder(); // guard a re-enter (mirrors occlusionMesh teardown)
+        disposeLiveOccluder(); // guard a re-enter (mirrors occluderSinkHandle teardown)
         if (recordingOptions.occupancy.liveOcclusion) {
           const occluder = new DepthOccluder();
           liveOccluder = occluder;
