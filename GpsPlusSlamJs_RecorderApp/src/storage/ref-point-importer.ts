@@ -179,6 +179,32 @@ export async function importRefPointsFromFolder(
   const allErrors: string[] = [];
   let zipFilesScanned = 0;
 
+  // Deduplicate one ZIP's points into the accumulator: for H3 IDs, gridDisk
+  // overlap catches GPS jitter; legacy string IDs use exact match. (Extracted
+  // from the scan loop to keep its nesting readable.)
+  const mergeRefPoints = (
+    refPoints: readonly ImportedRefPoint[],
+    entryName: string
+  ): void => {
+    for (const refPoint of refPoints) {
+      const isDuplicate = isH3Index(refPoint.id)
+        ? allRefPoints.some(
+            (existing) =>
+              isH3Index(existing.id) && h3CellsMatch(existing.id, refPoint.id)
+          )
+        : seenIds.has(refPoint.id);
+
+      if (!isDuplicate) {
+        seenIds.add(refPoint.id);
+        allRefPoints.push(refPoint);
+      } else {
+        log.debug(
+          `Skipping duplicate ref point: ${refPoint.id} from ${entryName}`
+        );
+      }
+    }
+  };
+
   log.info(`Scanning folder: ${folderHandle.name}`);
 
   try {
@@ -204,27 +230,7 @@ export async function importRefPointsFromFolder(
 
         zipFilesScanned++;
         allErrors.push(...errors);
-
-        // Deduplicate: for H3 IDs, use gridDisk overlap to catch GPS jitter.
-        // For legacy string IDs, use exact match.
-        for (const refPoint of refPoints) {
-          const isDuplicate = isH3Index(refPoint.id)
-            ? allRefPoints.some(
-                (existing) =>
-                  isH3Index(existing.id) &&
-                  h3CellsMatch(existing.id, refPoint.id)
-              )
-            : seenIds.has(refPoint.id);
-
-          if (!isDuplicate) {
-            seenIds.add(refPoint.id);
-            allRefPoints.push(refPoint);
-          } else {
-            log.debug(
-              `Skipping duplicate ref point: ${refPoint.id} from ${entry.name}`
-            );
-          }
-        }
+        mergeRefPoints(refPoints, entry.name);
       } catch (zipErr) {
         const errorMsg = `Failed to process ${entry.name}: ${(zipErr as Error).message}`;
         log.warn(errorMsg);

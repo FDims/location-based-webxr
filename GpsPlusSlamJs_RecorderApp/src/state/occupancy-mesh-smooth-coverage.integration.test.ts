@@ -66,7 +66,6 @@ describe.skipIf(!HAS_ZIP)(
         });
       }
 
-      // eslint-disable-next-line no-console
       console.info(
         '[smooth coverage probe]\n' +
           JSON.stringify({ depthSamples: depthSamples.length, rows }, null, 2)

@@ -100,7 +100,6 @@ describe.skipIf(!HAS_ZIP)('occupancy param sweep — fastest usable mesh', () =>
             .join(' ') +
           ` | ${r.finalCells}`
       );
-      // eslint-disable-next-line no-console
       console.info(
         `[param sweep] samples=${samples.length}\n${header}\n${lines.join('\n')}`
       );
