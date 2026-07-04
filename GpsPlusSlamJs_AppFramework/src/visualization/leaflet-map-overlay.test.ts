@@ -263,6 +263,43 @@ describe('LeafletMapOverlay', () => {
     vi.restoreAllMocks();
   });
 
+  describe('F1 viewer-plane invariant (2026-07-04 user feedback)', () => {
+    // Why this test matters: the map plane is parented to the CameraFollower,
+    // which follows the camera POSITION but keeps IDENTITY rotation
+    // (GPS-world-aligned). Two consequences the defaults must respect:
+    //  - DEFAULT_Z_OFFSET displaces the plane in a FIXED WORLD direction,
+    //    not "forward of the user" — any non-zero value helps at one camera
+    //    yaw and hurts at the opposite one, so the yaw-symmetric optimum is 0;
+    //  - in heading-up mode the plane yaws about its own centre each frame,
+    //    sweeping its corners on a radius of worldSize/√2.
+    // CSS3D content that crosses the viewer plane (camera-space z ≥ 0) is cut
+    // off by the browser — an effective near plane at 0 that camera.near
+    // cannot move. A plane point d metres horizontally behind the camera and
+    // |h| below it crosses whenever tan(pitch) < d/|h|, so the achievable
+    // guarantee is: no corner crosses at any camera yaw / heading-up yaw for
+    // pitches ≥ the design pitch θ*. See the F1 spec in
+    // GpsPlusSlamJs_Docs/docs/2026-07-04-ar-clipping-planes-and-lifecycle-plan.md.
+    it('defaults satisfy |zOff| + s/√2 + lag ≤ |h|·tan(θ*) for θ* = 51°', () => {
+      // Follower position-lerp lag while walking (metres, conservative).
+      const LAG_MARGIN_M = 0.5;
+      // Design pitch: at or above this look-down angle the map never clips.
+      const DESIGN_PITCH_DEG = 51;
+
+      const worstBehindDistance =
+        Math.abs(DEFAULT_Z_OFFSET) +
+        DEFAULT_WORLD_SIZE / Math.SQRT2 +
+        LAG_MARGIN_M;
+      const allowed =
+        Math.abs(DEFAULT_HEIGHT_OFFSET) *
+        Math.tan((DESIGN_PITCH_DEG * Math.PI) / 180);
+
+      expect(worstBehindDistance).toBeLessThanOrEqual(allowed);
+      // The offset must stay 0: with a world-yaw-locked parent any forward
+      // offset is a fixed compass direction, not "ahead of the user".
+      expect(DEFAULT_Z_OFFSET).toBe(0);
+    });
+  });
+
   describe('constructor', () => {
     // Why: Ensures defaults are applied when no options are provided
     it('should use default constants when no options are provided', () => {

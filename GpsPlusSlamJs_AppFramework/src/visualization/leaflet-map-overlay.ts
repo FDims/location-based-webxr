@@ -56,14 +56,33 @@ export const DEFAULT_LEAFLET_MAP_SIZE_PX = 600;
  */
 const REF_POINT_MARKER_SIZE_PX = 20;
 
-/** Default world-space size in meters (matches old MapOverlay) */
-export const DEFAULT_WORLD_SIZE = 10;
+/**
+ * Map-plane placement defaults (re-fit 2026-07-04, F1 user feedback).
+ *
+ * The plane's parent is the CameraFollower — camera POSITION is followed,
+ * rotation stays IDENTITY (GPS-world-aligned). CSS3D content crossing the
+ * viewer plane (camera-space z ≥ 0) is cut off by the browser (an effective
+ * near plane at 0 that camera.near cannot move), so the defaults must keep
+ * every plane corner in front of the viewer plane for ALL camera yaws and
+ * heading-up rotations at map-viewing pitches. Invariant (tests pin it):
+ *
+ *   |DEFAULT_Z_OFFSET| + DEFAULT_WORLD_SIZE/√2 + lag ≤ |h|·tan(θ*)
+ *
+ * with lag = 0.5 m (follower lerp) and design pitch θ* = 51°. Below θ* only
+ * the region farther than |h|·tan(pitch) behind the camera is cut, shrinking
+ * to nothing at θ*. Values 8 / −5 / 0 give θ* ≈ 51°; zOffset MUST stay 0 —
+ * with a world-yaw-locked parent a non-zero offset is a fixed compass
+ * direction, not "ahead of the user".
+ */
+
+/** Default world-space size in meters */
+export const DEFAULT_WORLD_SIZE = 8;
 
 /** Default height offset below camera (negative = below) */
-export const DEFAULT_HEIGHT_OFFSET = -4;
+export const DEFAULT_HEIGHT_OFFSET = -5;
 
-/** Default forward offset from parent (negative = forward in parent-local Z) */
-export const DEFAULT_Z_OFFSET = -1.0;
+/** Default offset from parent along world Z (keep 0 — see block comment) */
+export const DEFAULT_Z_OFFSET = 0;
 
 /** Default zoom level for the Leaflet map */
 export const DEFAULT_ZOOM = 17;

@@ -55,8 +55,9 @@ Constructor — creates an overlay instance (does not show it yet).
 ### Exported Constants
 
 - `DEFAULT_LEAFLET_MAP_SIZE_PX` — 600
-- `DEFAULT_WORLD_SIZE` — 10
-- `DEFAULT_HEIGHT_OFFSET` — -4
+- `DEFAULT_WORLD_SIZE` — 8 (re-fit 2026-07-04, F1)
+- `DEFAULT_HEIGHT_OFFSET` — -5 (re-fit 2026-07-04, F1)
+- `DEFAULT_Z_OFFSET` — 0 (re-fit 2026-07-04, F1 — must stay 0, see the viewer-plane invariant)
 - `DEFAULT_ZOOM` — 17
 
 ## Invariants & Assumptions
@@ -68,7 +69,8 @@ Constructor — creates an overlay instance (does not show it yet).
 - **Ref-point marker prominence (F5-A, 2026-06-16 user feedback).** `addCurrentMarker` / `addPriorMarker` dots are sized by `REF_POINT_MARKER_SIZE_PX` (**20 px**, enlarged from 12) with a 3 px white halo + drop shadow so they are obvious on the small CSS3D minimap — the field tester reported the minimap "showed the user but not the marker" because the old 12 px dots were too small to notice. A test locks the rendered `divIcon` `iconSize` ≥ 18 px so it cannot silently shrink back.
 - Trajectory colors (raw GPS yellow, fused cyan, snapshot red, user-position blue) live in the shared `map-overlay-draw.ts` / `VIS_COLORS` palette — the overlay no longer draws them itself.
 - CSS3DObject scale = `worldSize / mapSizePx` so the DOM map appears at the configured world size.
-- CSS3DObject is parented to `mapParent` (default: camera), positioned at `(0, heightOffset, -0.5)`, rotated `−π/2` on X to lie in the XZ plane.
+- CSS3DObject is parented to `mapParent` (default: camera), positioned at `(0, heightOffset, DEFAULT_Z_OFFSET)`, rotated `−π/2` on X to lie in the XZ plane.
+- **Viewer-plane invariant (F1, 2026-07-04 user feedback).** In the recorder the parent is the `CameraFollower` — camera **position** is followed (lerped), rotation stays **identity** (GPS-world-aligned). CSS3D content crossing the viewer plane (camera-space z ≥ 0) is cut off by the browser; `camera.near` cannot move that plane. The defaults must therefore satisfy `|DEFAULT_Z_OFFSET| + DEFAULT_WORLD_SIZE/√2 + 0.5 (lerp-lag) ≤ |DEFAULT_HEIGHT_OFFSET|·tan(51°)` so that **no plane corner crosses the viewer plane at any camera yaw or heading-up rotation for pitches ≥ 51°** (below that, only the region farther than `|h|·tan(pitch)` behind the camera is cut, vanishing at 51°). `DEFAULT_Z_OFFSET` must stay 0 — with a world-yaw-locked parent a non-zero offset points in a fixed compass direction, not "ahead of the user". Pinned by the invariant test in `leaflet-map-overlay.test.ts` and the property tests in `leaflet-map-overlay.property.test.ts`; final feel is gated on-device (see the 2026-07-04 plan doc, F1).
 - **Heading-up rotation (2026-06-29 plan; camera-relative fix).** Off by default (north-up). When enabled, `updatePosition(dt, camera)` applies `headingUpQuat(viewAzimuth(camera) − smoothedHeading)` each frame, where `smoothedHeading` is `MapData.userHeadingDeg` lerped via `lerpAngleDeg` + `clampedAlpha` (~1 Hz target) and `viewAzimuth` is read live from the render camera. **Camera-relative is essential:** the map is world-locked but composited through the live head-tracked camera, so the camera already rotates its appearance as the user turns; subtracting the camera azimuth cancels that exactly and removes the GPS↔scene alignment-yaw offset. Using the absolute heading (the first attempt) double-counted the camera → "only forward at one heading". The first heading sample snaps; a `null` **or non-finite** (`NaN`/`Infinity`) heading, or an absent camera, holds the last orientation — `render()` normalizes a non-finite `MapData.userHeadingDeg` to `null` at the boundary so a bad sample can never smooth a `NaN` into the CSS3D quaternion; disabling restores the baseline tilt. Live-only by convention (replay stays north-up). Device-verified correct (2026-06-29) including the rotation sign (`YAW_SIGN = -1`).
 
 ## Examples
