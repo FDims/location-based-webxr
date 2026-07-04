@@ -37,95 +37,106 @@ function timeMs(runs: number, fn: () => void): number {
 }
 
 describe.skipIf(!RUN)('occupancy mesher — perf benchmark', () => {
-  it('measures grid build + getOccupiedCells + each mesh mode at scale', () => {
-    const SIDE = 160; // 160×160×1 = 25,600 cells
-    const RUNS = 15;
+  // Benchmarks legitimately run for tens of seconds — an explicit timeout so
+  // the documented BENCH=1 invocation is green instead of tripping vitest's
+  // 5 s default (plan step 1, 2026-07-04 code-health pass).
+  it(
+    'measures grid build + getOccupiedCells + each mesh mode at scale',
+    { timeout: 120_000 },
+    () => {
+      const SIDE = 160; // 160×160×1 = 25,600 cells
+      const RUNS = 15;
 
-    const buildMs = timeMs(5, () => {
-      buildSyntheticSurfaceGrid({ cellsX: SIDE, cellsZ: SIDE, thickness: 1 });
-    });
+      const buildMs = timeMs(5, () => {
+        buildSyntheticSurfaceGrid({ cellsX: SIDE, cellsZ: SIDE, thickness: 1 });
+      });
 
-    const { grid, cellSizeM } = buildSyntheticSurfaceGrid({
-      cellsX: SIDE,
-      cellsZ: SIDE,
-      thickness: 1,
-    });
-    const occMs = timeMs(RUNS, () => {
-      grid.getOccupiedCells(5);
-    });
-    const cells = grid.getOccupiedCells(5);
-    const getCellPoint = (c: Parameters<OccupancyGrid['getCellPoint']>[0]) =>
-      grid.getCellPoint(c);
+      const { grid, cellSizeM } = buildSyntheticSurfaceGrid({
+        cellsX: SIDE,
+        cellsZ: SIDE,
+        thickness: 1,
+      });
+      const occMs = timeMs(RUNS, () => {
+        grid.getOccupiedCells(5);
+      });
+      const cells = grid.getOccupiedCells(5);
+      const getCellPoint = (c: Parameters<OccupancyGrid['getCellPoint']>[0]) =>
+        grid.getCellPoint(c);
 
-    const modes: {
-      name: string;
-      opts: MeshOccupiedCellsOptions | undefined;
-    }[] = [
-      { name: 'per-face', opts: undefined },
-      { name: 'greedy', opts: { greedy: true } },
-      { name: 'smooth', opts: { mode: 'smooth', getCellPoint } },
-      { name: 'corner-fit', opts: { mode: 'corner-fit', getCellPoint } },
-    ];
-    const meshMs = modes.map(({ name, opts }) => ({
-      name,
-      ms: timeMs(RUNS, () => {
-        meshOccupiedCells(cells, cellSizeM, opts);
-      }),
-    }));
+      const modes: {
+        name: string;
+        opts: MeshOccupiedCellsOptions | undefined;
+      }[] = [
+        { name: 'per-face', opts: undefined },
+        { name: 'greedy', opts: { greedy: true } },
+        { name: 'smooth', opts: { mode: 'smooth', getCellPoint } },
+        { name: 'corner-fit', opts: { mode: 'corner-fit', getCellPoint } },
+      ];
+      const meshMs = modes.map(({ name, opts }) => ({
+        name,
+        ms: timeMs(RUNS, () => {
+          meshOccupiedCells(cells, cellSizeM, opts);
+        }),
+      }));
 
-    // eslint-disable-next-line no-console
-    console.info(
-      '[mesher bench] ' +
-        JSON.stringify({
-          cells: cells.length,
-          gridBuildMs: buildMs,
-          getOccupiedCellsMs: occMs,
-          meshMs,
-        })
-    );
-    expect(cells.length).toBeGreaterThan(0);
-  });
+      // eslint-disable-next-line no-console
+      console.info(
+        '[mesher bench] ' +
+          JSON.stringify({
+            cells: cells.length,
+            gridBuildMs: buildMs,
+            getOccupiedCellsMs: occMs,
+            meshMs,
+          })
+      );
+      expect(cells.length).toBeGreaterThan(0);
+    }
+  );
 
-  it('long-session scaling: per-refresh cost + memory at ~100k cells', () => {
-    const RUNS = 8;
-    const heap0 = process.memoryUsage().heapUsed;
-    const { grid, cellSizeM } = buildSyntheticSurfaceGrid({
-      cellsX: 320,
-      cellsZ: 320,
-      thickness: 1,
-    }); // 102,400 cells
-    const heap1 = process.memoryUsage().heapUsed;
-    const cells = grid.getOccupiedCells(5);
-    const getCellPoint = (c: Parameters<OccupancyGrid['getCellPoint']>[0]) =>
-      grid.getCellPoint(c);
+  it(
+    'long-session scaling: per-refresh cost + memory at ~100k cells',
+    { timeout: 120_000 },
+    () => {
+      const RUNS = 8;
+      const heap0 = process.memoryUsage().heapUsed;
+      const { grid, cellSizeM } = buildSyntheticSurfaceGrid({
+        cellsX: 320,
+        cellsZ: 320,
+        thickness: 1,
+      }); // 102,400 cells
+      const heap1 = process.memoryUsage().heapUsed;
+      const cells = grid.getOccupiedCells(5);
+      const getCellPoint = (c: Parameters<OccupancyGrid['getCellPoint']>[0]) =>
+        grid.getCellPoint(c);
 
-    const occMs = timeMs(RUNS, () => grid.getOccupiedCells(5));
-    const perFaceMs = timeMs(RUNS, () =>
-      meshOccupiedCells(cells, cellSizeM, undefined)
-    );
-    const greedyMs = timeMs(RUNS, () =>
-      meshOccupiedCells(cells, cellSizeM, { greedy: true })
-    );
-    const smoothMs = timeMs(RUNS, () =>
-      meshOccupiedCells(cells, cellSizeM, { mode: 'smooth', getCellPoint })
-    );
+      const occMs = timeMs(RUNS, () => grid.getOccupiedCells(5));
+      const perFaceMs = timeMs(RUNS, () =>
+        meshOccupiedCells(cells, cellSizeM, undefined)
+      );
+      const greedyMs = timeMs(RUNS, () =>
+        meshOccupiedCells(cells, cellSizeM, { greedy: true })
+      );
+      const smoothMs = timeMs(RUNS, () =>
+        meshOccupiedCells(cells, cellSizeM, { mode: 'smooth', getCellPoint })
+      );
 
-    // eslint-disable-next-line no-console
-    console.info(
-      '[long-session bench] ' +
-        JSON.stringify({
-          cells: cells.length,
-          gridHeapKiB: +((heap1 - heap0) / 1024).toFixed(0),
-          bytesPerCell: +((heap1 - heap0) / cells.length).toFixed(0),
-          getOccupiedCellsMs: occMs,
-          perFaceMs,
-          greedyMs,
-          smoothMs,
-          // A persistent-occluder refresh = getOccupiedCells + mesh, every
-          // depth.intervalMs (default 500 ms). This grows O(total cells).
-          refreshMs_perFace: +(occMs + perFaceMs).toFixed(1),
-        })
-    );
-    expect(cells.length).toBeGreaterThan(0);
-  });
+      // eslint-disable-next-line no-console
+      console.info(
+        '[long-session bench] ' +
+          JSON.stringify({
+            cells: cells.length,
+            gridHeapKiB: +((heap1 - heap0) / 1024).toFixed(0),
+            bytesPerCell: +((heap1 - heap0) / cells.length).toFixed(0),
+            getOccupiedCellsMs: occMs,
+            perFaceMs,
+            greedyMs,
+            smoothMs,
+            // A persistent-occluder refresh = getOccupiedCells + mesh, every
+            // depth.intervalMs (default 500 ms). This grows O(total cells).
+            refreshMs_perFace: +(occMs + perFaceMs).toFixed(1),
+          })
+      );
+      expect(cells.length).toBeGreaterThan(0);
+    }
+  );
 });

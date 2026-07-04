@@ -48,7 +48,8 @@ function median(xs: number[]): number {
 }
 
 describe.skipIf(!RUN)('depth unprojection — perf benchmark', () => {
-  it('times N unproject calls', () => {
+  // Explicit timeout: benchmark runs exceed vitest's 5 s default (plan step 1).
+  it('times N unproject calls', { timeout: 120_000 }, () => {
     const N = 128_000;
     const RUNS = 15;
     const points = makePoints(N);
