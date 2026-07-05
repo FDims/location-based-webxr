@@ -26,6 +26,7 @@ import {
   startSession,
   setCurrentScenario,
   ensureScenarioDirectory,
+  getScenarioDirectoryHandle,
   getCurrentScenarioHandle,
   clearRefPointsCacheForAllScenarios,
   resetForNewSession,
@@ -321,5 +322,57 @@ describe('ScenarioWrappingStorageBackend', () => {
     const sessions = await backend.listSessions();
     expect(sessions).toContain(a.sessionName);
     expect(sessions).toContain(b.sessionName);
+  });
+});
+
+describe('scenario-storage — getScenarioDirectoryHandle (side-effect-free)', () => {
+  let opfsRoot: MockOPFSDirectoryHandle;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    resetScenarioStorage();
+    const mocks = installOPFSMocks();
+    opfsRoot = mocks.root;
+    cleanup = mocks.cleanup;
+    await initStorage();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Why this test matters:
+   * The eager ref-point indexing pass (2026-07-05 folder-import plan §3.2)
+   * writes into MANY scenario directories while the user's selected scenario
+   * must stay current. setCurrentScenario/ensureScenarioDirectory repoint the
+   * module-level current-scenario state as a side effect — this accessor must
+   * not.
+   */
+  it('creates and returns a scenario dir without repointing the current scenario', async () => {
+    const currentHandle = await ensureScenarioDirectory('Current');
+    expect(getCurrentScenarioHandle()).toBe(currentHandle);
+
+    const other = await getScenarioDirectoryHandle('Other', { create: true });
+
+    expect(other).not.toBeNull();
+    await expect(
+      resolvePath(opfsRoot, 'gps-plus-slam', 'scenarios', 'Other')
+    ).resolves.toBeDefined();
+    // Current scenario is untouched.
+    expect(getCurrentScenarioHandle()).toBe(currentHandle);
+  });
+
+  it('returns null for a missing scenario when create is not requested', async () => {
+    expect(await getScenarioDirectoryHandle('DoesNotExist')).toBeNull();
+  });
+
+  it('returns null when storage is not initialized', async () => {
+    resetScenarioStorage();
+    vi.stubGlobal('navigator', { storage: undefined });
+    expect(
+      await getScenarioDirectoryHandle('Any', { create: true })
+    ).toBeNull();
   });
 });

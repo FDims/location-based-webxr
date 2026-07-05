@@ -21,6 +21,7 @@ import {
 import {
   setCurrentScenario,
   ensureScenarioDirectory,
+  getScenarioDirectoryHandle,
 } from './scenario-storage';
 import {
   loadAllRefPoints,
@@ -29,13 +30,36 @@ import {
   writeRefPointDefinition,
   type RefPointDefinition,
 } from '../storage/ref-point-loader';
-import { recoverRefPointDefinitionsFromZips } from '../storage/ref-point-recovery';
+import {
+  recoverRefPointDefinitionsFromZips,
+  indexRefPointDefinitionsFromFolder,
+} from '../storage/ref-point-recovery';
+import {
+  isH3Index,
+  h3CellsMatch,
+} from 'gps-plus-slam-app-framework/geo/h3-proximity';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { setCurrentScenarioName } from '../state/recorder-store';
 import { setImportedRefPointEntries } from '../state/ref-points-slice';
 import type { RecorderStore } from '../state/recorder-store';
 
 const log = createLogger('FolderManager');
+
+/**
+ * Is a definition's cell already represented among the accepted ids?
+ * H3 ids match exactly or as gridDisk neighbors (`h3CellsMatch`, catching GPS
+ * jitter across recordings — same pattern as the importer's dedupe); legacy
+ * non-H3 ids (pre-March-2026 zips) fall back to exact comparison.
+ */
+function isCellCovered(id: string, acceptedIds: readonly string[]): boolean {
+  if (!isH3Index(id)) {
+    return acceptedIds.includes(id);
+  }
+  return acceptedIds.some(
+    (accepted) =>
+      accepted === id || (isH3Index(accepted) && h3CellsMatch(accepted, id))
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +71,28 @@ interface SessionEntryLike {
   fileHandle: FileSystemFileHandle;
   date: Date | null;
 }
+
+/**
+ * Terminal outcome of the eager ref-point indexing pass started by a folder
+ * pick (2026-07-05 folder-import plan §3.3). Consumed by the progress UI
+ * (durable end state) and the completion toast — always via the
+ * `FolderManagerDeps['onIndexingSettled']` callback type (kept unexported:
+ * knip flags exports with no external importer).
+ */
+type RefPointIndexingOutcome =
+  | {
+      status: 'success';
+      /** Definitions newly written across all scenarios (gap-fill, D4b). */
+      refPointsWritten: number;
+      /** ZIPs successfully read. */
+      zipFilesScanned: number;
+      /** ZIPs discovered in the folder (including failed ones). */
+      zipFilesTotal: number;
+      /** Per-ZIP / per-entry error messages (non-fatal). */
+      errors: string[];
+    }
+  | { status: 'error'; message: string }
+  | { status: 'aborted' };
 
 export interface FolderManagerDeps {
   /** Check if the app is in replay mode (owned by replayHandlers). */
@@ -108,6 +154,13 @@ export interface FolderManagerDeps {
     ) => void;
     clearPriorMarkers: () => void;
   };
+  /**
+   * UI: per-ZIP progress of the eager ref-point indexing pass (D2). Fired
+   * with `{done: 0, total}` before the first ZIP, then once per ZIP.
+   */
+  onIndexingProgress?: (progress: { done: number; total: number }) => void;
+  /** UI: terminal outcome of the eager indexing pass (bar end state, toast). */
+  onIndexingSettled?: (outcome: RefPointIndexingOutcome) => void;
 }
 
 export interface FolderManager {
@@ -131,6 +184,12 @@ export interface FolderManager {
   /** Set cached OPFS scenarios. */
   setCachedOpfsScenarios(scenarios: string[]): void;
 
+  /**
+   * Abort the eager ref-point indexing pass, if one is running. Safe to call
+   * anytime; used on app teardown and implied by reset().
+   */
+  abortActiveIndexing(): void;
+
   /** Reset all state to defaults. */
   reset(): void;
 }
@@ -142,6 +201,12 @@ export interface FolderManager {
 export function createFolderManager(deps: FolderManagerDeps): FolderManager {
   // --- State ---
   let cachedOpfsScenarios: string[] = [];
+  /**
+   * Single-flight guard for the eager ref-point indexing pass (plan §3.3):
+   * a new folder pick aborts and replaces the running pass, and the lazy
+   * scenario-change recovery no-ops while a pass is live.
+   */
+  let activeIndexing: { abort: AbortController } | null = null;
 
   // --- Public API ---
 
@@ -230,6 +295,143 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
       log.error('Unexpected error during folder scan:', err);
       deps.updateFolderStatus('❌ Folder scan error - see logs');
     }
+
+    // D1 (2026-07-05 plan §3.3): eagerly index the folder's ZIPs into
+    // per-scenario ref points. Runs AFTER the Enter AR gate was validated
+    // above — the pass never blocks entering AR (2026-06-05 decision D5);
+    // it reports progress/outcome via the injected callbacks and handles
+    // its own errors.
+    await runEagerRefPointIndexing(folderHandle);
+  }
+
+  /**
+   * Run the eager full-folder indexing pass: index all ZIPs (newest-first,
+   * scenario-grouped), gap-fill each scenario's OPFS store (D4a/D4b/D4b-ii),
+   * refresh the currently selected scenario if it gained points, and report
+   * the terminal outcome. Never throws — failures surface via `showError` +
+   * `onIndexingSettled`, aborts settle silently as `{status: 'aborted'}`.
+   */
+  async function runEagerRefPointIndexing(
+    folderHandle: FileSystemDirectoryHandle
+  ): Promise<void> {
+    // Single-flight: a new folder pick replaces (and aborts) a running pass.
+    activeIndexing?.abort.abort();
+    const abort = new AbortController();
+    const entry = { abort };
+    activeIndexing = entry;
+
+    let zipFilesTotal = 0;
+    try {
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle, {
+        signal: abort.signal,
+        onProgress: (progress) => {
+          zipFilesTotal = progress.total;
+          deps.onIndexingProgress?.(progress);
+        },
+      });
+      const written = await persistIndexedDefinitions(
+        result.definitionsByScenario,
+        abort.signal
+      );
+      await refreshCurrentScenarioAfterIndexing(written.byScenario);
+      deps.onIndexingSettled?.({
+        status: 'success',
+        refPointsWritten: written.total,
+        zipFilesScanned: result.zipFilesScanned,
+        zipFilesTotal,
+        errors: result.errors,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        log.info('Eager ref-point indexing aborted');
+        deps.onIndexingSettled?.({ status: 'aborted' });
+      } else {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        log.warn('Eager ref-point indexing failed:', message);
+        deps.showError(`Reference point indexing failed: ${message}`);
+        deps.onIndexingSettled?.({ status: 'error', message });
+      }
+    } finally {
+      if (activeIndexing === entry) {
+        activeIndexing = null;
+      }
+    }
+  }
+
+  /**
+   * Persist per-scenario definitions into their own OPFS stores (strict
+   * routing, D4a) via the side-effect-free scenario handle accessor, so the
+   * user's selected scenario never changes underneath them.
+   */
+  async function persistIndexedDefinitions(
+    definitionsByScenario: Map<string, RefPointDefinition[]>,
+    signal: AbortSignal
+  ): Promise<{ total: number; byScenario: Map<string, number> }> {
+    const byScenario = new Map<string, number>();
+    let total = 0;
+    for (const [scenarioName, defs] of definitionsByScenario) {
+      if (signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      const handle = await getScenarioDirectoryHandle(scenarioName, {
+        create: true,
+      });
+      if (!handle) {
+        log.warn('Cannot open scenario directory for indexing:', scenarioName);
+        continue;
+      }
+      const written = await gapFillScenarioStore(handle, defs);
+      if (written > 0) {
+        byScenario.set(scenarioName, written);
+        total += written;
+        log.info(`Indexed ${written} new ref point(s) into "${scenarioName}"`);
+      }
+    }
+    return { total, byScenario };
+  }
+
+  /**
+   * Gap-fill one scenario store (D4b/D4b-ii): walk the bucket in order
+   * (newest recording first) and write only definitions whose H3 cell is not
+   * yet covered — by an existing entry or by an earlier-accepted definition
+   * of this pass (first-accepted-wins ⇒ newest wins a neighbor cluster).
+   * Existing entries are never modified.
+   */
+  async function gapFillScenarioStore(
+    scenarioHandle: FileSystemDirectoryHandle,
+    defs: RefPointDefinition[]
+  ): Promise<number> {
+    const existing = await loadAllRefPoints(scenarioHandle);
+    const acceptedIds = existing.map((d) => d.id);
+    let written = 0;
+    for (const def of defs) {
+      if (isCellCovered(def.id, acceptedIds)) continue;
+      await writeRefPointDefinition(scenarioHandle, def);
+      acceptedIds.push(def.id);
+      written++;
+    }
+    return written;
+  }
+
+  /**
+   * After the pass, the hint that triggered the import ("open the recordings
+   * folder to recover them") must be honored visibly: when the selected
+   * scenario gained definitions, re-load it into the store/map/status line
+   * and collapse the now-fulfilled import section.
+   */
+  async function refreshCurrentScenarioAfterIndexing(
+    writtenByScenario: Map<string, number>
+  ): Promise<void> {
+    const current = deps.getStore().getState().scenario.currentScenarioName;
+    if (!current || !writtenByScenario.has(current)) return;
+    const handle = await setCurrentScenario(current);
+    if (!handle) return;
+    const { refPointCount, observationCount } =
+      await loadAndDisplayRefPoints(handle);
+    deps.updateStatus(
+      `Scenario: ${current} | ${refPointCount} ref points (${observationCount} observations)`
+    );
+    deps.setFolderImportExpanded(false);
   }
 
   async function handleChooseSaveLocation(): Promise<void> {
@@ -310,6 +512,13 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
   async function tryRecoverRefPointsFromZips(
     opfsHandle: FileSystemDirectoryHandle
   ): Promise<RefPointDefinition[]> {
+    // The eager pass already scans the whole folder and gap-fills every
+    // scenario — racing it here would double-scan and double-write. The
+    // pass refreshes the current scenario itself when it gains points.
+    if (activeIndexing) {
+      log.info('Skipping lazy ref-point recovery — eager indexing pass active');
+      return [];
+    }
     const readFolder = getReadFolderHandle();
     if (!readFolder) return [];
     try {
@@ -385,7 +594,13 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     };
   }
 
+  function abortActiveIndexing(): void {
+    activeIndexing?.abort.abort();
+    activeIndexing = null;
+  }
+
   function reset(): void {
+    abortActiveIndexing();
     deps.getStore().dispatch(setCurrentScenarioName(''));
     cachedOpfsScenarios = [];
   }
@@ -395,6 +610,7 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     handleChooseSaveLocation,
     handleScenarioChange,
     loadAndDisplayRefPoints,
+    abortActiveIndexing,
     getCurrentScenarioName: () =>
       deps.getStore().getState().scenario.currentScenarioName,
     setCurrentScenarioName: (name: string) => {

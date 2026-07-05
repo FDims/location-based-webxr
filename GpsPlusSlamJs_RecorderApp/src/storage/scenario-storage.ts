@@ -325,6 +325,33 @@ export async function ensureScenarioDirectory(
   }
 }
 
+/**
+ * Open a scenario directory WITHOUT repointing the module's current-scenario
+ * state — unlike `setCurrentScenario`/`ensureScenarioDirectory`, which cache
+ * the handle as "current" as a side effect. Used by the eager ref-point
+ * indexing pass, which writes into many scenarios while the user's selected
+ * scenario must stay current (2026-07-05 folder-import plan §3.2).
+ *
+ * @returns The directory handle, or `null` when storage is uninitialized or
+ * the scenario does not exist and `create` was not requested.
+ */
+export async function getScenarioDirectoryHandle(
+  scenarioName: string,
+  options: { create?: boolean } = {}
+): Promise<FileSystemDirectoryHandle | null> {
+  const scenRoot = await ensureScenariosDir();
+  if (!scenRoot) {
+    return null;
+  }
+  try {
+    return await scenRoot.getDirectoryHandle(scenarioName, {
+      create: options.create === true,
+    });
+  } catch {
+    return null;
+  }
+}
+
 // ============================================================================
 // Maintenance
 // ============================================================================
