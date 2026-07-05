@@ -101,7 +101,10 @@ import {
 } from './storage/external-file-storage';
 import { createRecordingSessionHandlers } from './recording/recording-session-handlers';
 import { createSystemSessionEndHandler } from './recording/system-session-end';
-import { createFolderManager } from './storage/folder-manager';
+import {
+  createFolderManager,
+  type FolderManagerDeps,
+} from './storage/folder-manager';
 
 import {
   setImportedRefPointEntries,
@@ -522,22 +525,12 @@ const folderManager = createFolderManager({
   setSaveLocationSelected,
   setFolderImportExpanded,
   validateEnterButton,
-  // D2 (2026-07-05): the eager ref-point indexing pass drives the
-  // determinate progress bar inside the folder-import section.
+  // D2/D3 (2026-07-05): the eager ref-point indexing pass drives the
+  // determinate progress bar inside the folder-import section and announces
+  // its terminal outcome (durable end state + toast).
   onIndexingProgress: ({ done, total }) =>
     setFolderImportProgress({ kind: 'progress', done, total }),
-  onIndexingSettled: (outcome) => {
-    if (outcome.status === 'success') {
-      setFolderImportProgress({
-        kind: 'done',
-        refPointsWritten: outcome.refPointsWritten,
-        zipFilesTotal: outcome.zipFilesTotal,
-      });
-    } else {
-      // Failure/abort: reset the bar; errors surface via the error channel.
-      setFolderImportProgress(null);
-    }
-  },
+  onIndexingSettled: (outcome) => handleRefPointIndexingSettled(outcome),
   listScenariosFromFolder,
   extractScenarioNamesFromZips,
   discoverScenariosFromZipMetadata,
@@ -548,6 +541,47 @@ const folderManager = createFolderManager({
     return mapOverlay ?? undefined;
   },
 });
+
+/**
+ * Terminal outcome of the eager folder-import ref-point indexing pass
+ * (D2/D3, 2026-07-05 folder-import feedback):
+ * - success → drive the progress bar's durable ✓ end state; when new points
+ *   were written, additionally announce it with an info toast. The toast
+ *   mounts in the #app overlay, so a user who entered AR mid-index (the pass
+ *   never gates Enter AR) still sees the completion signal. A no-op pass
+ *   (every store already up to date) stays quiet — the bar end state suffices.
+ * - error → reset the bar and raise an error toast (the folder-manager also
+ *   routes the message to the HUD error banner for the start screen).
+ * - aborted → reset the bar silently (teardown / replaced by a new pick).
+ *
+ * Exported for testing.
+ */
+export function handleRefPointIndexingSettled(
+  outcome: Parameters<NonNullable<FolderManagerDeps['onIndexingSettled']>>[0]
+): void {
+  if (outcome.status === 'success') {
+    setFolderImportProgress({
+      kind: 'done',
+      refPointsWritten: outcome.refPointsWritten,
+      zipFilesTotal: outcome.zipFilesTotal,
+    });
+    if (outcome.refPointsWritten > 0) {
+      const points = `${outcome.refPointsWritten} reference point${outcome.refPointsWritten === 1 ? '' : 's'}`;
+      const recordings = `${outcome.zipFilesTotal} recording${outcome.zipFilesTotal === 1 ? '' : 's'}`;
+      showToast(`Recovered ${points} from ${recordings}`, {
+        severity: 'info',
+      });
+    }
+    return;
+  }
+  setFolderImportProgress(null);
+  if (outcome.status === 'error') {
+    showToast(`Reference point indexing failed: ${outcome.message}`, {
+      severity: 'error',
+      duration: TOAST_DURATION_ERROR,
+    });
+  }
+}
 
 // --- Exported for testing ---
 
