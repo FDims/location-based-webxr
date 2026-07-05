@@ -537,9 +537,6 @@ const folderManager = createFolderManager({
   populateReplayScenarios,
   updateFolderStatus,
   updateSaveStatus,
-  get mapOverlay() {
-    return mapOverlay ?? undefined;
-  },
 });
 
 /**
@@ -1770,6 +1767,11 @@ function handleToggleMap(): void {
       headingUp: recordingOptions.visualization.headingUpMap,
     });
     log.info('Map overlay created lazily on first toggle');
+    // 2026-07-05 live-map feedback: the ref-point marker wirer was subscribed
+    // before this map existed — render the current refPoints state onto the
+    // just-created map (green prior / red captured, same renderer as the
+    // summary map).
+    recordingSessionHandlers.refreshRefPointMapMarkers();
   }
 
   // Ensure map has GPS position before showing

@@ -144,13 +144,6 @@ export interface FolderManagerDeps {
   updateFolderStatus: (text: string) => void;
   /** UI: update save-status display text. */
   updateSaveStatus: (text: string) => void;
-  /** Optional map overlay for displaying prior ref points on the 2D map. */
-  mapOverlay?: {
-    addPriorMarkers: (
-      markers: Array<{ lat: number; lon: number; name: string }>
-    ) => void;
-    clearPriorMarkers: () => void;
-  };
   /**
    * UI: per-ZIP progress of the eager ref-point indexing pass (D2). Fired
    * with `{done: 0, total}` before the first ZIP, then once per ZIP.
@@ -584,13 +577,12 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
       )
     );
 
-    // 2D map display
-    if (deps.mapOverlay) {
-      deps.mapOverlay.clearPriorMarkers();
-      deps.mapOverlay.addPriorMarkers(
-        averaged.map((rp) => ({ lat: rp.lat, lon: rp.lon, name: rp.name }))
-      );
-    }
+    // NOTE: no direct 2D-map call here any more. The live minimap renders
+    // ref points from the store via wireRefPointMapMarkers (2026-07-05
+    // live-map feedback) — the setImportedRefPointEntries dispatch above is
+    // what feeds it. The previous deps.mapOverlay.addPriorMarkers call was
+    // dead code: it ran at scenario-selection time, before the lazily
+    // created overlay ever existed.
 
     return {
       refPointCount: refPointDefs.length,

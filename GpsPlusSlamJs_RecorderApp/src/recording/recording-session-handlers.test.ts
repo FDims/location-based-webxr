@@ -43,6 +43,8 @@ const {
   mockStartStorageSession,
   mockGetCurrentScenarioHandle,
   mockWireStoreSubscribers,
+  mockWireRefPointMapMarkers,
+  mockRefPointMapMarkerWirer,
   mockCreateWriteFailureTracker,
   mockCreateCaptureFailureTracker,
   mockStartSession,
@@ -111,6 +113,12 @@ const {
 
   const mockUnsubscribe = vi.fn();
 
+  /** Single shared wirer instance returned by the map-marker mock. */
+  const mockRefPointMapMarkerWirer = {
+    refresh: vi.fn(),
+    unsubscribe: vi.fn(),
+  };
+
   const mockImageQualityClientInstance = {
     analyze: vi.fn().mockResolvedValue({ accept: true, reason: null }),
     dispose: vi.fn(),
@@ -137,6 +145,10 @@ const {
       .fn()
       .mockReturnValue(null as FileSystemDirectoryHandle | null),
     mockWireStoreSubscribers: vi.fn().mockReturnValue(mockUnsubscribe),
+    mockRefPointMapMarkerWirer,
+    mockWireRefPointMapMarkers: vi
+      .fn()
+      .mockReturnValue(mockRefPointMapMarkerWirer),
     mockCreateWriteFailureTracker: vi
       .fn()
       .mockReturnValue(mockWriteFailureTrackerInstance),
@@ -245,6 +257,16 @@ vi.mock('../storage/scenario-storage', () => ({
 vi.mock('gps-plus-slam-app-framework/state/store-subscribers', () => ({
   wireStoreSubscribers: mockWireStoreSubscribers,
 }));
+
+// Partial mock: only the wirer is stubbed — refPointEntriesToMarkerData is
+// the real (pure) mapping, so performStop's summary snapshot keeps working.
+vi.mock('../ui/ref-point-map-markers', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    wireRefPointMapMarkers: mockWireRefPointMapMarkers,
+  };
+});
 
 vi.mock('../state/recorder-store', () => ({
   startSession: mockStartSession,
@@ -597,7 +619,6 @@ describe('handleStartRecording', () => {
     const mockOverlay = {
       setGpsPosition: vi.fn(),
       render: vi.fn<(data: MapData) => void>(),
-      addCurrentMarker: vi.fn(),
     };
     // getMapOverlay returns null initially
     const getMapOverlay = vi.fn().mockReturnValue(null);
@@ -611,7 +632,7 @@ describe('handleStartRecording', () => {
     const subscriberDeps = wireCall[1] as StoreSubscriberDeps;
     const mapProxy = subscriberDeps.mapOverlay as Required<
       NonNullable<StoreSubscriberDeps['mapOverlay']>
-    > & { addCurrentMarker: (lat: number, lon: number, name: string) => void };
+    >;
 
     // Proxy must be a non-null object (not the captured null)
     expect(mapProxy).not.toBeNull();
@@ -627,7 +648,6 @@ describe('handleStartRecording', () => {
     // Calling proxy methods when overlay is null should be safe (no-op)
     expect(() => mapProxy.setGpsPosition(50, 8)).not.toThrow();
     expect(() => mapProxy.render(sampleMapData)).not.toThrow();
-    expect(() => mapProxy.addCurrentMarker(50, 8, 'RP1')).not.toThrow();
 
     // Now simulate the overlay being created (user tapped map button)
     getMapOverlay.mockReturnValue(mockOverlay);
@@ -638,9 +658,67 @@ describe('handleStartRecording', () => {
 
     mapProxy.render(sampleMapData);
     expect(mockOverlay.render).toHaveBeenCalledWith(sampleMapData);
+  });
 
-    mapProxy.addCurrentMarker(51.4, 9.4, 'RP2');
-    expect(mockOverlay.addCurrentMarker).toHaveBeenCalledWith(51.4, 9.4, 'RP2');
+  it('wires the ref-point map-marker subscriber with a late-binding overlay map (shared summary-map renderer)', async () => {
+    // Why: 2026-07-05 live-map feedback — the live minimap must render the
+    // refPoints state through the SAME module the summary map uses. The
+    // overlay is created lazily on the first map toggle, so the wirer gets a
+    // late-binding getMap (null until then, then the overlay's Leaflet map),
+    // the session start time from the store (classification identical to the
+    // summary map), and the F5-A 20px marker size.
+    const leafletMap = { _leafletMap: true };
+    const mockOverlay = { getLeafletMap: vi.fn().mockReturnValue(leafletMap) };
+    const getMapOverlay = vi.fn().mockReturnValue(null);
+    const newStore = createMockStore();
+    deps = createMockDeps({
+      getMapOverlay,
+      createNewStore: vi.fn().mockReturnValue(newStore),
+    });
+    handlers = createRecordingSessionHandlers(deps);
+
+    await handlers.handleStartRecording();
+
+    expect(mockWireRefPointMapMarkers).toHaveBeenCalledTimes(1);
+    const [storeArg, opts] = mockWireRefPointMapMarkers.mock.calls[0] as [
+      unknown,
+      {
+        getMap: () => unknown;
+        getStartTime: () => number;
+        dotSizePx?: number;
+      },
+    ];
+    expect(storeArg).toBe(newStore);
+    expect(opts.dotSizePx).toBe(20);
+
+    // Late binding: null before the overlay exists, the Leaflet map after.
+    expect(opts.getMap()).toBeNull();
+    getMapOverlay.mockReturnValue(mockOverlay);
+    expect(opts.getMap()).toBe(leafletMap);
+
+    // Start time comes lazily from the store's session metadata.
+    expect(opts.getStartTime()).toBe(1000000);
+  });
+
+  it('refreshRefPointMapMarkers delegates to the active wirer and is a safe no-op before one exists', async () => {
+    // Why: main.ts calls this right after lazily creating the overlay on the
+    // first #btn-map toggle, so the just-created map immediately receives the
+    // current ref-point markers.
+    expect(() => handlers.refreshRefPointMapMarkers()).not.toThrow();
+    expect(mockRefPointMapMarkerWirer.refresh).not.toHaveBeenCalled();
+
+    await handlers.handleStartRecording();
+    handlers.refreshRefPointMapMarkers();
+
+    expect(mockRefPointMapMarkerWirer.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-starting a recording replaces (unsubscribes) the previous map-marker wirer', async () => {
+    await handlers.handleStartRecording();
+    await handlers.handleStartRecording();
+
+    expect(mockRefPointMapMarkerWirer.unsubscribe).toHaveBeenCalled();
+    expect(mockWireRefPointMapMarkers).toHaveBeenCalledTimes(2);
   });
 
   it('should create write and capture failure trackers', async () => {
@@ -1712,6 +1790,14 @@ describe('cleanupForNewRecording', () => {
     // Why: Old subscription must be removed before creating new store
     handlers.cleanupForNewRecording();
     expect(mockUnsubscribe).toHaveBeenCalled();
+  });
+
+  it('should unsubscribe the ref-point map-marker wirer (its markers leave the minimap)', () => {
+    // Why: the wirer removes its own Leaflet layers on unsubscribe — without
+    // this, markers from the previous session would linger on the overlay,
+    // which survives across recordings within one AR session.
+    handlers.cleanupForNewRecording();
+    expect(mockRefPointMapMarkerWirer.unsubscribe).toHaveBeenCalled();
   });
 
   it('should reset failure trackers', () => {

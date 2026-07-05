@@ -95,6 +95,8 @@ import {
 import { indexRefPointDefinitionsFromFolder } from '../storage/ref-point-recovery';
 import {
   loadAllRefPoints,
+  flattenRefPointsToMarks,
+  averageGpsPerRefPoint,
   writeRefPointDefinition,
   type RefPointDefinition,
 } from '../storage/ref-point-loader';
@@ -855,68 +857,12 @@ describe('createFolderManager', () => {
       );
     });
 
-    it('should forward averaged ref points to map overlay for 2D display', async () => {
-      // Why: Prior ref points must appear on the 2D Leaflet map
-      const { loadAllRefPoints, averageGpsPerRefPoint } =
-        await import('../storage/ref-point-loader');
-      vi.mocked(loadAllRefPoints).mockResolvedValue([] as never);
-      vi.mocked(averageGpsPerRefPoint).mockReturnValue([
-        { id: 'p1', name: 'P1', lat: 50.0, lon: 8.0 },
-        { id: 'p2', name: 'P2', lat: 51.0, lon: 9.0 },
-      ]);
-      const mockMapOverlay = {
-        addPriorMarkers: vi.fn(),
-        clearPriorMarkers: vi.fn(),
-      };
-      const { manager } = createFolderManagerWithDefaults({
-        mapOverlay: mockMapOverlay,
-      });
-
-      await manager.loadAndDisplayRefPoints(mockFolderHandle);
-
-      expect(mockMapOverlay.clearPriorMarkers).toHaveBeenCalled();
-      expect(mockMapOverlay.addPriorMarkers).toHaveBeenCalledWith([
-        { lat: 50.0, lon: 8.0, name: 'P1' },
-        { lat: 51.0, lon: 9.0, name: 'P2' },
-      ]);
-    });
-
-    it('should clear old prior ref points on scenario change before adding new ones', async () => {
-      // Why: Switching scenarios must replace, not accumulate, prior ref points
-      const { loadAllRefPoints, averageGpsPerRefPoint } =
-        await import('../storage/ref-point-loader');
-      vi.mocked(loadAllRefPoints).mockResolvedValue([] as never);
-      vi.mocked(averageGpsPerRefPoint).mockReturnValue([]);
-      const mockMapOverlay = {
-        addPriorMarkers: vi.fn(),
-        clearPriorMarkers: vi.fn(),
-      };
-      const { manager } = createFolderManagerWithDefaults({
-        mapOverlay: mockMapOverlay,
-      });
-
-      await manager.loadAndDisplayRefPoints(mockFolderHandle);
-
-      // clearPriorMarkers must be called before addPriorMarkers
-      const clearOrder =
-        mockMapOverlay.clearPriorMarkers.mock.invocationCallOrder[0];
-      const addOrder =
-        mockMapOverlay.addPriorMarkers.mock.invocationCallOrder[0];
-      expect(clearOrder).toBeLessThan(addOrder);
-    });
-
-    it('should work without mapOverlay (optional dep)', async () => {
-      // Why: mapOverlay might not be set (e.g., in tests or before 3D scene init)
-      const { loadAllRefPoints, flattenRefPointsToMarks } =
-        await import('../storage/ref-point-loader');
-      vi.mocked(loadAllRefPoints).mockResolvedValue([] as never);
-      vi.mocked(flattenRefPointsToMarks).mockReturnValue([] as never);
-      const { manager } = createFolderManagerWithDefaults();
-
-      // Should not throw
-      const result = await manager.loadAndDisplayRefPoints(mockFolderHandle);
-      expect(result).toEqual({ refPointCount: 0, observationCount: 0 });
-    });
+    // NOTE (2026-07-05 live-map feedback): the direct mapOverlay
+    // addPriorMarkers/clearPriorMarkers dep was removed — it was dead code
+    // (it ran at scenario-selection time, before the lazily created AR
+    // minimap ever existed). The minimap now renders ref points from the
+    // store via wireRefPointMapMarkers, fed by the
+    // setImportedRefPointEntries dispatch asserted above.
 
     it('should recover ONLY the current scenario bucket from ZIPs when OPFS is empty (strict routing, D4a)', async () => {
       // Why: Problem 2 fix + D4a (2026-07-05): when OPFS is cleared, ref
@@ -998,6 +944,10 @@ describe('createFolderManager', () => {
       const { loadAllRefPoints } = await import('../storage/ref-point-loader');
 
       vi.mocked(loadAllRefPoints).mockResolvedValue([]);
+      // Earlier tests set non-empty return values; mockReturnValue persists
+      // across clearAllMocks, so re-assert the empty defaults explicitly.
+      vi.mocked(flattenRefPointsToMarks).mockReturnValue([] as never);
+      vi.mocked(averageGpsPerRefPoint).mockReturnValue([]);
       vi.mocked(getReadFolderHandle).mockReturnValue(null);
 
       const { manager } = createFolderManagerWithDefaults();
@@ -1013,6 +963,8 @@ describe('createFolderManager', () => {
       const { loadAllRefPoints } = await import('../storage/ref-point-loader');
 
       vi.mocked(loadAllRefPoints).mockResolvedValue([]);
+      vi.mocked(flattenRefPointsToMarks).mockReturnValue([] as never);
+      vi.mocked(averageGpsPerRefPoint).mockReturnValue([]);
       vi.mocked(indexRefPointDefinitionsFromFolder).mockRejectedValue(
         new Error('ZIP read failure')
       );
@@ -1129,6 +1081,10 @@ describe('createFolderManager', () => {
         indexResult([])
       );
       vi.mocked(loadAllRefPoints).mockResolvedValue([]);
+      // Earlier tests set non-empty values; mockReturnValue persists across
+      // clearAllMocks, so re-assert the empty defaults for this describe.
+      vi.mocked(flattenRefPointsToMarks).mockReturnValue([] as never);
+      vi.mocked(averageGpsPerRefPoint).mockReturnValue([]);
       vi.mocked(h3CellsMatch).mockImplementation(
         (a: string, b: string) => a === b
       );
