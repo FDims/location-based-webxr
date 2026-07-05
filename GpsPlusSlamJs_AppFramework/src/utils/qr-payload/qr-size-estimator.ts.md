@@ -9,7 +9,9 @@ QR bit-stream size after **optimal mode segmentation**, the minimum QR
 version (1–25) that holds it, and the module width. Character count is the
 wrong metric for QR payloads — numeric/alphanumeric/byte segments cost
 10/3, 11/2 and 8 bits per character respectively, so a _longer_ uppercase
-string can be _cheaper_ than a shorter mixed-case one.
+string can be _cheaper_ than a shorter mixed-case one. Besides the
+benchmark, [qr-launch-url.ts](qr-launch-url.ts.md) uses it in production
+to pick the sparsest launch-URL form by measurement.
 
 ## Public API
 

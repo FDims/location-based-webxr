@@ -3,9 +3,11 @@
 ## Purpose
 
 Thin `CompressionStream`/`DecompressionStream` byte helpers for the QR
-payload codecs — after the P5 pruning consumed only by the
-[codec-dictionary.ts](codec-dictionary.ts.md) A4+A2 chain and the
-benchmark's `/S/<BASE32>` path candidates (benchmark plan §6 P3/P5).
+payload codecs — after the P5 pruning consumed by the
+[codec-dictionary.ts](codec-dictionary.ts.md) A4+A2 chain, the
+benchmark's `/S/<BASE32>` path candidates, and
+[qr-launch-url.ts](qr-launch-url.ts.md)'s opt-in path form (benchmark
+plan §6 P3/P5).
 
 ## Public API
 
