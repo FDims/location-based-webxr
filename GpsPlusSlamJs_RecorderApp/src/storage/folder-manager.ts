@@ -405,6 +405,25 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
   }
 
   /**
+   * Resolve which scenario the user is currently working in, robust across
+   * the per-recording store swap: the dropdown selection lives in the boot
+   * store's `scenario` slice, but `handleStartRecording` swaps in a FRESH
+   * store whose scenario slice is empty — there the selection travels only
+   * in the session metadata's `contextTag` (Issue #12). Reading just the
+   * scenario slice made the post-indexing refresh silently no-op when a
+   * recording started mid-pass (round-3 feedback, 2026-07-05: "Recovered N"
+   * toast fired but no points ever appeared).
+   */
+  function resolveActiveScenarioName(): string {
+    const state = deps.getStore().getState();
+    return (
+      state.scenario.currentScenarioName ||
+      state.recording.sessionMetadata?.contextTag ||
+      ''
+    );
+  }
+
+  /**
    * After the pass, the hint that triggered the import ("open the recordings
    * folder to recover them") must be honored visibly: when the selected
    * scenario gained definitions, re-load it into the store/map/status line
@@ -413,7 +432,7 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
   async function refreshCurrentScenarioAfterIndexing(
     writtenByScenario: Map<string, number>
   ): Promise<void> {
-    const current = deps.getStore().getState().scenario.currentScenarioName;
+    const current = resolveActiveScenarioName();
     if (!current || !writtenByScenario.has(current)) return;
     const handle = await setCurrentScenario(current);
     if (!handle) return;
@@ -516,8 +535,8 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     const readFolder = getReadFolderHandle();
     if (!readFolder) return [];
     try {
-      const scenarioName = deps.getStore().getState()
-        .scenario.currentScenarioName;
+      // Swap-robust scenario resolution — see resolveActiveScenarioName.
+      const scenarioName = resolveActiveScenarioName();
       log.info(
         `OPFS empty — recovering ref points from ZIPs for "${scenarioName}"...`
       );

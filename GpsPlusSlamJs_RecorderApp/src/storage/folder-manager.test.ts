@@ -923,6 +923,61 @@ describe('createFolderManager', () => {
       expect(result.refPointCount).toBe(1);
     });
 
+    it('lazy recovery resolves the scenario via the recording contextTag after the store swap (regression pin, round-3 feedback)', async () => {
+      // Why: same store-swap hazard as the post-indexing refresh — during a
+      // recording the fresh store's scenario slice is empty and the selection
+      // lives only in sessionMetadata.contextTag. Without the shared
+      // resolver, the lazy recovery looked up the '' bucket and recovered
+      // nothing.
+      const def: RefPointDefinition = {
+        id: 'cell-a',
+        name: 'cell-a',
+        createdAt: 1,
+        observations: [],
+      };
+      vi.mocked(indexRefPointDefinitionsFromFolder).mockResolvedValue({
+        definitionsByScenario: new Map([['Paris', [def]]]),
+        zipFilesScanned: 1,
+        errors: [],
+      });
+      vi.mocked(loadAllRefPoints)
+        .mockResolvedValueOnce([]) // empty-store check
+        .mockResolvedValueOnce([]) // gap-fill accepted list
+        .mockResolvedValue([def]); // re-load after write
+      const { flattenRefPointsToMarks, averageGpsPerRefPoint } =
+        await import('../storage/ref-point-loader');
+      vi.mocked(flattenRefPointsToMarks).mockReturnValue([] as never);
+      vi.mocked(averageGpsPerRefPoint).mockReturnValue([]);
+      vi.mocked(getReadFolderHandle).mockReturnValue(mockFolderHandle);
+
+      const recordingStore = {
+        getState: () => ({
+          recording: {
+            isRecording: true,
+            sessionMetadata: { contextTag: 'Paris', startTime: 123 },
+            actionCount: 0,
+            failedWriteCount: 0,
+          },
+          scenario: { currentScenarioName: '' },
+          refPoints: { entries: [] },
+          gpsData: null,
+        }),
+        dispatch: vi.fn(),
+        subscribe: () => () => {},
+      } as unknown as RecorderStore;
+      const { manager } = createFolderManagerWithDefaults({
+        getStore: () => recordingStore,
+      });
+
+      const result = await manager.loadAndDisplayRefPoints(mockFolderHandle);
+
+      expect(writeRefPointDefinition).toHaveBeenCalledWith(
+        mockFolderHandle,
+        def
+      );
+      expect(result.refPointCount).toBe(1);
+    });
+
     it('should NOT attempt recovery when OPFS has data', async () => {
       // Why: Recovery should only run when OPFS is empty — unnecessary
       // ZIP scanning would slow down normal scenario changes.
@@ -1287,6 +1342,83 @@ describe('createFolderManager', () => {
 
       expect(setCurrentScenario).not.toHaveBeenCalled();
       expect(deps.setFolderImportExpanded).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Why this test matters:
+     * Round-3 field report (2026-07-05): the user started a RECORDING while
+     * the indexing pass was still running and no ref points ever appeared —
+     * despite the "Recovered N…" toast. Root cause: handleStartRecording
+     * swaps in a FRESH store whose `scenario` slice is empty (the selection
+     * travels only via the session metadata's `contextTag`, Issue #12), so a
+     * refresh that reads `scenario.currentScenarioName` from the CURRENT
+     * store silently early-returns after the swap. The refresh must fall
+     * back to the recording metadata's `contextTag`.
+     */
+    it('refreshes via the recording metadata contextTag after a mid-pass store swap (recording started while indexing)', async () => {
+      const def = mkDef('cell-a');
+      let resolveIndex!: (v: ReturnType<typeof indexResult>) => void;
+      vi.mocked(indexRefPointDefinitionsFromFolder).mockImplementation(
+        () =>
+          new Promise((res) => {
+            resolveIndex = res;
+          })
+      );
+      // Gap-fill check sees an empty store; the refresh re-load sees the
+      // freshly written definition.
+      vi.mocked(loadAllRefPoints)
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([def]);
+      const scenarioHandle = {
+        kind: 'directory',
+        name: 'Paris',
+      } as unknown as FileSystemDirectoryHandle;
+      vi.mocked(setCurrentScenario).mockResolvedValue(scenarioHandle);
+
+      // Boot store: dropdown selection 'Paris' lives in its scenario slice.
+      const bootStore = createMockStore();
+      let activeStore = bootStore;
+      const { manager, deps } = createFolderManagerWithDefaults({
+        getStore: () => activeStore,
+      });
+      manager.setCurrentScenarioName('Paris');
+
+      const openPromise = manager.handleOpenFolder();
+      await vi.waitFor(() =>
+        expect(indexRefPointDefinitionsFromFolder).toHaveBeenCalled()
+      );
+
+      // Recording starts mid-pass: fresh store, EMPTY scenario slice, the
+      // scenario carried only in recording.sessionMetadata.contextTag.
+      const recordingStore = {
+        getState: () => ({
+          recording: {
+            isRecording: true,
+            sessionMetadata: { contextTag: 'Paris', startTime: 123 },
+            actionCount: 0,
+            failedWriteCount: 0,
+          },
+          scenario: { currentScenarioName: '' },
+          refPoints: { entries: [] },
+          gpsData: null,
+        }),
+        dispatch: vi.fn(),
+        subscribe: () => () => {},
+      } as unknown as RecorderStore;
+      activeStore = recordingStore;
+
+      resolveIndex(indexResult([['Paris', [def]]]));
+      await openPromise;
+
+      // The refresh must reach the RECORDING store: entries dispatched, the
+      // status line updated, and the fulfilled import hint collapsed.
+      expect(setCurrentScenario).toHaveBeenCalledWith('Paris');
+      expect(recordingStore.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'refPoints/setImportedRefPointEntries',
+        })
+      );
+      expect(deps.setFolderImportExpanded).toHaveBeenCalledWith(false);
     });
 
     /**
