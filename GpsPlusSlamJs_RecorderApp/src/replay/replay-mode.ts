@@ -33,6 +33,8 @@ import {
 import { wireStoreSubscribers } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
 import { wireRefPointSubscribers } from '../state/ref-point-subscribers';
+import { wireRefPointMapMarkers } from '../ui/ref-point-map-markers';
+import type { Map as LeafletMap } from 'leaflet';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
 import {
@@ -81,13 +83,15 @@ interface ReplayModeConfig {
 
 /**
  * Subset of the recorder's `LeafletMapOverlay` API that replay mode forwards
- * GPS / marker updates to. Declared structurally (instead of importing the
- * concrete type) so replay mode stays decoupled from the live recorder map.
+ * GPS updates to. Declared structurally (instead of importing the concrete
+ * type) so replay mode stays decoupled from the live recorder map.
+ * `getLeafletMap` hands the underlying Leaflet map to the store-driven
+ * ref-point marker wirer (2026-07-05 live-map feedback).
  */
 interface ReplayMapOverlay {
   setGpsPosition: (lat: number, lon: number) => void;
   render?: (data: MapData) => void;
-  addCurrentMarker?: (lat: number, lon: number, name: string) => void;
+  getLeafletMap?: () => LeafletMap | null;
 }
 
 export interface ReplayModeController {
@@ -312,9 +316,6 @@ export async function startReplayMode(
     render(data: MapData): void {
       mapOverlayTarget?.render?.(data);
     },
-    addCurrentMarker(lat: number, lon: number, name: string): void {
-      mapOverlayTarget?.addCurrentMarker?.(lat, lon, name);
-    },
   };
 
   // R6: Wire store subscribers with THE SAME store the engine will dispatch to.
@@ -366,6 +367,19 @@ export async function startReplayMode(
     store,
     refPointVisualizer
   );
+  // 2026-07-05 live-map feedback: replay's minimap renders the refPoints
+  // state through the SAME shared renderer as the live and summary maps.
+  // Late binding — the overlay attaches via setMapOverlay (which refreshes);
+  // the replayed startSession action carries the ORIGINAL session's start
+  // time, so its captures render red and imported sidecar points green.
+  const refPointMapMarkers = wireRefPointMapMarkers(store, {
+    getMap: () => mapOverlayTarget?.getLeafletMap?.() ?? null,
+    getStartTime: () =>
+      store.getState().recording.sessionMetadata?.startTime ??
+      Number.MAX_SAFE_INTEGER,
+    // F5-A (2026-06-05): in-AR map markers are enlarged for readability.
+    dotSizePx: 20,
+  });
 
   // Create and configure the replay engine
   const engine = new ReplayEngine();
@@ -413,6 +427,9 @@ export async function startReplayMode(
 
     setMapOverlay(overlay: ReplayMapOverlay | null): void {
       mapOverlayTarget = overlay;
+      // Late binding: render the current refPoints state onto the
+      // just-attached map (or clear the markers when detaching).
+      refPointMapMarkers.refresh();
     },
 
     dispose(): void {
@@ -424,6 +441,7 @@ export async function startReplayMode(
       engine.dispose();
       unsubscribe();
       unsubscribeRefPoints();
+      refPointMapMarkers.unsubscribe();
       unsubscribeFrameTiles?.();
       frameTileVisualizer?.dispose();
       unsubscribeOccupancyGrid?.();

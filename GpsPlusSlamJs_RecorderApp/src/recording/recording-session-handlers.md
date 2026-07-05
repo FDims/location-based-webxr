@@ -29,19 +29,20 @@ Factory function. Returns a handlers object that owns the recording lifecycle.
 
 #### `RecordingSessionHandlers` (returned interface)
 
-| Method                        | Description                                                               |
-| ----------------------------- | ------------------------------------------------------------------------- |
-| `handleStartRecording()`      | Start a new recording session (creates store, starts GPS/sensors/capture) |
-| `handleStopRecording()`       | Stop recording (stops sensors, exports zip, shows summary)                |
-| `handleBackDuringRecording()` | Back-button during recording with confirmation dialog                     |
-| `getCurrentSessionName()`     | Get the current session name                                              |
-| `setCurrentSessionName(name)` | Set the current session name                                              |
-| `recordWriteSuccess()`        | Null-safe proxy to write failure tracker                                  |
-| `recordWriteFailure(err)`     | Null-safe proxy to write failure tracker                                  |
-| `recordCaptureSuccess()`      | Null-safe proxy to capture failure tracker                                |
-| `recordCaptureFailure()`      | Null-safe proxy to capture failure tracker                                |
-| `cleanupForNewRecording()`    | Soft reset for starting a new recording                                   |
-| `reset()`                     | Full state reset                                                          |
+| Method                        | Description                                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `handleStartRecording()`      | Start a new recording session (creates store, starts GPS/sensors/capture)                                                                                               |
+| `handleStopRecording()`       | Stop recording (stops sensors, exports zip, shows summary)                                                                                                              |
+| `handleBackDuringRecording()` | Back-button during recording with confirmation dialog                                                                                                                   |
+| `getCurrentSessionName()`     | Get the current session name                                                                                                                                            |
+| `setCurrentSessionName(name)` | Set the current session name                                                                                                                                            |
+| `recordWriteSuccess()`        | Null-safe proxy to write failure tracker                                                                                                                                |
+| `recordWriteFailure(err)`     | Null-safe proxy to write failure tracker                                                                                                                                |
+| `recordCaptureSuccess()`      | Null-safe proxy to capture failure tracker                                                                                                                              |
+| `recordCaptureFailure()`      | Null-safe proxy to capture failure tracker                                                                                                                              |
+| `refreshRefPointMapMarkers()` | Re-render the ref-point markers onto the live minimap; called by main's `handleToggleMap` right after the overlay is lazily created. Null-safe no-op outside a session. |
+| `cleanupForNewRecording()`    | Soft reset for starting a new recording                                                                                                                                 |
+| `reset()`                     | Full state reset                                                                                                                                                        |
 
 ## State Owned (private)
 
@@ -50,6 +51,7 @@ Factory function. Returns a handlers object that owns the recording lifecycle.
 - `syncManager` / `lastSyncResult` — external zip sync lifecycle
 - `backDuringRecordingInProgress` — guard against double-tap of back button
 - `unsubscribeStore` — store subscriber cleanup
+- `refPointMapMarkers` — the store→minimap ref-point marker wirer ([ui/ref-point-map-markers.ts](../ui/ref-point-map-markers.md), 2026-07-05 live-map feedback): wired per session next to the other subscribers with a late-binding `getLeafletMap` and the F5-A 20px size; replaced on re-start; unsubscribed (markers removed) on stop and cleanup
 
 ## Invariants
 

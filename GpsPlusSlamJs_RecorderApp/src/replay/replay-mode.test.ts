@@ -45,6 +45,23 @@ vi.mock('../storage/recording-loader', () => ({
   loadRecording: vi.fn(),
 }));
 
+const { mockWireRefPointMapMarkers, mockRefPointMapMarkerWirer } = vi.hoisted(
+  () => {
+    const mockRefPointMapMarkerWirer = {
+      refresh: vi.fn(),
+      unsubscribe: vi.fn(),
+    };
+    return {
+      mockRefPointMapMarkerWirer,
+      mockWireRefPointMapMarkers: vi.fn(() => mockRefPointMapMarkerWirer),
+    };
+  }
+);
+
+vi.mock('../ui/ref-point-map-markers', () => ({
+  wireRefPointMapMarkers: mockWireRefPointMapMarkers,
+}));
+
 vi.mock('gps-plus-slam-app-framework/state/store-subscribers', () => ({
   wireStoreSubscribers: vi.fn(() => vi.fn()), // returns unsubscribe fn
 }));
@@ -439,24 +456,22 @@ describe('replay-mode', () => {
     expect(mockOverlay.setGpsPosition).not.toHaveBeenCalled();
   });
 
-  it('setMapOverlay proxy forwards render and addCurrentMarker', async () => {
+  it('setMapOverlay proxy forwards render', async () => {
     // Why (Phase 3): The map overlay proxy must forward render (the unified
-    // MapData snapshot) and addCurrentMarker so the store subscriber can push
-    // the trajectory and reference points to the Leaflet map in replay mode.
+    // MapData snapshot) so the store subscriber can push the trajectory to
+    // the Leaflet map in replay mode. (Ref-point markers are no longer a
+    // proxy concern — they are store-driven via wireRefPointMapMarkers.)
     const config = makeConfig();
     const controller = await startReplayMode(fakeZipData, config);
 
     const mockOverlay = {
       setGpsPosition: vi.fn(),
       render: vi.fn<(data: MapData) => void>(),
-      addCurrentMarker: vi.fn(),
     };
     controller.setMapOverlay(mockOverlay);
 
     const deps = vi.mocked(wireStoreSubscribers).mock.calls[0][1];
-    const mapProxy = deps.mapOverlay! as NonNullable<typeof deps.mapOverlay> & {
-      addCurrentMarker: (lat: number, lon: number, name: string) => void;
-    };
+    const mapProxy = deps.mapOverlay!;
 
     const sampleMapData: MapData = {
       userPosition: { lat: 50.1, lng: 8.1 },
@@ -467,13 +482,45 @@ describe('replay-mode', () => {
 
     mapProxy.render!(sampleMapData);
     expect(mockOverlay.render).toHaveBeenCalledWith(sampleMapData);
+  });
 
-    mapProxy.addCurrentMarker(50.3, 8.3, 'bench');
-    expect(mockOverlay.addCurrentMarker).toHaveBeenCalledWith(
-      50.3,
-      8.3,
-      'bench'
-    );
+  it('wires the ref-point map-marker subscriber for the replay map (shared renderer, late binding)', async () => {
+    // Why (2026-07-05 live-map feedback): replay's minimap must render the
+    // refPoints state through the SAME module as the live and summary maps.
+    // The replayed startSession action carries the ORIGINAL session's start
+    // time, so its captures render red and imported points green.
+    const config = makeConfig();
+    const controller = await startReplayMode(fakeZipData, config);
+
+    expect(mockWireRefPointMapMarkers).toHaveBeenCalledTimes(1);
+    const [storeArg, opts] = mockWireRefPointMapMarkers.mock
+      .calls[0] as unknown as [
+      unknown,
+      { getMap: () => unknown; getStartTime: () => number; dotSizePx?: number },
+    ];
+    expect(storeArg).toBe(controller.getStore());
+    expect(opts.dotSizePx).toBe(20);
+
+    // Late binding: null until an overlay with a Leaflet map is set.
+    expect(opts.getMap()).toBeNull();
+    const leafletMap = { _leafletMap: true };
+    controller.setMapOverlay({
+      setGpsPosition: vi.fn(),
+      getLeafletMap: () => leafletMap as unknown as L.Map,
+    });
+    expect(opts.getMap()).toBe(leafletMap);
+
+    // setMapOverlay refreshes so the just-attached map gets the markers.
+    expect(mockRefPointMapMarkerWirer.refresh).toHaveBeenCalled();
+  });
+
+  it('dispose unsubscribes the ref-point map-marker wirer', async () => {
+    const config = makeConfig();
+    const controller = await startReplayMode(fakeZipData, config);
+
+    controller.dispose();
+
+    expect(mockRefPointMapMarkerWirer.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   // --- Play dispatches actions to the store ---

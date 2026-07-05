@@ -1,0 +1,69 @@
+# ref-point-map-markers.ts
+
+## Purpose
+
+Store→map reference-point marker wirer: the single code path that projects
+the Redux `refPoints` state onto a Leaflet map (2026-07-05 live-map user
+feedback — the live AR minimap, the replay minimap, and the session-summary
+map must visualize ref points identically, with no duplicated marker code).
+Renders through the shared [draw-ref-point-markers.ts](draw-ref-point-markers.ts)
+renderer.
+
+## Public API
+
+- `refPointEntriesToMarkerData(entries): RefPointMarkerInput[]` — maps
+  `RefPointEntry[]` to renderer input: fused `gpsPoint` preferred over
+  `rawGpsPoint`, `name` falling back to the H3 `id`, `timestamp` passed
+  through. Also used by `performStop`'s `referencePointsForMap` summary
+  snapshot so both maps plot identical coordinates/labels.
+- `wireRefPointMapMarkers(store, {getMap, getStartTime, dotSizePx?}): {refresh, unsubscribe}` —
+  subscribes to the store and keeps markers on `getMap()` in sync with
+  `selectRefPointEntries`:
+  - `getMap` is late-binding (the AR minimap is created lazily on the first
+    map toggle); returns null/undefined until then. The map's creator calls
+    `refresh()` once it exists (recording: `refreshRefPointMapMarkers()` from
+    main's `handleToggleMap`; replay: `setMapOverlay`).
+  - `getStartTime` is read lazily (from `sessionMetadata.startTime`) — before
+    a session starts everything classifies prior/green; the `startSession`
+    dispatch re-renders with the real start so this-session captures turn
+    red. Same classification as the summary map.
+  - `unsubscribe()` stops listening AND removes all layers this wirer drew.
+
+## Invariants & assumptions
+
+- **Diffed re-render:** the store fires on every GPS tick during a recording;
+  the wirer re-renders only when the memoized `selectRefPointEntries`
+  reference or the `getStartTime()` value changes.
+- Rendering is remove-then-redraw of this wirer's OWN layers only — the
+  overlay's trajectory layers are untouched.
+- Pure app-side module: the framework's `leaflet-map-overlay` stays
+  ref-point-agnostic and only hands out its `L.Map` via `getLeafletMap()`.
+- Consumers: `recording-session-handlers.ts` (live recording, wired per
+  session next to the other subscribers, torn down on stop/cleanup),
+  `replay-mode.ts` (per replay controller, torn down in `dispose`).
+
+## Examples
+
+```ts
+const wirer = wireRefPointMapMarkers(store, {
+  getMap: () => overlay?.getLeafletMap() ?? null,
+  getStartTime: () =>
+    store.getState().recording.sessionMetadata?.startTime ??
+    Number.MAX_SAFE_INTEGER,
+  dotSizePx: 20, // F5-A AR readability
+});
+// after the lazily-created map appears:
+wirer.refresh();
+// teardown:
+wirer.unsubscribe();
+```
+
+## Tests
+
+- [ref-point-map-markers.test.ts](ref-point-map-markers.test.ts) — mapping
+  fallbacks, immediate render, diffed re-render (no redraw on GPS ticks),
+  startTime-change reclassification (green→red), late map creation via
+  `refresh()`, `dotSizePx` forwarding, unsubscribe cleanup.
+- Wiring: `recording-session-handlers.test.ts` (late-binding getMap,
+  startTime from store, refresh delegation, teardown/replacement),
+  `replay-mode.test.ts` (replay wiring, setMapOverlay refresh, dispose).
