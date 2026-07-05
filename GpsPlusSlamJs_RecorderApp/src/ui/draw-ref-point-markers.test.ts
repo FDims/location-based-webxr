@@ -155,4 +155,28 @@ describe('drawRefPointMarkers', () => {
     expect(layers).toHaveLength(0);
     expect(markerCalls).toHaveLength(0);
   });
+
+  it('defaults to a 12px dot and honours a custom dotSizePx (F5-A: AR minimap uses 20px)', () => {
+    // Why this test matters: the live AR minimap and the summary map share
+    // this renderer (2026-07-05 live-map feedback), but F5-A deliberately
+    // enlarged AR-map markers for readability — the size must be a parameter
+    // of the SAME code path, not a duplicated marker implementation.
+    drawRefPointMarkers(
+      mapStub,
+      [{ lat: 1, lng: 2, name: 'Default', timestamp: START }],
+      START
+    );
+    expect(String(divIconCalls[0]!.options.html)).toContain('width:12px');
+    expect(divIconCalls[0]!.options.iconSize).toEqual([16, 16]);
+
+    drawRefPointMarkers(
+      mapStub,
+      [{ lat: 1, lng: 2, name: 'Big', timestamp: START }],
+      START,
+      { dotSizePx: 20 }
+    );
+    expect(String(divIconCalls[1]!.options.html)).toContain('width:20px');
+    expect(divIconCalls[1]!.options.iconSize).toEqual([24, 24]);
+    expect(divIconCalls[1]!.options.iconAnchor).toEqual([12, 12]);
+  });
 });

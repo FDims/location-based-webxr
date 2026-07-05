@@ -51,6 +51,18 @@ const CURRENT_REF_POINT_COLOR = VIS_COLORS.CURRENT_REF_POINT.css;
 // Implementation
 // ============================================================================
 
+/** Rendering options for {@link drawRefPointMarkers}. */
+export interface DrawRefPointMarkerOptions {
+  /**
+   * Diameter of the marker dot in px (default 12 — the summary-map size).
+   * The AR minimap passes 20: F5-A (2026-06-05 feedback) deliberately
+   * enlarged in-AR map markers for readability, and the size is a parameter
+   * of this SHARED renderer so both maps stay on one code path
+   * (2026-07-05 live-map feedback).
+   */
+  readonly dotSizePx?: number;
+}
+
 /**
  * Draw labelled reference-point markers onto an existing Leaflet map.
  *
@@ -58,14 +70,19 @@ const CURRENT_REF_POINT_COLOR = VIS_COLORS.CURRENT_REF_POINT.css;
  * @param refPoints - Reference points with `timestamp` for classification.
  * @param startTime - Recording start time (epoch ms). Points at/after this are
  *   "current"; earlier points are "prior".
+ * @param options - Optional rendering tweaks (see {@link DrawRefPointMarkerOptions}).
  * @returns The created marker layers, in input order, for later cleanup.
  */
 export function drawRefPointMarkers(
   map: L.Map,
   refPoints: readonly RefPointMarkerInput[],
-  startTime: number
+  startTime: number,
+  options: DrawRefPointMarkerOptions = {}
 ): L.Layer[] {
   const layers: L.Layer[] = [];
+  const dotSizePx = options.dotSizePx ?? 12;
+  // Icon box = dot + the 2px white border on each side.
+  const iconSizePx = dotSizePx + 4;
 
   for (const refPoint of refPoints) {
     const isPrior = refPoint.timestamp < startTime;
@@ -74,9 +91,9 @@ export function drawRefPointMarkers(
 
     const icon = L.divIcon({
       className: 'map-ref-point',
-      html: `<div style="background:${color};width:12px;height:12px;border-radius:50%;border:2px solid white;${opacity}"></div>`,
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
+      html: `<div style="background:${color};width:${dotSizePx}px;height:${dotSizePx}px;border-radius:50%;border:2px solid white;${opacity}"></div>`,
+      iconSize: [iconSizePx, iconSizePx],
+      iconAnchor: [iconSizePx / 2, iconSizePx / 2],
     });
 
     // Build popup content via the DOM API (no innerHTML) so a malicious
