@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { decodeDeflatePayload, encodeDeflatePayload } from './codec-deflate';
-import { decodeGzipPayload, encodeGzipPayload } from './codec-gzip';
 import {
   decodeDictionaryDeflatePayload,
   decodeDictionaryPayload,
@@ -20,12 +18,6 @@ import {
  */
 
 const TEXT_CODECS = [
-  {
-    name: 'deflate-raw (A2)',
-    encode: encodeDeflatePayload,
-    decode: decodeDeflatePayload,
-  },
-  { name: 'gzip (A3)', encode: encodeGzipPayload, decode: decodeGzipPayload },
   {
     name: 'dictionary (A4)',
     encode: encodeDictionaryPayload,

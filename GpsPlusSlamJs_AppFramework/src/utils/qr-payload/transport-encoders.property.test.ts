@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { decodeBase64Url, encodeBase64Url } from './base64url';
-import { decodeBase45, encodeBase45 } from './base45';
 import { decodeBase32Up, encodeBase32Up } from './base32up';
 import { QR_ALPHANUMERIC_CHARSET } from './qr-size-estimator';
 
@@ -9,6 +8,8 @@ import { QR_ALPHANUMERIC_CHARSET } from './qr-size-estimator';
  * P2 property tests (benchmark plan §6 P2): every transport encoder must
  * round-trip arbitrary bytes, emit only its promised charset (that promise
  * is what the whole QR-mode analysis of §3 rests on), and decode totally.
+ * base45 was benchmarked too but pruned in P5 (not URL-safe, only ~5 %
+ * denser than base32) — see the 2026-07-05 benchmark results doc.
  */
 
 interface TransportEncoder {
@@ -28,18 +29,12 @@ const ENCODERS: readonly TransportEncoder[] = [
     charOk: (c) => /[A-Za-z0-9_-]/.test(c),
   },
   {
-    name: 'base45',
-    encode: encodeBase45,
-    decode: decodeBase45,
-    // The QR alphanumeric charset IS the base45 alphabet (RFC 9285 §4.2).
-    charOk: (c) => QR_ALPHANUMERIC_CHARSET.includes(c),
-  },
-  {
     name: 'base32up',
     encode: encodeBase32Up,
     decode: decodeBase32Up,
-    // Both QR-alphanumeric AND URL-safe — the intersection matters for H3.
-    charOk: (c) => /[A-Z2-7]/.test(c),
+    // Both QR-alphanumeric AND URL-safe — the intersection behind the
+    // /S/<BASE32> path form (hypothesis H3).
+    charOk: (c) => /[A-Z2-7]/.test(c) && QR_ALPHANUMERIC_CHARSET.includes(c),
   },
 ];
 

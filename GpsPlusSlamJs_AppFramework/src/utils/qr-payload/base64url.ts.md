@@ -6,8 +6,8 @@ Unpadded base64url (RFC 4648 §5) — the default URL transport for binary
 codec output (A2–A5) in the QR payload-compression benchmark (plan §6 P2).
 URL-safe: output survives `encodeURIComponent` unchanged, but lowercase
 letters and `_` keep the QR encoder in byte mode (8 bits/char) — the
-benchmark compares this against the QR-alphanumeric transports
-([base45.ts](base45.ts.md), [base32up.ts](base32up.ts.md)).
+benchmark compared this against the QR-alphanumeric transports; the
+URL-safe one that survived P5 is [base32up.ts](base32up.ts.md).
 
 ## Public API
 

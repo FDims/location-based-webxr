@@ -106,7 +106,7 @@ function pushLiteralChar(
 }
 
 /** Expand a packed dictionary body. Total: unknown version/token → `null`. */
-export function unpackDictionaryBytes(bytes: Uint8Array): string | null {
+function unpackDictionaryBytes(bytes: Uint8Array): string | null {
   if (bytes.length === 0 || bytes[0] !== DICTIONARY_VERSION) {
     return null;
   }

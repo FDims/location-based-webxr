@@ -11,9 +11,10 @@ knowledge deflate lacks). Also exports the **A4+A2 chain** (dictionary →
 
 ## Public API
 
-- `packDictionaryBytes(payload: string) → Uint8Array` /
-  `unpackDictionaryBytes(bytes: Uint8Array) → string | null` — byte-level
-  core (version byte + substituted body), exposed for chaining.
+- `packDictionaryBytes(payload: string) → Uint8Array` — byte-level core
+  (version byte + substituted body), exposed for chaining (the benchmark's
+  `/S/<BASE32>` candidate feeds it into deflate). The matching
+  `unpackDictionaryBytes` is module-internal.
 - `encodeDictionaryPayload` / `decodeDictionaryPayload` — A4 standalone
   (base64url transport), async by codec convention.
 - `encodeDictionaryDeflatePayload` / `decodeDictionaryDeflatePayload` —

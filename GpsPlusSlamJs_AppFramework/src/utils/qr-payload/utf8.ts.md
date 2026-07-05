@@ -27,7 +27,6 @@ utf8DecodeTotal(new Uint8Array([0xff])); // null
 
 ## Tests
 
-Covered through the codec suites (`codec-compression.test.ts`,
-`codec-dictionary.test.ts`, `codec-binary-anchor.test.ts`,
-`codecs.property.test.ts`) — every decode-total property exercises both
-paths.
+Covered through the codec suites (`codec-dictionary.test.ts`,
+`codec-binary-anchor.test.ts`, `codecs.property.test.ts`) — every
+decode-total property exercises both paths.

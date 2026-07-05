@@ -2,10 +2,10 @@
 
 ## Purpose
 
-Thin `CompressionStream`/`DecompressionStream` byte helpers shared by the
-QR payload codecs ([codec-deflate.ts](codec-deflate.ts.md),
-[codec-gzip.ts](codec-gzip.ts.md),
-[codec-dictionary.ts](codec-dictionary.ts.md)) — benchmark plan §6 P3.
+Thin `CompressionStream`/`DecompressionStream` byte helpers for the QR
+payload codecs — after the P5 pruning consumed only by the
+[codec-dictionary.ts](codec-dictionary.ts.md) A4+A2 chain and the
+benchmark's `/S/<BASE32>` path candidates (benchmark plan §6 P3/P5).
 
 ## Public API
 
@@ -36,5 +36,5 @@ await decompressBytes(new Uint8Array([1, 2, 3]), 'deflate-raw'); // null
 
 ## Tests
 
-Covered through the codec suites: `codec-compression.test.ts` (round-trips,
-corrupt-stream nulls, H5 framing check) and `codecs.property.test.ts`.
+Covered through the codec suites: `codec-dictionary.test.ts` (A4+A2 chain
+round-trips, corrupt-stream nulls) and `codecs.property.test.ts`.

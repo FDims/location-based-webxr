@@ -3,11 +3,13 @@
 ## Purpose
 
 Unpadded uppercase base32 (RFC 4648 §6) — the benchmark's **URL-safe**
-QR-alphanumeric transport (plan §4 A6, hypothesis H3). Alphabet `A–Z 2–7`
-sits in the intersection of the QR alphanumeric charset (5.5 bits/char) and
-the URL-unreserved set, unlike [base45.ts](base45.ts.md) whose ` `/`%`/`+`
-need escaping in a URL. Costs 1.6 chars/byte vs base45's 1.5 — the
-benchmark quantifies whether URL-safety or density wins.
+QR-alphanumeric transport (plan §4 A6, hypothesis H3), carrier of the
+winning `/S/<BASE32>` path form. Alphabet `A–Z 2–7` sits in the
+intersection of the QR alphanumeric charset (5.5 bits/char) and the
+URL-unreserved set. base45 (RFC 9285, 1.5 chars/byte vs base32's 1.6) was
+benchmarked too but pruned in P5: its ` `/`%`/`+` are not URL-safe and the
+density edge was only ~5 % of QR bits — see the 2026-07-05 benchmark
+results doc in `GpsPlusSlamJs_Docs`.
 
 ## Public API
 
