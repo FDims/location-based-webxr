@@ -38,9 +38,11 @@ renderer.
   overlay's trajectory layers are untouched.
 - Pure app-side module: the framework's `leaflet-map-overlay` stays
   ref-point-agnostic and only hands out its `L.Map` via `getLeafletMap()`.
-- Consumers: `recording-session-handlers.ts` (live recording, wired per
-  session next to the other subscribers, torn down on stop/cleanup),
-  `replay-mode.ts` (per replay controller, torn down in `dispose`).
+- Consumers: `ui/ref-point-view-wiring.ts` (live AR — AR-scoped and
+  store-swap-following via main's `storeRef`, round-3 feedback 2026-07-05),
+  `replay-mode.ts` (per replay controller, torn down in `dispose`), and
+  `recording-session-handlers.ts` uses only the pure
+  `refPointEntriesToMarkerData` mapping for the summary snapshot.
 
 ## Examples
 
