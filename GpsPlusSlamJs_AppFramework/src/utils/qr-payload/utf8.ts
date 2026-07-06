@@ -6,7 +6,13 @@
  */
 
 const ENCODER = new TextEncoder();
-const FATAL_DECODER = new TextDecoder('utf-8', { fatal: true });
+// ignoreBOM keeps a leading U+FEFF in the decoded text: the default (false)
+// silently strips it, breaking encode→decode losslessness for names that
+// start with a BOM — a silent mangle this module's contract forbids.
+const FATAL_DECODER = new TextDecoder('utf-8', {
+  fatal: true,
+  ignoreBOM: true,
+});
 
 export function utf8Encode(text: string): Uint8Array {
   return ENCODER.encode(text);

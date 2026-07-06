@@ -17,6 +17,10 @@ UTF-8 encode/decode helpers shared by the QR payload codecs (benchmark plan
 
 - The shared `TextDecoder` is safe to reuse: non-streaming `decode()` calls
   keep no state between invocations.
+- **Lossless round-trip:** `utf8DecodeTotal(utf8Encode(s)) === s` for every
+  valid Unicode string, including a leading U+FEFF — the decoder sets
+  `ignoreBOM: true` because the default silently strips a leading BOM
+  (PR #163 review fix, 2026-07-06).
 
 ## Examples
 
@@ -27,6 +31,8 @@ utf8DecodeTotal(new Uint8Array([0xff])); // null
 
 ## Tests
 
-Covered through the codec suites (`codec-dictionary.test.ts`,
-`codec-binary-anchor.test.ts`, `codecs.property.test.ts`) — every
-decode-total property exercises both paths.
+- `utf8.test.ts` — direct unit + property coverage: multi-byte round-trips,
+  the leading-BOM losslessness regression, invalid-sequence `null` paths.
+- Also covered through the codec suites (`codec-dictionary.test.ts`,
+  `codec-binary-anchor.test.ts`, `codecs.property.test.ts`) — every
+  decode-total property exercises both paths.
