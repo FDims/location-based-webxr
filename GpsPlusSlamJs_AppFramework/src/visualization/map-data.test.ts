@@ -136,18 +136,60 @@ describe('buildMapData', () => {
   });
 
   describe('userPosition', () => {
-    it('defaults to the last raw GPS point when not provided', () => {
-      const data = buildMapData({ rawGpsPath: RAW });
+    // Why: 2026-07-06 feedback — the blue live-map dot must track the FUSED
+    // pose whenever an alignment exists; indoors the raw fix freezes while the
+    // fused (cyan) path keeps moving. Default chain: explicit (incl. null) →
+    // last fusedPath point → last raw fix → null. See
+    // gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-06-recorder-live-map-user-dot-fused-pose-user-feedback.md.
+    it('defaults to the LAST fused-path point when the fused path is non-empty', () => {
+      const data = buildMapData({
+        rawGpsPath: RAW,
+        odometryPositions: ODOM,
+        alignmentMatrix: TRANSLATION_MAT4,
+        zeroRef: ZERO_REF,
+      });
+      expect(data.fusedPath.length).toBeGreaterThan(0);
+      expect(data.userPosition).toEqual(
+        data.fusedPath[data.fusedPath.length - 1]
+      );
+      // …and clearly NOT the raw fix the pre-2026-07-06 code used.
+      expect(data.userPosition).not.toEqual({ lat: 50.001, lng: 8.001 });
+    });
+
+    it('falls back to the last raw GPS point while the fused path is empty (pre-alignment)', () => {
+      // No alignment matrix yet → empty fused path → the dot keeps showing
+      // the raw fix so it stays visible during startup (decision 2).
+      const data = buildMapData({ rawGpsPath: RAW, odometryPositions: ODOM });
+      expect(data.fusedPath).toEqual([]);
       expect(data.userPosition).toEqual({ lat: 50.001, lng: 8.001 });
     });
 
-    it('honours an explicit userPosition over the raw fallback', () => {
+    it('honours an explicit userPosition over both fallbacks', () => {
       const explicit = { lat: 1, lng: 2 };
-      const data = buildMapData({ rawGpsPath: RAW, userPosition: explicit });
+      const data = buildMapData({
+        rawGpsPath: RAW,
+        odometryPositions: ODOM,
+        alignmentMatrix: TRANSLATION_MAT4,
+        zeroRef: ZERO_REF,
+        userPosition: explicit,
+      });
       expect(data.userPosition).toEqual(explicit);
     });
 
-    it('is null when there is no raw GPS and none is provided', () => {
+    it('honours an explicit null even when fused and raw positions exist (summary map)', () => {
+      // The summary map passes userPosition: null to hide the dot — the
+      // fused default must not override that.
+      const data = buildMapData({
+        rawGpsPath: RAW,
+        odometryPositions: ODOM,
+        alignmentMatrix: TRANSLATION_MAT4,
+        zeroRef: ZERO_REF,
+        userPosition: null,
+      });
+      expect(data.userPosition).toBeNull();
+    });
+
+    it('is null when there is neither a fused path nor raw GPS', () => {
       const data = buildMapData({ odometryPositions: ODOM });
       expect(data.userPosition).toBeNull();
     });

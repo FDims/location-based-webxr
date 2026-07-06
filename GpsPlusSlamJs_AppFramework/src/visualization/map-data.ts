@@ -39,7 +39,14 @@ import type { GpsCoord, RawGpsSample } from '../types/geo-types';
 
 /** Fully-resolved trajectory data ready to be drawn onto a Leaflet map. */
 export interface MapData {
-  /** Latest user GPS position (blue dot), or null when unknown. */
+  /**
+   * User position for the blue dot, or null when unknown/hidden. Unless the
+   * caller provided an explicit value, this is the latest FUSED pose
+   * (GPS-converted tip of `fusedPath`), so the dot keeps moving indoors where
+   * the raw fix freezes; the last raw GPS fix is only the pre-alignment
+   * fallback. See
+   * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-06-recorder-live-map-user-dot-fused-pose-user-feedback.md.
+   */
   userPosition: GpsCoord | null;
   /** Raw GPS samples (yellow polyline + per-event accuracy circles). */
   rawGpsPath: RawGpsSample[];
@@ -85,8 +92,10 @@ export interface MapDataInput {
   /** Alignment-snapshot GPS positions. */
   alignmentSnapshots?: readonly GpsCoord[];
   /**
-   * Explicit user position. When omitted, defaults to the last entry of
-   * `rawGpsPath` (or null when there is none).
+   * Explicit user position — including `null` to hide the dot (summary map).
+   * When omitted, defaults to the last `fusedPath` point when the fused path
+   * is non-empty, else the last `rawGpsPath` entry, else null (2026-07-06
+   * fused-dot feedback).
    */
   userPosition?: GpsCoord | null;
 }
@@ -117,13 +126,20 @@ export function buildMapData(input: MapDataInput): MapData {
     zeroRef: input.zeroRef ?? null,
   });
 
+  // Default userPosition chain (2026-07-06 fused-dot feedback): the blue dot
+  // sits on the tip of the fused polyline whenever an alignment exists —
+  // reuse the just-computed fusedPath, no second odometry→GPS conversion.
+  // Raw GPS is only the pre-alignment fallback (dot stays visible at startup).
+  const lastFused = fusedPath[fusedPath.length - 1];
   const lastRaw = rawGpsPath[rawGpsPath.length - 1];
   const userPosition =
     input.userPosition !== undefined
       ? input.userPosition
-      : lastRaw
-        ? { lat: lastRaw.lat, lng: lastRaw.lng }
-        : null;
+      : lastFused
+        ? { lat: lastFused.lat, lng: lastFused.lng }
+        : lastRaw
+          ? { lat: lastRaw.lat, lng: lastRaw.lng }
+          : null;
 
   const rotations = input.odometryRotations ?? [];
   const latestRotation = rotations[rotations.length - 1] ?? null;

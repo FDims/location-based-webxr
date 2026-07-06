@@ -57,6 +57,15 @@ const arbOdom = fc.array(
 
 const ZERO_REF = { lat: 50.0, lon: 8.0 } as const;
 
+const arbOdomNonEmpty = fc.array(
+  fc.tuple(
+    fc.double({ min: -100, max: 100, noNaN: true }),
+    fc.double({ min: -100, max: 100, noNaN: true }),
+    fc.double({ min: -100, max: 100, noNaN: true })
+  ),
+  { minLength: 1, maxLength: 30 }
+) as fc.Arbitrary<Vector3[]>;
+
 describe('buildMapData — property: D2 fused path', () => {
   it('fusedPath always equals computeFusedPath over all odometry for any matrix', () => {
     fc.assert(
@@ -74,6 +83,34 @@ describe('buildMapData — property: D2 fused path', () => {
         expect(data.fusedPath).toEqual(expected);
         // One fused point per odometry position (no dropping, no per-event freeze).
         expect(data.fusedPath.length).toBe(odom.length);
+      }),
+      { numRuns: 100 }
+    );
+  });
+});
+
+describe('buildMapData — property: default userPosition is the fused tip (2026-07-06)', () => {
+  // Why this test matters: the blue dot must sit EXACTLY on the tip of the
+  // cyan fused polyline whenever an alignment exists — the fix reuses the
+  // already-computed fusedPath instead of running a second odometry→GPS
+  // conversion that could drift. Strict value equality over arbitrary rigid
+  // matrices and odometry pins "no drift between dot and fused line", with a
+  // raw fix present to prove fused always wins over raw. See
+  // gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-06-recorder-live-map-user-dot-fused-pose-user-feedback.md.
+  it('equals fusedPath[last] for any rigid matrix and non-empty odometry', () => {
+    fc.assert(
+      fc.property(arbRigidAlignment, arbOdomNonEmpty, (matrix, odom) => {
+        const data = buildMapData({
+          // A raw fix far away from ZERO_REF — the fused default must win.
+          rawGpsPath: [{ lat: 51.5, lng: -0.1, accuracy: 20 }],
+          odometryPositions: odom,
+          alignmentMatrix: matrix,
+          zeroRef: ZERO_REF,
+        });
+        expect(data.fusedPath.length).toBe(odom.length);
+        expect(data.userPosition).toEqual(
+          data.fusedPath[data.fusedPath.length - 1]
+        );
       }),
       { numRuns: 100 }
     );
