@@ -381,11 +381,10 @@ export function computeConvergence(
  * compute the Euclidean distance.
  *
  * This is the **single shared kernel** for the AppFramework reporter and
- * the Investigation harness (see §11 (a) of the tracking-quality plan).
- * `GpsPlusSlamJs_Investigation/src/investigation-helpers.ts` re-exports
- * `computeStabilityDelta` as a thin wrapper around this function so the
- * §6.1 corpus sweep and the runtime convergence score share one numeric
- * definition.
+ * the downstream corpus-analysis harness (see §11 (a) of the
+ * tracking-quality plan), which re-exports it as `computeStabilityDelta` —
+ * a thin wrapper around this function — so the §6.1 corpus sweep and the
+ * runtime convergence score share one numeric definition.
  */
 export function matrixDelta(
   prev: readonly number[],

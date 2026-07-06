@@ -118,11 +118,11 @@ receive — copies are taken before sorting or sliding-window operations.
 - `matrixDelta` validates length-16 matrices and returns zero deltas otherwise. It also finite-guards both outputs: a NaN/Infinity-bearing matrix (degenerate alignment solve) would otherwise propagate `NaN` through `getRotation`/`vec3.distance` into `computeConvergence` and turn the whole score `NaN`. On non-finite output it falls back to `0` (no delta).
 - `computeConvergence` treats a **corrupt** alignment matrix — non-finite OR wrong-length (`AlignmentSnapshot.matrix` is typed `number[]`, not a 16-tuple) — as evidence of instability, NOT stability. Its `isFiniteMatrix` guard rejects both cases, so such a pair is scored on the FAIL side (thresholds added) rather than slipping through to `matrixDelta`'s zero-delta length fallback, which reads as "perfectly stable" and would _inflate_ the score.
   Internally `matrixDelta` uses `mat4.getRotation` + the shared `geodesicAngleRad` kernel + `mat4.getTranslation`
-  from gl-matrix — the same kernel as `computeStabilityDelta` in
-  `GpsPlusSlamJs_Investigation/src/investigation-helpers.ts`. Per the plan
-  §11 (a), these two functions share one numeric definition so the §6.1
-  corpus sweep's correlations are computed against the same kernel the
-  AppFramework reports at runtime. Numerical agreement is locked in by the
+  from gl-matrix — the same kernel the downstream corpus-analysis harness
+  re-exports as `computeStabilityDelta`. Per the plan §11 (a), these two
+  functions share one numeric definition so the §6.1 corpus sweep's
+  correlations are computed against the same kernel the AppFramework
+  reports at runtime. Numerical agreement is locked in by the
   "matches the gl-matrix quat-based reference kernel" tests.
 - `computeResidualConsensus` returns score 0 (and `null` median) when alignment
   matrix or zero reference is missing.
@@ -159,8 +159,8 @@ store.subscribe(() => {
   state-machine, anti-validation cases from plan §6, the listener
   middleware contract, corpus-derived defaults regression (§11 (d)), and
   §4.8 hysteresis (§11 (f)).
-- Investigation sweep (Phase A (c)): `GpsPlusSlamJs_Investigation/src/investigations/tracking-quality.test.ts`
-  — 5 tests replaying the full `TestDataJs/` corpus (§6.1 sweep,
+- Corpus sweep (Phase A (c)): exercised in the downstream analysis
+  harness — 5 tests replaying the full recording corpus (§6.1 sweep,
   compass perturbation, anti-validation).
 
 ## Related docs
