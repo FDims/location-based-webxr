@@ -82,6 +82,7 @@ describe('Recording Options Integration', () => {
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+        loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
       };
 
       store.dispatch(
@@ -114,6 +115,7 @@ describe('Recording Options Integration', () => {
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+        loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
       };
 
       store.dispatch(
@@ -332,6 +334,7 @@ describe('Recording Options Integration', () => {
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+        loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
       };
 
       store.dispatch(
@@ -395,6 +398,7 @@ describe('Recording Options Integration', () => {
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+        loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
       };
 
       store.dispatch(
@@ -457,6 +461,7 @@ describe('Recording Options Integration', () => {
         visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+        loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
       };
 
       store.dispatch(

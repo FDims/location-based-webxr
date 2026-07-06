@@ -362,6 +362,7 @@ vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
       gpsAlignmentMarkers: true,
       compassCubes: true,
     },
+    loopClosureDebug: { detectorEnabled: false },
   }),
 }));
 vi.mock('gps-plus-slam-app-framework/sensors/gps', () => ({

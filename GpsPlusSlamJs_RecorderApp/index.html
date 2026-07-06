@@ -1555,6 +1555,33 @@ No errors</pre
             </div>
           </div>
 
+          <!-- Loop-closure capture (experimental) -->
+          <div class="mb-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xl">🔁</span>
+              <span class="font-medium text-white">Loop closures (debug)</span>
+            </div>
+            <div class="bg-gray-700/50 rounded-lg p-3 space-y-3">
+              <p class="text-[11px] text-gray-400">
+                Record AR relocalization jumps (&gt;1 m between frames) as
+                loop-closure events. Each closure also corrects the live
+                trajectory, changing the live alignment. Applies on the next
+                session. Needed to collect loop-closure field data.
+              </p>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="loop-closure-detector"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Detect + record loop closures (experimental, off by
+                  default)</span
+                >
+              </label>
+            </div>
+          </div>
+
           <!-- Performance Note -->
           <p class="text-xs text-gray-400 mb-4">
             ⚠️ Higher frequencies may impact performance on some devices.

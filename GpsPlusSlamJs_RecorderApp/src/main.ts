@@ -75,6 +75,7 @@ import {
   setTrackingRecoveredCallback,
   setTrackingStore,
   setSessionEndCallback,
+  getCurrentArPose,
   getScene,
   getCamera,
   getArWorldGroup,
@@ -140,8 +141,14 @@ import {
   subscribePermissionChanges,
 } from 'gps-plus-slam-app-framework/sensors/permission-checker';
 
-import type { LatLong } from 'gps-plus-slam-app-framework/core';
-import { odometryTrackingRestarted } from 'gps-plus-slam-app-framework/core';
+import type {
+  LatLong,
+  LoopClosureHandler,
+} from 'gps-plus-slam-app-framework/core';
+import {
+  createLoopClosureHandler,
+  odometryTrackingRestarted,
+} from 'gps-plus-slam-app-framework/core';
 import { createStoreRef } from './state/store-ref';
 import {
   wireRefPointViews,
@@ -309,6 +316,15 @@ let occluderSinkHandle: OccluderSinkHandle | null = null;
 let liveOccluder: DepthOccluder | null = null;
 let liveOccluderUnregisterFrame: (() => void) | null = null;
 let unsubscribeOccupancyGrid: (() => void) | null = null;
+
+// Live loop-closure capture (opt-in, recording-options `loopClosureDebug`).
+// The handler is (re)bound lazily to the CURRENT store inside the per-frame
+// callback — stores swap per recording session, and a rebind also resets the
+// handler's last-pose memory, which is exactly right for a fresh session.
+// Disposed on re-enter + in resetMainState, mirroring the live occluder.
+let loopClosureHandler: LoopClosureHandler | null = null;
+let loopClosureHandlerBoundStore: unknown = null;
+let loopClosureUnregisterFrame: (() => void) | null = null;
 
 // Live QR recording (opt-in, recording-options `qr`). The thin RAW producer
 // (created in handleEnterAR when enabled) receives camera frames via the
@@ -662,6 +678,57 @@ function disposeLiveOccluder(): void {
 }
 
 /**
+ * Tear down the live loop-closure capture wiring. Safe to call when nothing
+ * is wired. Used on re-enter and in `resetMainState`, mirroring
+ * `disposeLiveOccluder`.
+ */
+function disposeLoopClosureWiring(): void {
+  loopClosureUnregisterFrame?.();
+  loopClosureUnregisterFrame = null;
+  loopClosureHandler = null;
+  loopClosureHandlerBoundStore = null;
+}
+
+/**
+ * Wire the live loop-closure capture (recording-options `loopClosureDebug`,
+ * default OFF). Feeds each frame's RAW WebXR pose (the reducer converts
+ * frames itself) into the library handler, so an AR relocalization jump
+ * (>1 m between consecutive frames) dispatches `arLoopClosureDetected` into
+ * the session store — and therefore into the recording. This is the corpus
+ * producer the pair-refresh T5 verdict is blocked on; see
+ * GpsPlusSlamJs_Docs/docs/2026-07-06-recorder-loop-closure-detector-wiring-plan.md.
+ */
+function wireLoopClosureCapture(): void {
+  loopClosureUnregisterFrame = registerXrFrameUpdate(() => {
+    // Lazy (re)bind to the CURRENT store: `store` swaps per recording
+    // session, and dispatching into a stale store would silently drop the
+    // closures from the recording. A rebind starts with empty last-pose
+    // memory — correct for a fresh session/frame.
+    if (loopClosureHandlerBoundStore !== store) {
+      loopClosureHandler = createLoopClosureHandler(store);
+      loopClosureHandlerBoundStore = store;
+    }
+    // `getCurrentArPose()` is nulled by the framework on tracking loss and
+    // only repopulated AFTER this callback ran on the recovery frame, so the
+    // first pose the handler sees after a reset is genuinely fresh — a
+    // recovery jump can never be misread as a loop closure.
+    const pose = getCurrentArPose();
+    if (!pose) {
+      return;
+    }
+    loopClosureHandler!.processPose(
+      [pose.position.x, pose.position.y, pose.position.z],
+      [
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w,
+      ]
+    );
+  });
+}
+
+/**
  * Reset main module state.
  * Exported for testing purposes to ensure test isolation.
  */
@@ -719,6 +786,7 @@ export function resetMainState(): void {
   occluderSinkHandle?.dispose();
   occluderSinkHandle = null;
   disposeLiveOccluder();
+  disposeLoopClosureWiring();
   occupancyGrid = null;
   setOccupancyGrid(null);
   // Live QR teardown — stop capture, detach the producer + debug-viz subscriber.
@@ -1262,6 +1330,9 @@ async function handleEnterAR(): Promise<void> {
     // Set up tracking lost callback to warn user when AR tracking fails
     setTrackingLostCallback(() => {
       updateArInfo('⚠️ LOST');
+      // Stop feeding poses + forget the last pose: the pose jump across a
+      // loss must never be recorded as a loop closure.
+      loopClosureHandler?.setTrackingActive(false);
       showError(
         'AR tracking lost. Try moving to a well-lit area with more visual features.'
       );
@@ -1275,6 +1346,11 @@ async function handleEnterAR(): Promise<void> {
     setTrackingStore(store);
     setTrackingCallbacks((payload) => {
       store.dispatch(odometryTrackingRestarted(payload));
+      // Origin reset: clear the loop-closure handler's last-pose memory
+      // (deactivate ⇒ reset) before re-arming — the reference-space jump is
+      // an origin correction, not a relocalization loop closure.
+      loopClosureHandler?.setTrackingActive(false);
+      loopClosureHandler?.setTrackingActive(true);
       updateArInfo('');
       log.info('AR tracking restarted — alignment correction dispatched');
     });
@@ -1282,9 +1358,18 @@ async function handleEnterAR(): Promise<void> {
     // Wire seamless recovery callback (Case 1: same coordinate frame).
     // Clears the "LOST" UI warning without dispatching alignment correction.
     setTrackingRecoveredCallback(() => {
+      loopClosureHandler?.setTrackingActive(true);
       updateArInfo('');
       log.info('AR tracking recovered (same coordinate frame)');
     });
+
+    // Live loop-closure capture (experimental, default OFF): dispose any
+    // previous wiring, then register the per-frame feed only when the
+    // operator opted in — OFF keeps the frame loop untouched (zero cost).
+    disposeLoopClosureWiring();
+    if (recordingOptions.loopClosureDebug.detectorEnabled) {
+      wireLoopClosureCapture();
+    }
 
     // F3 (2026-07-04): react to a SYSTEM-initiated session end (Android back
     // gesture ends the XRSession directly — uncancelable). Mid-recording this

@@ -419,6 +419,7 @@ const defaultOptions: RecordingOptions = {
   visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
   qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
   compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+  loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
 };
 
 function createMockDeps(
@@ -742,6 +743,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -783,6 +785,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -822,6 +825,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -862,6 +866,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -900,6 +905,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -934,6 +940,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -965,6 +972,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -1004,6 +1012,7 @@ describe('handleStartRecording', () => {
       visualization: { ...DEFAULT_RECORDING_OPTIONS.visualization },
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
+      loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);

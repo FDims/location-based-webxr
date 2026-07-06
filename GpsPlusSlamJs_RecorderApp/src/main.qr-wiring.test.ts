@@ -275,6 +275,7 @@ vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
       gpsAlignmentMarkers: true,
       compassCubes: false,
     },
+    loopClosureDebug: { detectorEnabled: false },
     arCrashIsolation: {
       enableDomOverlay: true,
       enableCameraAccess: true,

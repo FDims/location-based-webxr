@@ -124,6 +124,7 @@ const {
         compassCubes: true,
         statsOverlay: false,
       },
+      loopClosureDebug: { detectorEnabled: false },
     },
   };
 });

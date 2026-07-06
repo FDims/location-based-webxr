@@ -93,6 +93,7 @@ let vizStatsOverlayCheckbox: HTMLInputElement | null = null;
 let compassColdStartOverrideCheckbox: HTMLInputElement | null = null;
 let compassRotationPriorCheckbox: HTMLInputElement | null = null;
 let compassWebXRConsistencyCheckbox: HTMLInputElement | null = null;
+let loopClosureDetectorCheckbox: HTMLInputElement | null = null;
 let qrEnabledCheckbox: HTMLInputElement | null = null;
 let qrIntervalSlider: HTMLInputElement | null = null;
 let qrIntervalValue: HTMLElement | null = null;
@@ -270,6 +271,9 @@ export function initSettingsModal(
   ) as HTMLInputElement;
   compassWebXRConsistencyCheckbox = document.getElementById(
     'compass-webxr-consistency'
+  ) as HTMLInputElement;
+  loopClosureDetectorCheckbox = document.getElementById(
+    'loop-closure-detector'
   ) as HTMLInputElement;
   qrEnabledCheckbox = document.getElementById('qr-enabled') as HTMLInputElement;
   qrIntervalSlider = document.getElementById('qr-interval') as HTMLInputElement;
@@ -634,6 +638,15 @@ export function initSettingsModal(
     if (workingOptions && compassWebXRConsistencyCheckbox) {
       workingOptions.compassDebug.webXRConsistency =
         compassWebXRConsistencyCheckbox.checked;
+    }
+  });
+
+  // Loop-closure capture (experimental, default OFF). Applied on the next
+  // session — the detector wiring is read once at Enter AR.
+  loopClosureDetectorCheckbox?.addEventListener('change', () => {
+    if (workingOptions && loopClosureDetectorCheckbox) {
+      workingOptions.loopClosureDebug.detectorEnabled =
+        loopClosureDetectorCheckbox.checked;
     }
   });
 
@@ -1071,6 +1084,10 @@ function populateForm(options: RecordingOptions): void {
   if (compassWebXRConsistencyCheckbox) {
     compassWebXRConsistencyCheckbox.checked =
       options.compassDebug.webXRConsistency;
+  }
+  if (loopClosureDetectorCheckbox) {
+    loopClosureDetectorCheckbox.checked =
+      options.loopClosureDebug.detectorEnabled;
   }
 
   // QR detection (opt-in). Interval slider in ms, capture-size slider in px.

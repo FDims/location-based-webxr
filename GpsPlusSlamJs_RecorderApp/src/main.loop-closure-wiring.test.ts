@@ -1,47 +1,138 @@
 // @vitest-environment jsdom
 /**
- * Integration tests for the map-toggle → ref-point-marker refresh wiring in
- * `handleToggleMap` (main.ts).
+ * Integration tests for the live loop-closure capture wiring in main.ts
+ * (2026-07-06 recorder wiring plan, W3).
  *
  * Why these tests matter:
- * The 2026-07-06 round-4 live-map feedback found the AR minimap stayed empty
- * for a whole recording while the summary map showed the same store state.
- * Root cause: `handleToggleMap` refreshed the ref-point map markers BEFORE
- * `mapOverlay.toggle()` — but the overlay creates its inner Leaflet map only
- * inside `show()`, so the refresh always ran against a null map. These tests
- * pin the corrected ordering (refresh AFTER toggle, whenever the map ends up
- * visible) including the re-show path, which matters in store-event-free
- * phases (AR_READY has no GPS watch, so the wirer's subscriber never fires).
+ * The recorder is the ONLY producer of `arLoopClosureDetected` actions in
+ * field recordings — the whole corpus is loop-closure-free because nothing
+ * ever wired the library detector in. These tests pin:
+ *  - the wiring is strictly opt-in (`loopClosureDebug.detectorEnabled`,
+ *    default OFF ⇒ no handler, no per-frame callback, zero cost),
+ *  - when ON, each XR frame's RAW WebXR pose is converted to tuples and fed
+ *    into the handler bound to the CURRENT store,
+ *  - tracking loss / origin resets clear the handler's last-pose memory so a
+ *    recovery jump is never recorded as a loop closure,
+ *  - the per-frame registration is disposed on re-enter and on resetMainState
+ *    (no leaked callbacks across enter-AR cycles).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // ---------- hoisted mocks (need to be available before vi.mock factories) ----------
 
-const { mockGetScene, mockGetCamera, mockLeafletOverlayInstances } = vi.hoisted(
-  () => {
-    const mockScene = { name: 'scene' };
-    const mockCamera = { name: 'camera' };
-    return {
-      mockGetScene: vi.fn().mockReturnValue(mockScene),
-      mockGetCamera: vi.fn().mockReturnValue(mockCamera),
-      // Every LeafletMapOverlay the module under test constructs, so tests
-      // can assert against the exact instance handleToggleMap used.
-      mockLeafletOverlayInstances: [] as Array<{
-        isVisible: ReturnType<typeof vi.fn>;
-        toggle: ReturnType<typeof vi.fn>;
-        setGpsPosition: ReturnType<typeof vi.fn>;
-        getGpsPosition: ReturnType<typeof vi.fn>;
-        getLeafletMap: ReturnType<typeof vi.fn>;
-        updatePosition: ReturnType<typeof vi.fn>;
-        dispose: ReturnType<typeof vi.fn>;
-      }>,
-    };
-  }
-);
+const {
+  mockCreateLoopClosureHandler,
+  mockLoopClosureHandler,
+  mockRegisterXrFrameUpdate,
+  xrFrameUnregisterSpies,
+  registeredXrFrameCallbacks,
+} = vi.hoisted(() => {
+  const mockLoopClosureHandler = {
+    processPose: vi.fn(),
+    setTrackingActive: vi.fn(),
+  };
+  const xrFrameUnregisterSpies: Array<() => void> = [];
+  const registeredXrFrameCallbacks: Array<(ctx: unknown) => void> = [];
+  return {
+    mockLoopClosureHandler,
+    mockCreateLoopClosureHandler: vi.fn(() => mockLoopClosureHandler),
+    xrFrameUnregisterSpies,
+    registeredXrFrameCallbacks,
+    mockRegisterXrFrameUpdate: vi.fn((cb: (ctx: unknown) => void) => {
+      registeredXrFrameCallbacks.push(cb);
+      const unregister = vi.fn();
+      xrFrameUnregisterSpies.push(unregister);
+      return unregister;
+    }),
+  };
+});
+
+const {
+  mockGetCurrentArPose,
+  mockSetTrackingLostCallback,
+  mockSetTrackingCallbacks,
+  mockSetTrackingRecoveredCallback,
+  mockRecordingOptions,
+} = vi.hoisted(() => ({
+  mockGetCurrentArPose: vi.fn().mockReturnValue(null),
+  mockSetTrackingLostCallback: vi.fn(),
+  mockSetTrackingCallbacks: vi.fn(),
+  mockSetTrackingRecoveredCallback: vi.fn(),
+  // Shared mutable options object — main.ts keeps the returned reference, so
+  // tests flip `loopClosureDebug.detectorEnabled` between enter-AR calls.
+  mockRecordingOptions: {
+    qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
+    images: { enabled: false, intervalMs: 1000, quality: 0.8 },
+    depth: { enabled: false, intervalMs: 1000 },
+    occupancy: { cellSizeM: 0.15 },
+    frameTileDisplay: { divisor: 2 },
+    visualization: {
+      frameTiles: true,
+      occupancyCubes: true,
+      gpsAlignmentMarkers: true,
+      compassCubes: true,
+    },
+    loopClosureDebug: { detectorEnabled: false },
+  },
+}));
+
+// The store instance handed to createRecorderStore consumers — the handler
+// must be bound to exactly this object.
+const { mockStore } = vi.hoisted(() => ({
+  mockStore: {
+    dispatch: vi.fn(),
+    getState: vi.fn().mockReturnValue({}),
+    subscribe: vi.fn().mockReturnValue(() => {}),
+  },
+}));
 
 // ---------- mocks for all main.ts dependencies ----------
 
+vi.mock('gps-plus-slam-app-framework/ar/xr-frame-loop', () => ({
+  registerXrFrameUpdate: mockRegisterXrFrameUpdate,
+}));
+
+vi.mock('gps-plus-slam-app-framework/core', () => ({
+  odometryTrackingRestarted: vi.fn((payload: unknown) => ({
+    type: 'gpsData/odometryTrackingRestarted',
+    payload,
+  })),
+  createLoopClosureHandler: mockCreateLoopClosureHandler,
+}));
+
+vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
+  initAR: vi.fn().mockResolvedValue(undefined),
+  isWebXRSupported: vi.fn().mockResolvedValue(true),
+  getCurrentArPose: mockGetCurrentArPose,
+  applyAlignmentMatrix: vi.fn(),
+  setImageCaptureCallback: vi.fn(),
+  startImageCapture: vi.fn(),
+  stopImageCapture: vi.fn(),
+  setDepthCaptureCallback: vi.fn(),
+  startDepthCapture: vi.fn(),
+  stopDepthCapture: vi.fn(),
+  setFrameCallback: vi.fn(),
+  setCameraFrameCallback: vi.fn(),
+  setTrackingLostCallback: mockSetTrackingLostCallback,
+  setTrackingCallbacks: mockSetTrackingCallbacks,
+  setTrackingRecoveredCallback: mockSetTrackingRecoveredCallback,
+  setTrackingStore: vi.fn(),
+  setSessionEndCallback: vi.fn(),
+  endARSession: vi.fn(),
+  getScene: vi.fn().mockReturnValue({ name: 'scene' }),
+  getCamera: vi.fn().mockReturnValue({ name: 'camera' }),
+  getArWorldGroup: vi.fn().mockReturnValue({ name: 'ar-world' }),
+  setScene: vi.fn(),
+  setArWorldGroup: vi.fn(),
+  getDepthInfoFromFrame: vi.fn(),
+  getImageCaptureFrameCount: vi.fn().mockReturnValue(0),
+  getDepthSampleCount: vi.fn().mockReturnValue(0),
+}));
+
+// ---------- lightweight stubs for the rest of main.ts imports ----------
+
+vi.mock('./utils/sentry', () => ({ initSentry: vi.fn() }));
 vi.mock('gps-plus-slam-app-framework/visualization/camera-follower', () => ({
   createCameraFollower: vi.fn().mockReturnValue({
     object3D: { name: 'camera-follower' },
@@ -51,40 +142,6 @@ vi.mock('gps-plus-slam-app-framework/visualization/camera-follower', () => ({
 }));
 vi.mock('gps-plus-slam-app-framework/visualization/gps-compass-cubes', () => ({
   createGpsCompassCubes: vi.fn(),
-}));
-
-vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
-  initAR: vi.fn().mockResolvedValue(undefined),
-  isWebXRSupported: vi.fn().mockResolvedValue(true),
-  getCurrentArPose: vi.fn().mockReturnValue(null),
-  applyAlignmentMatrix: vi.fn(),
-  setImageCaptureCallback: vi.fn(),
-  startImageCapture: vi.fn(),
-  stopImageCapture: vi.fn(),
-  setDepthCaptureCallback: vi.fn(),
-  startDepthCapture: vi.fn(),
-  stopDepthCapture: vi.fn(),
-  setFrameCallback: vi.fn(),
-  setTrackingLostCallback: vi.fn(),
-  setTrackingCallbacks: vi.fn(),
-  setTrackingRecoveredCallback: vi.fn(),
-  setTrackingStore: vi.fn(),
-  setSessionEndCallback: vi.fn(),
-  getScene: mockGetScene,
-  getCamera: mockGetCamera,
-  getArWorldGroup: vi.fn().mockReturnValue({ name: 'ar-world' }),
-  getImageCaptureFrameCount: vi.fn().mockReturnValue(0),
-  getDepthSampleCount: vi.fn().mockReturnValue(0),
-}));
-
-// ---------- lightweight stubs for the rest of main.ts imports ----------
-
-vi.mock('./utils/sentry', () => ({ initSentry: vi.fn() }));
-vi.mock('gps-plus-slam-js', () => ({
-  odometryTrackingRestarted: vi.fn((payload: unknown) => ({
-    type: 'gpsData/odometryTrackingRestarted',
-    payload,
-  })),
 }));
 vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
   createLogger: () => ({
@@ -100,9 +157,6 @@ vi.mock('./ui/ref-point-view-wiring', () => ({
     unsubscribe: vi.fn(),
   })),
 }));
-
-import { wireRefPointViews } from './ui/ref-point-view-wiring';
-
 vi.mock('./ui/hud', () => ({
   initUI: vi.fn(),
   showError: vi.fn(),
@@ -130,9 +184,6 @@ vi.mock('./ui/hud', () => ({
   updateTrackingQuality: vi.fn(),
   hideTrackingQuality: vi.fn(),
 }));
-
-import { showError } from './ui/hud';
-
 vi.mock('./ui/toast', () => ({
   initToast: vi.fn(),
   showToast: vi.fn(),
@@ -242,11 +293,7 @@ vi.mock('gps-plus-slam-app-framework/utils/list-formatter', () => ({
   listFormatter: { format: vi.fn() },
 }));
 vi.mock('./state/recorder-store', () => ({
-  createRecorderStore: vi.fn().mockReturnValue({
-    dispatch: vi.fn(),
-    getState: vi.fn().mockReturnValue({}),
-    subscribe: vi.fn().mockReturnValue(() => {}),
-  }),
+  createRecorderStore: vi.fn(() => mockStore),
   startSession: vi.fn(),
   endSession: vi.fn(),
   add2dImage: vi.fn(),
@@ -263,20 +310,7 @@ vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   extractOdomRotation: vi.fn().mockReturnValue([0, 0, 0, 1]),
 }));
 vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
-  loadRecordingOptions: vi.fn().mockReturnValue({
-    qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
-    images: { enabled: false, intervalMs: 1000, quality: 0.8 },
-    depth: { enabled: false, intervalMs: 1000 },
-    occupancy: { cellSizeM: 0.15 },
-    frameTileDisplay: { divisor: 2 },
-    visualization: {
-      frameTiles: true,
-      occupancyCubes: true,
-      gpsAlignmentMarkers: true,
-      compassCubes: true,
-    },
-    loopClosureDebug: { detectorEnabled: false },
-  }),
+  loadRecordingOptions: vi.fn(() => mockRecordingOptions),
 }));
 vi.mock('gps-plus-slam-app-framework/sensors/gps', () => ({
   startGpsWatch: vi.fn(),
@@ -326,25 +360,14 @@ vi.mock('gps-plus-slam-app-framework/visualization/map-overlay', () => ({
 vi.mock(
   'gps-plus-slam-app-framework/visualization/leaflet-map-overlay',
   () => ({
-    // Stateful visibility so toggle → show → hide → show sequences behave
-    // like the real overlay (which persists its Leaflet map across hides).
-    // A regular function (not an arrow) so `new LeafletMapOverlay(...)` works.
-    LeafletMapOverlay: vi.fn().mockImplementation(function () {
-      let visible = false;
-      const instance = {
-        isVisible: vi.fn(() => visible),
-        toggle: vi.fn(() => {
-          visible = !visible;
-        }),
-        setGpsPosition: vi.fn(),
-        getGpsPosition: vi.fn().mockReturnValue(null),
-        getLeafletMap: vi.fn().mockReturnValue(null),
-        updatePosition: vi.fn(),
-        dispose: vi.fn(),
-      };
-      mockLeafletOverlayInstances.push(instance);
-      return instance;
-    }),
+    LeafletMapOverlay: vi.fn().mockImplementation(() => ({
+      isVisible: vi.fn().mockReturnValue(false),
+      toggle: vi.fn(),
+      updatePosition: vi.fn(),
+      setGpsPosition: vi.fn(),
+      getGpsPosition: vi.fn().mockReturnValue(null),
+      dispose: vi.fn(),
+    })),
   })
 );
 vi.mock('gps-plus-slam-app-framework/storage/null-storage-backend', () => ({
@@ -402,101 +425,142 @@ vi.mock('./storage/folder-manager', () => ({
 }));
 
 // Import after all mocks are set up
-import {
-  handleEnterARForTesting,
-  handleToggleMapForTesting,
-  resetMainState,
-} from './main';
+import { handleEnterARForTesting, resetMainState } from './main';
 
-/** The ref-point view wiring instance created by the last Enter AR. */
-function lastRefPointViews(): { refreshMapMarkers: ReturnType<typeof vi.fn> } {
-  const results = vi.mocked(wireRefPointViews).mock.results;
-  const last = results[results.length - 1];
-  if (!last || last.type !== 'return') {
-    throw new Error('wireRefPointViews was not called');
-  }
-  return last.value as unknown as {
-    refreshMapMarkers: ReturnType<typeof vi.fn>;
-  };
-}
+const setupDom = () => {
+  document.body.innerHTML = `
+    <div id="app"></div>
+    <div id="setup-modal">
+      <h1 id="setup-title">Recorder</h1>
+    </div>
+    <div id="controls"></div>
+    <div id="replay-controls" class="hidden"></div>
+    <div id="ref-point-picker-modal"></div>
+  `;
+};
 
-describe('map-toggle → ref-point marker refresh wiring', () => {
+const lastFrameCallback = () =>
+  registeredXrFrameCallbacks[registeredXrFrameCallbacks.length - 1]!;
+
+describe('loop-closure capture wiring (opt-in)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLeafletOverlayInstances.length = 0;
+    registeredXrFrameCallbacks.length = 0;
+    xrFrameUnregisterSpies.length = 0;
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = false;
+    mockGetCurrentArPose.mockReturnValue(null);
     resetMainState();
-
-    document.body.innerHTML = `
-      <div id="app"></div>
-      <div id="setup-modal">
-        <h1 id="setup-title">Recorder</h1>
-      </div>
-      <div id="controls"></div>
-      <div id="replay-controls" class="hidden"></div>
-      <div id="ref-point-picker-modal"></div>
-    `;
+    setupDom();
   });
 
-  /**
-   * Why this test matters:
-   * The overlay creates its inner Leaflet map only inside show() (called by
-   * toggle()), so a refresh that runs before toggle() always sees a null map
-   * and draws nothing — the exact 2026-07-06 round-4 bug where the live
-   * minimap stayed empty despite the imported ref points sitting in the
-   * store. The refresh must run AFTER toggle() made the map visible.
-   */
-  it('first toggle refreshes ref-point markers AFTER the overlay was toggled visible', async () => {
+  it('OFF (default): no handler is created and no per-frame callback registered', async () => {
     await handleEnterARForTesting();
-    const refPointViews = lastRefPointViews();
 
-    handleToggleMapForTesting();
-
-    const overlay = mockLeafletOverlayInstances[0];
-    expect(overlay).toBeDefined();
-    expect(overlay!.toggle).toHaveBeenCalledTimes(1);
-    expect(refPointViews.refreshMapMarkers).toHaveBeenCalledTimes(1);
-    const toggleOrder = overlay!.toggle.mock.invocationCallOrder[0]!;
-    const refreshOrder =
-      refPointViews.refreshMapMarkers.mock.invocationCallOrder[0]!;
-    expect(refreshOrder).toBeGreaterThan(toggleOrder);
+    expect(mockCreateLoopClosureHandler).not.toHaveBeenCalled();
+    expect(mockRegisterXrFrameUpdate).not.toHaveBeenCalled();
   });
 
-  /**
-   * Why this test matters:
-   * Phases without store events (AR_READY has no GPS watch → no dispatches)
-   * cannot rely on the wirer's store subscriber to draw after a re-show, so
-   * every toggle that ends visible must refresh — while a toggle that hides
-   * the map must not.
-   */
-  it('re-show refreshes again; hiding does not refresh', async () => {
+  it('ON: feeds the current raw WebXR pose into a handler bound to the session store', async () => {
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
     await handleEnterARForTesting();
-    const refPointViews = lastRefPointViews();
 
-    handleToggleMapForTesting(); // show
-    expect(refPointViews.refreshMapMarkers).toHaveBeenCalledTimes(1);
+    expect(mockRegisterXrFrameUpdate).toHaveBeenCalledTimes(1);
 
-    handleToggleMapForTesting(); // hide
-    expect(refPointViews.refreshMapMarkers).toHaveBeenCalledTimes(1);
+    // First frame: handler is created lazily against the CURRENT store and
+    // fed the pose converted to tuples (raw WebXR — the reducer converts).
+    mockGetCurrentArPose.mockReturnValue({
+      position: { x: 1, y: 2, z: 3 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+    lastFrameCallback()({});
 
-    handleToggleMapForTesting(); // re-show
-    expect(refPointViews.refreshMapMarkers).toHaveBeenCalledTimes(2);
-    // Still the same overlay instance — the map persists across hide/show.
-    expect(mockLeafletOverlayInstances).toHaveLength(1);
-  });
-
-  /**
-   * Why this test matters:
-   * Before AR the scene/camera are unavailable; the toggle must surface the
-   * "enter AR first" error and must not attempt a marker refresh.
-   */
-  it('toggle before AR shows an error and refreshes nothing', () => {
-    mockGetScene.mockReturnValueOnce(null);
-
-    handleToggleMapForTesting();
-
-    expect(showError).toHaveBeenCalledWith(
-      'Enter AR session before using the map'
+    expect(mockCreateLoopClosureHandler).toHaveBeenCalledTimes(1);
+    expect(mockCreateLoopClosureHandler).toHaveBeenCalledWith(mockStore);
+    expect(mockLoopClosureHandler.processPose).toHaveBeenCalledWith(
+      [1, 2, 3],
+      [0, 0, 0, 1]
     );
-    expect(mockLeafletOverlayInstances).toHaveLength(0);
+
+    // Second frame: the handler is reused (not re-created per frame).
+    lastFrameCallback()({});
+    expect(mockCreateLoopClosureHandler).toHaveBeenCalledTimes(1);
+    expect(mockLoopClosureHandler.processPose).toHaveBeenCalledTimes(2);
+  });
+
+  it('ON: skips frames without a pose (tracking lost ⇒ getCurrentArPose null)', async () => {
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    await handleEnterARForTesting();
+
+    mockGetCurrentArPose.mockReturnValue(null);
+    lastFrameCallback()({});
+
+    expect(mockLoopClosureHandler.processPose).not.toHaveBeenCalled();
+  });
+
+  it('ON: tracking loss deactivates, recovery reactivates the handler', async () => {
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    await handleEnterARForTesting();
+
+    // Materialize the handler with one posed frame.
+    mockGetCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 0, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+    lastFrameCallback()({});
+
+    // Simulate the framework firing the tracking callbacks.
+    const lostCb = mockSetTrackingLostCallback.mock.calls[0]![0] as () => void;
+    lostCb();
+    expect(mockLoopClosureHandler.setTrackingActive).toHaveBeenCalledWith(
+      false
+    );
+
+    const recoveredCb = mockSetTrackingRecoveredCallback.mock
+      .calls[0]![0] as () => void;
+    recoveredCb();
+    expect(mockLoopClosureHandler.setTrackingActive).toHaveBeenLastCalledWith(
+      true
+    );
+  });
+
+  it('ON: an origin-reset restart clears the last-pose memory before reactivating', async () => {
+    // Why this matters: a reference-space reset jumps the pose by design — the
+    // handler must forget its pre-reset pose (deactivate ⇒ reset) and only
+    // then re-arm, or the recovery jump would be recorded as a loop closure.
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    await handleEnterARForTesting();
+
+    mockGetCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 0, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+    lastFrameCallback()({});
+    mockLoopClosureHandler.setTrackingActive.mockClear();
+
+    const restartCb = mockSetTrackingCallbacks.mock.calls[0]![0] as (
+      payload: unknown
+    ) => void;
+    restartCb({});
+
+    const calls = mockLoopClosureHandler.setTrackingActive.mock.calls.map(
+      (c) => c[0] as boolean
+    );
+    expect(calls).toEqual([false, true]);
+  });
+
+  it('disposes the per-frame registration on re-enter and on resetMainState', async () => {
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    await handleEnterARForTesting();
+    expect(xrFrameUnregisterSpies).toHaveLength(1);
+    expect(xrFrameUnregisterSpies[0]).not.toHaveBeenCalled();
+
+    await handleEnterARForTesting();
+    expect(xrFrameUnregisterSpies).toHaveLength(2);
+    // First registration torn down before the second is wired.
+    expect(xrFrameUnregisterSpies[0]).toHaveBeenCalledTimes(1);
+    expect(xrFrameUnregisterSpies[1]).not.toHaveBeenCalled();
+
+    resetMainState();
+    expect(xrFrameUnregisterSpies[1]).toHaveBeenCalledTimes(1);
   });
 });
