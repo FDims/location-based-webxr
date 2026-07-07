@@ -1250,6 +1250,7 @@ export function setFolderImportProgress(
 
   const hide = (): void => {
     container.classList.add('hidden');
+    container.removeAttribute('aria-valuenow');
     bar.style.width = '0%';
     text.textContent = '';
   };
@@ -1261,13 +1262,18 @@ export function setFolderImportProgress(
 
   container.classList.remove('hidden');
   if (state.kind === 'progress') {
+    const donePct = Math.round((state.done / state.total) * 100);
     text.textContent = `Recovering reference points… ${state.done} / ${state.total} recordings`;
-    bar.style.width = `${Math.round((state.done / state.total) * 100)}%`;
+    bar.style.width = `${donePct}%`;
+    // The static progressbar semantics (role/aria-valuemin/aria-valuemax)
+    // live on the container in index.html; only the value is dynamic.
+    container.setAttribute('aria-valuenow', String(donePct));
     return;
   }
 
   // Durable end state (async-UX rule): 100% + ✓ summary, linger, then hide.
   bar.style.width = '100%';
+  container.setAttribute('aria-valuenow', '100');
   text.textContent = folderImportDoneText(
     state.refPointsWritten,
     state.zipFilesTotal

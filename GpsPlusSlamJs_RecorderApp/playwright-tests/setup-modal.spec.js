@@ -180,6 +180,14 @@ test.describe('Setup Modal Flow', () => {
     await expect(page.locator('#folder-import-progress-text')).toHaveText(
       'Recovering reference points… 1 / 3 recordings'
     );
+    // Accessible progress semantics (PR #168 review): the container exposes
+    // role="progressbar" with a live aria-valuenow so screen readers can
+    // announce the pass — asserted here against the REAL index.html markup
+    // (the hud unit tests only cover the JS-driven aria-valuenow).
+    await expect(progress).toHaveAttribute('role', 'progressbar');
+    await expect(progress).toHaveAttribute('aria-valuemin', '0');
+    await expect(progress).toHaveAttribute('aria-valuemax', '100');
+    await expect(progress).toHaveAttribute('aria-valuenow', '33');
 
     // Durable end state: ✓ summary at 100%.
     await page.evaluate(() =>
@@ -192,6 +200,7 @@ test.describe('Setup Modal Flow', () => {
     await expect(page.locator('#folder-import-progress-text')).toHaveText(
       '✓ 5 reference points recovered from 3 recordings'
     );
+    await expect(progress).toHaveAttribute('aria-valuenow', '100');
     const barWidth = await page
       .locator('#folder-import-progress-bar')
       .evaluate((el) => el.style.width);

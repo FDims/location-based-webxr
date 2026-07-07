@@ -60,7 +60,9 @@ function setupMinimalDOM(): void {
     <details id="folder-import-section">
       <p id="folder-import-hint" class="hidden"></p>
       <p id="folder-status"></p>
-      <div id="folder-import-progress" class="hidden">
+      <div id="folder-import-progress" class="hidden" role="progressbar"
+        aria-valuemin="0" aria-valuemax="100"
+        aria-labelledby="folder-import-progress-text">
         <p id="folder-import-progress-text"></p>
         <div><div id="folder-import-progress-bar" style="width: 0%"></div></div>
       </div>
@@ -647,6 +649,34 @@ describe('setFolderImportProgress', () => {
 
     const { container } = getEls();
     expect(container.classList.contains('hidden')).toBe(true);
+  });
+
+  it('drives aria-valuenow so screen readers can announce progress (PR #168 a11y)', () => {
+    // Why: the visual bar is a plain styled div — without progressbar
+    // semantics assistive tech gets ZERO feedback about the indexing pass.
+    // The static role/aria-valuemin/aria-valuemax live in index.html
+    // (asserted by the setup-modal e2e against the real markup); hud.ts owns
+    // the dynamic aria-valuenow, which must track the completion percentage
+    // and be removed again when the bar hides.
+    vi.useFakeTimers();
+    try {
+      const { container } = getEls();
+
+      setFolderImportProgress({ kind: 'progress', done: 1, total: 3 });
+      expect(container.getAttribute('aria-valuenow')).toBe('33');
+
+      setFolderImportProgress({
+        kind: 'done',
+        refPointsWritten: 5,
+        zipFilesTotal: 3,
+      });
+      expect(container.getAttribute('aria-valuenow')).toBe('100');
+
+      setFolderImportProgress(null);
+      expect(container.getAttribute('aria-valuenow')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows the durable ✓ end state at 100%, lingers, then hides', () => {
