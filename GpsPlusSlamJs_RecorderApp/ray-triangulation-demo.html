@@ -561,11 +561,13 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mouseup', e => {
   if (orbitDrag && !orbitDrag.moved) {
-    // Short click (no meaningful drag) → shoot a ray from camera
-    const { P, fwd } = getCameraBasis();
+    // Short click (no meaningful drag) → shoot a ray from camera towards cursor
+    const { P, fwd, right, up } = getCameraBasis();
+    const FOV = Math.min(W, H) * 0.7;
+    const d = norm3(add3(add3(scale3(right, (e.offsetX - cx) / FOV), scale3(up, -(e.offsetY - cy) / FOV)), fwd));
     rays.push({
       origin: { x: P.x, y: P.y, z: P.z },
-      dir:    { x: fwd.x, y: fwd.y, z: fwd.z },
+      dir:    { x: d.x, y: d.y, z: d.z },
       weight: parseFloat(document.getElementById('weight').value),
       colour: COLOURS[rays.length % COLOURS.length],
     });
