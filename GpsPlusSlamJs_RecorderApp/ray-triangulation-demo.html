@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ray Triangulation Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d0f14;
+      --surface: #161b24;
+      --border:  #252d3d;
+      --accent:  #4f8ef7;
+      --good:    #34d399;
+      --warn:    #fbbf24;
+      --bad:     #f87171;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+    header p  { font-size: 12px; color: var(--muted); }
+    .hdot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      overflow: hidden;
+    }
+
+    #canvas-wrap {
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 50%, #1a2035 0%, #0d0f14 70%);
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+    #canvas-wrap.orbit-mode   { cursor: grab; }
+    #canvas-wrap.orbit-mode:active { cursor: grabbing; }
+    #canvas-wrap.addray-mode  { cursor: crosshair; }
+
+    /* Orbit hint overlay */
+    #mode-badge {
+      position: absolute;
+      bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(22,27,36,.85);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 4px 14px;
+      font-size: 11px;
+      color: var(--muted);
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+
+    /* ── Sidebar ── */
+    aside {
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .section {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-title {
+      font-size: 10px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 10px;
+    }
+
+    .metric { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+    .metric:last-child { margin-bottom: 0; }
+    .metric-label { font-size: 11px; color: var(--muted); }
+    .metric-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .metric-bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 3px; overflow: hidden; }
+    .metric-bar-fill { height: 100%; border-radius: 2px; transition: width .3s ease, background .3s ease; }
+
+    .coords { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .coord-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+    .coord-axis { font-size: 9px; font-weight: 600; color: var(--muted); }
+    .coord-val  { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    .ray-list {
+      flex: 1; overflow-y: auto;
+      padding: 8px 16px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .ray-item {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; display: flex; align-items: center; gap: 8px;
+      font-size: 11px; transition: border-color .15s;
+    }
+    .ray-item:hover { border-color: var(--accent); }
+    .ray-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ray-info { flex: 1; color: var(--muted); line-height: 1.6; }
+    .ray-info strong { color: var(--text); font-weight: 500; }
+    .ray-del { color: var(--muted); cursor: pointer; font-size: 14px; line-height:1; padding:2px 4px; border-radius:3px; transition: color .15s, background .15s; }
+    .ray-del:hover { color: var(--bad); background: rgba(248,113,113,.1); }
+    .empty-state { color: var(--muted); font-size: 12px; text-align: center; margin-top: 20px; line-height: 1.7; }
+
+    .controls { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .btn {
+      width: 100%; padding: 8px 12px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text); font-family: inherit; font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .btn:hover { border-color: var(--accent); background: rgba(79,142,247,.08); }
+    .btn.active {
+      background: rgba(79,142,247,.18);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: #3a78e8; }
+
+    label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
+    .range-row { display: flex; justify-content: space-between; }
+    .range-val { font-size: 11px; color: var(--text); font-variant-numeric: tabular-nums; }
+
+    #coaching { display:none; margin-top:8px; font-size:11px; color:var(--warn); line-height:1.6; }
+    #status {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; padding: 3px 9px; border-radius: 99px;
+      border: 1px solid var(--border); background: var(--bg); margin-left: auto;
+    }
+    #sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+
+    #tooltip {
+      position: fixed; background: rgba(22,27,36,.95);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 10px; font-size: 11px; color: var(--muted);
+      pointer-events: none; display: none; z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdot"></div>
+  <div>
+    <h1>Ray Triangulation Core — Interactive Demo</h1>
+    <p>Drag to orbit · scroll to zoom · click on the canvas to shoot a ray</p>
+  </div>
+  <div id="status">
+    <div id="sdot"></div>
+    <span id="status-text">No rays</span>
+  </div>
+</header>
+
+<main>
+  <div id="canvas-wrap" class="orbit-mode">
+    <canvas id="c"></canvas>
+    <div id="mode-badge">🖱 Drag to orbit · Scroll to zoom · Click to shoot ray</div>
+  </div>
+
+  <aside>
+    <div class="section">
+      <div class="section-title">Solved Point (metres)</div>
+      <div class="coords">
+        <div class="coord-box"><div class="coord-axis">X</div><div class="coord-val" id="px">—</div></div>
+        <div class="coord-box"><div class="coord-axis">Y</div><div class="coord-val" id="py">—</div></div>
+        <div class="coord-box"><div class="coord-axis">Z</div><div class="coord-val" id="pz">—</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Metrics</div>
+      <div class="metric">
+        <div class="metric-label">RMS Error (ray distance)</div>
+        <div class="metric-value" id="rms" style="color:var(--good)">—</div>
+        <div class="metric-bar"><div class="metric-bar-fill" id="rms-bar" style="width:0%;background:var(--good)"></div></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Uncertainty (baseline quality)</div>
+        <div class="metric-value" id="unc" style="color:var(--good)">—</div>
+        <div class="metric-bar"><div class="metric-bar-fill" id="unc-bar" style="width:0%;background:var(--good)"></div></div>
+      </div>
+      <div id="coaching">⚠ Move sideways and add more rays to improve baseline.</div>
+    </div>
+
+    <div class="controls">
+      <label>
+        Ray weight
+        <div class="range-row">
+          <input type="range" id="weight" min="0.1" max="3" step="0.1" value="1.0">
+          <span class="range-val" id="weight-val">1.0</span>
+        </div>
+      </label>
+      <button class="btn" onclick="clearAll()">Clear all rays</button>
+      <button class="btn primary" onclick="loadPreset()">Load preset scene</button>
+    </div>
+
+    <div class="section-title" style="padding:10px 16px 0">
+      Rays <span id="ray-count" style="color:var(--muted);font-size:10px">(0)</span>
+    </div>
+    <div class="ray-list" id="ray-list">
+      <div class="empty-state">Orbit to aim · <strong style="color:var(--text)">Click</strong> to shoot<br>a ray from the camera.</div>
+    </div>
+  </aside>
+</main>
+
+<div id="tooltip"></div>
+
+<script type="module">
+// ─── Solver (inlined from ray-triangulation-core.ts) ───────────────────────
+function solveClosestPointOfApproach(observations) {
+  if (observations.length === 0) return null;
+  const A = [0,0,0, 0,0,0, 0,0,0];
+  const B = [0,0,0];
+  for (const obs of observations) {
+    const len = Math.sqrt(obs.ray.direction.x**2 + obs.ray.direction.y**2 + obs.ray.direction.z**2);
+    if (len < 1e-10) continue;
+    const dx = obs.ray.direction.x/len, dy = obs.ray.direction.y/len, dz = obs.ray.direction.z/len;
+    if (obs.rayWeight > 0) {
+      const {x:ox,y:oy,z:oz} = obs.ray.origin; const w = obs.rayWeight;
+      const M = [1-dx*dx,-dx*dy,-dx*dz,-dy*dx,1-dy*dy,-dy*dz,-dz*dx,-dz*dy,1-dz*dz];
+      for (let i=0;i<9;i++) A[i]+=M[i]*w;
+      B[0]+=(M[0]*ox+M[1]*oy+M[2]*oz)*w; B[1]+=(M[3]*ox+M[4]*oy+M[5]*oz)*w; B[2]+=(M[6]*ox+M[7]*oy+M[8]*oz)*w;
+    }
+    if (obs.depthPoint && obs.depthWeight > 0) {
+      const {x:px,y:py,z:pz}=obs.depthPoint; const w=obs.depthWeight;
+      A[0]+=dx*dx*w;A[1]+=dx*dy*w;A[2]+=dx*dz*w;A[3]+=dy*dx*w;A[4]+=dy*dy*w;A[5]+=dy*dz*w;A[6]+=dz*dx*w;A[7]+=dz*dy*w;A[8]+=dz*dz*w;
+      const d=dx*px+dy*py+dz*pz; B[0]+=dx*d*w;B[1]+=dy*d*w;B[2]+=dz*d*w;
+    }
+  }
+  const inv = invertMatrix3x3(A);
+  if (!inv) return null;
+  const P = { x:inv[0]*B[0]+inv[1]*B[1]+inv[2]*B[2], y:inv[3]*B[0]+inv[4]*B[1]+inv[5]*B[2], z:inv[6]*B[0]+inv[7]*B[1]+inv[8]*B[2] };
+  let sumSq=0, valid=0;
+  for (const obs of observations) {
+    if (obs.rayWeight<=0) continue;
+    const len2=Math.sqrt(obs.ray.direction.x**2+obs.ray.direction.y**2+obs.ray.direction.z**2);
+    if (len2<1e-10) continue;
+    const dx=obs.ray.direction.x/len2,dy=obs.ray.direction.y/len2,dz=obs.ray.direction.z/len2;
+    const {x:ox,y:oy,z:oz}=obs.ray.origin;
+    const pox=P.x-ox,poy=P.y-oy,poz=P.z-oz;
+    sumSq+=(poy*dz-poz*dy)**2+(poz*dx-pox*dz)**2+(pox*dy-poy*dx)**2; valid++;
+  }
+  return { point:P, rmsError: valid>0?Math.sqrt(sumSq/valid):0, uncertainty: inv[0]+inv[4]+inv[8] };
+}
+function invertMatrix3x3(m) {
+  const det=m[0]*(m[4]*m[8]-m[5]*m[7])-m[1]*(m[3]*m[8]-m[5]*m[6])+m[2]*(m[3]*m[7]-m[4]*m[6]);
+  if (Math.abs(det)<1e-8) return null;
+  const i=1/det;
+  return [(m[4]*m[8]-m[7]*m[5])*i,(m[2]*m[7]-m[1]*m[8])*i,(m[1]*m[5]-m[2]*m[4])*i,(m[5]*m[6]-m[3]*m[8])*i,(m[0]*m[8]-m[2]*m[6])*i,(m[3]*m[2]-m[0]*m[5])*i,(m[3]*m[7]-m[6]*m[4])*i,(m[6]*m[1]-m[0]*m[7])*i,(m[0]*m[4]-m[3]*m[1])*i];
+}
+
+// ─── Vector math ────────────────────────────────────────────────────────────
+const dot3  = (a,b) => a.x*b.x + a.y*b.y + a.z*b.z;
+const cross3 = (a,b) => ({ x:a.y*b.z-a.z*b.y, y:a.z*b.x-a.x*b.z, z:a.x*b.y-a.y*b.x });
+const norm3 = v => { const l=Math.sqrt(dot3(v,v)); return l<1e-12?v:{x:v.x/l,y:v.y/l,z:v.z/l}; };
+const add3  = (a,b) => ({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z});
+const scale3= (v,s) => ({x:v.x*s,y:v.y*s,z:v.z*s});
+
+// ─── Camera ─────────────────────────────────────────────────────────────────
+const cam = { az: -0.5, el: 0.42, dist: 12 };
+
+function getCameraBasis() {
+  const P = {
+    x: cam.dist * Math.cos(cam.el) * Math.sin(cam.az),
+    y: cam.dist * Math.sin(cam.el),
+    z: cam.dist * Math.cos(cam.el) * Math.cos(cam.az),
+  };
+  const fwd   = norm3({x:-P.x, y:-P.y, z:-P.z});
+  const right = norm3(cross3(fwd, {x:0,y:1,z:0}));
+  const up    = cross3(right, fwd);
+  return { P, fwd, right, up };
+}
+
+function project3(wx, wy, wz) {
+  const { P, fwd, right, up } = getCameraBasis();
+  const v = { x:wx-P.x, y:wy-P.y, z:wz-P.z };
+  const vx = dot3(v, right), vy = dot3(v, up), vz = dot3(v, fwd);
+  if (vz < 0.05) return null;
+  const FOV = Math.min(W, H) * 0.7;
+  return { sx: cx + vx*FOV/vz, sy: cy - vy*FOV/vz, depth: vz };
+}
+
+// Unproject screen pixel to the y=0 ground plane
+function unprojectGround(sx, sy) {
+  const { P, fwd, right, up } = getCameraBasis();
+  const FOV = Math.min(W, H) * 0.7;
+  // Ray direction in world space
+  const d = norm3(add3(add3(scale3(right,(sx-cx)/FOV), scale3(up,-(sy-cy)/FOV)), fwd));
+  if (Math.abs(d.y) < 1e-6) return null;
+  const t = -P.y / d.y;
+  if (t < 0) return null;
+  return { x: P.x+t*d.x, y: 0, z: P.z+t*d.z };
+}
+
+// ─── State ──────────────────────────────────────────────────────────────────
+const COLOURS = ['#4f8ef7','#a78bfa','#34d399','#fbbf24','#f87171','#38bdf8','#fb923c','#e879f9'];
+let rays   = [];
+let result = null;
+
+// Drag state — tracks whether the mouse moved enough to count as orbit vs click
+let orbitDrag = null;   // { az0, el0, x, y, moved }
+
+// ─── Canvas setup ────────────────────────────────────────────────────────────
+const wrap   = document.getElementById('canvas-wrap');
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width  = wrap.clientWidth;
+  H = canvas.height = wrap.clientHeight;
+  cx = W/2; cy = H/2;
+  draw();
+}
+new ResizeObserver(resize).observe(wrap);
+
+// ─── Draw ────────────────────────────────────────────────────────────────────
+function drawLine3(ax,ay,az, bx,by,bz, style, lineWidth=1, dash=[]) {
+  const A = project3(ax,ay,az);
+  const B = project3(bx,by,bz);
+  if (!A || !B) return;
+  ctx.save();
+  ctx.strokeStyle = style; ctx.lineWidth = lineWidth;
+  ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(A.sx,A.sy); ctx.lineTo(B.sx,B.sy); ctx.stroke();
+  ctx.restore();
+}
+
+function drawGrid() {
+  const N = 6;
+  for (let i=-N; i<=N; i++) {
+    const alpha = i===0 ? 0.25 : 0.06;
+    drawLine3(-N,0,i, N,0,i, `rgba(255,255,255,${alpha})`, i===0?1.5:1);
+    drawLine3(i,0,-N, i,0,N, `rgba(255,255,255,${alpha})`, i===0?1.5:1);
+  }
+  // Y axis
+  drawLine3(0,0,0, 0,4,0, 'rgba(255,255,255,0.18)', 1);
+  // Axis labels
+  const px=project3(N+0.3,0,0), py=project3(0,4.3,0), pz=project3(0,0,N+0.3);
+  ctx.fillStyle='rgba(100,116,139,0.7)'; ctx.font='11px Inter,sans-serif';
+  if(px) ctx.fillText('+X',px.sx,px.sy);
+  if(py) ctx.fillText('+Y',py.sx,py.sy);
+  if(pz) ctx.fillText('+Z',pz.sx,pz.sy);
+}
+
+function drawArrow3(ox,oy,oz, dx,dy,dz, colour, alpha=1) {
+  const len = Math.sqrt(dx*dx+dy*dy+dz*dz); if(len<1e-9) return;
+  const ndx=dx/len, ndy=dy/len, ndz=dz/len;
+  const SHAFT = 4; // world units
+  const ex=ox+ndx*SHAFT, ey=oy+ndy*SHAFT, ez=oz+ndz*SHAFT;
+
+  ctx.save(); ctx.globalAlpha=alpha;
+
+  // Shaft
+  drawLine3(ox,oy,oz, ex,ey,ez, colour, 2);
+
+  // Arrowhead (in screen space at projected tip)
+  const A = project3(ex,ey,ez);
+  const B = project3(ox,oy,oz);
+  if (A && B) {
+    const ang = Math.atan2(A.sy-B.sy, A.sx-B.sx);
+    const hs = 10;
+    ctx.fillStyle = colour;
+    ctx.beginPath();
+    ctx.moveTo(A.sx, A.sy);
+    ctx.lineTo(A.sx - hs*Math.cos(ang-0.4), A.sy - hs*Math.sin(ang-0.4));
+    ctx.lineTo(A.sx - hs*Math.cos(ang+0.4), A.sy - hs*Math.sin(ang+0.4));
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Origin dot
+  const O = project3(ox,oy,oz);
+  if (O) {
+    ctx.fillStyle = colour;
+    ctx.beginPath(); ctx.arc(O.sx,O.sy,5,0,Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawDot3(wx,wy,wz, r, col, glow=0) {
+  const p = project3(wx,wy,wz); if(!p) return;
+  ctx.save();
+  if (glow>0) { ctx.shadowBlur=glow; ctx.shadowColor=col; }
+  ctx.fillStyle=col;
+  ctx.beginPath(); ctx.arc(p.sx,p.sy,r,0,Math.PI*2); ctx.fill();
+  if (glow>0) {
+    ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(p.sx,p.sy,r,0,Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+  return p;
+}
+
+// Draw an approximate circle in 3D around a world point on XZ plane
+function drawUncertaintyRing3(wx,wy,wz, worldR, col) {
+  const N=48;
+  ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1; ctx.setLineDash([3,5]); ctx.globalAlpha=0.4;
+  ctx.beginPath();
+  let first=true;
+  for(let i=0;i<=N;i++){
+    const a=i/N*Math.PI*2;
+    const p=project3(wx+Math.cos(a)*worldR, wy, wz+Math.sin(a)*worldR);
+    if(!p){first=true;continue;}
+    if(first){ctx.moveTo(p.sx,p.sy);first=false;}else ctx.lineTo(p.sx,p.sy);
+  }
+  ctx.stroke(); ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  drawGrid();
+
+  // Per-ray dashed perpendicular lines to solved point
+  if (result) {
+    const {x:px,y:py,z:pz} = result.point;
+    for (const r of rays) {
+      if (r.weight<=0) continue;
+      const {x:ox,y:oy,z:oz}=r.origin;
+      const {x:dx,y:dy,z:dz}=r.dir;
+      const len=Math.sqrt(dx*dx+dy*dy+dz*dz); if(len<1e-9) continue;
+      const ndx=dx/len,ndy=dy/len,ndz=dz/len;
+      // project point onto ray: foot = o + ((p-o)·d̂)·d̂
+      const t=(px-ox)*ndx+(py-oy)*ndy+(pz-oz)*ndz;
+      const fx=ox+t*ndx, fy=oy+t*ndy, fz=oz+t*ndz;
+      drawLine3(px,py,pz, fx,fy,fz, 'rgba(255,255,255,0.12)', 1, [3,5]);
+    }
+  }
+
+  // Rays
+  for (const r of rays) {
+    drawArrow3(r.origin.x,r.origin.y,r.origin.z, r.dir.x,r.dir.y,r.dir.z, r.colour);
+  }
+
+  // No drag preview needed — ray shoots on click, not drag
+
+  // Solved point
+  if (result) {
+    const {x:px,y:py,z:pz}=result.point;
+    const col = result.uncertainty>2 ? '#fbbf24' : '#34d399';
+    // uncertainty ring on ground plane (at solved y height)
+    const uncR = Math.min(3, result.uncertainty * 0.3);
+    if (uncR > 0.05) drawUncertaintyRing3(px,py,pz, uncR, col);
+    drawDot3(px,py,pz, 7, col, 18);
+    // label
+    const sp=project3(px,py,pz);
+    if(sp){
+      ctx.fillStyle='rgba(226,232,240,0.8)'; ctx.font='10px Inter,sans-serif';
+      ctx.fillText(`P(${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)})`, sp.sx+11, sp.sy-6);
+    }
+  }
+}
+
+// ─── Solve ────────────────────────────────────────────────────────────────────
+function solve() {
+  const obs = rays.map(r => ({
+    ray: { origin: r.origin, direction: r.dir },
+    rayWeight: r.weight,
+  }));
+  result = solveClosestPointOfApproach(obs);
+  updateSidebar();
+  draw();
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
+const fmt = (v,d=2) => typeof v==='number'?v.toFixed(d):'—';
+
+function updateSidebar() {
+  const R = result;
+  document.getElementById('px').textContent = R ? fmt(R.point.x) : '—';
+  document.getElementById('py').textContent = R ? fmt(R.point.y) : '—';
+  document.getElementById('pz').textContent = R ? fmt(R.point.z) : '—';
+
+  if (R) {
+    const rCol = R.rmsError<0.05?'var(--good)':R.rmsError<0.5?'var(--warn)':'var(--bad)';
+    const uCol = R.uncertainty<1?'var(--good)':R.uncertainty<2?'var(--warn)':'var(--bad)';
+    document.getElementById('rms').textContent = fmt(R.rmsError,3)+' m'; document.getElementById('rms').style.color=rCol;
+    document.getElementById('rms-bar').style.cssText=`width:${Math.min(100,R.rmsError*100)}%;background:${rCol}`;
+    document.getElementById('unc').textContent = fmt(R.uncertainty,2); document.getElementById('unc').style.color=uCol;
+    document.getElementById('unc-bar').style.cssText=`width:${Math.min(100,R.uncertainty*20)}%;background:${uCol}`;
+    document.getElementById('coaching').style.display = R.uncertainty>2?'block':'none';
+    const dot=document.getElementById('sdot'), txt=document.getElementById('status-text');
+    if(R.rmsError<0.05&&R.uncertainty<1){dot.style.background='var(--good)';txt.textContent='Converged';}
+    else if(R.uncertainty>2){dot.style.background='var(--warn)';txt.textContent='Needs baseline';}
+    else{dot.style.background='var(--accent)';txt.textContent='Solving…';}
+  } else {
+    ['rms','unc'].forEach(id=>{document.getElementById(id).textContent='—';});
+    document.getElementById('rms-bar').style.width='0%';
+    document.getElementById('unc-bar').style.width='0%';
+    document.getElementById('coaching').style.display='none';
+    document.getElementById('sdot').style.background='var(--muted)';
+    document.getElementById('status-text').textContent=rays.length?'Singular':'No rays';
+  }
+  updateRayList();
+}
+
+function updateRayList() {
+  const list=document.getElementById('ray-list');
+  document.getElementById('ray-count').textContent=`(${rays.length})`;
+  if(!rays.length){
+    list.innerHTML='<div class="empty-state">Switch to <strong style="color:var(--text)">Add Ray Mode</strong><br>then click-drag on the canvas<br>to place rays.</div>';
+    return;
+  }
+  list.innerHTML=rays.map((r,i)=>`
+    <div class="ray-item">
+      <div class="ray-swatch" style="background:${r.colour}"></div>
+      <div class="ray-info">
+        <strong>Ray ${i+1}</strong><br>
+        o=(${fmt(r.origin.x)},${fmt(r.origin.y)},${fmt(r.origin.z)})<br>
+        d=(${fmt(r.dir.x,2)},${fmt(r.dir.y,2)},${fmt(r.dir.z,2)})
+        w=${r.weight.toFixed(1)}
+      </div>
+      <div class="ray-del" onclick="deleteRay(${i})">×</div>
+    </div>
+  `).join('');
+}
+window.deleteRay = i => { rays.splice(i,1); solve(); };
+
+// ─── Interaction ──────────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 2) return;
+  // Always start as potential orbit — we'll decide on mouseup
+  orbitDrag = { az0: cam.az, el0: cam.el, x: e.offsetX, y: e.offsetY, moved: false };
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (orbitDrag) {
+    const dx = e.offsetX - orbitDrag.x;
+    const dy = e.offsetY - orbitDrag.y;
+    if (Math.sqrt(dx*dx+dy*dy) > 5) orbitDrag.moved = true;
+    if (orbitDrag.moved) {
+      cam.az = orbitDrag.az0 - dx * 0.007;
+      cam.el = Math.max(-1.2, Math.min(1.2, orbitDrag.el0 + dy * 0.007));
+      draw();
+    }
+  }
+  document.getElementById('tooltip').style.display = 'none';
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (orbitDrag && !orbitDrag.moved) {
+    // Short click (no meaningful drag) → shoot a ray from camera
+    const { P, fwd } = getCameraBasis();
+    rays.push({
+      origin: { x: P.x, y: P.y, z: P.z },
+      dir:    { x: fwd.x, y: fwd.y, z: fwd.z },
+      weight: parseFloat(document.getElementById('weight').value),
+      colour: COLOURS[rays.length % COLOURS.length],
+    });
+    solve();
+  }
+  orbitDrag = null;
+});
+
+canvas.addEventListener('mouseleave', () => { orbitDrag = null; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.dist = Math.max(3, Math.min(30, cam.dist + e.deltaY * 0.02));
+  draw();
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+window.toggleAddRay = function() {
+  addMode = !addMode;
+  const btn=document.getElementById('add-ray-btn');
+  btn.classList.toggle('active', addMode);
+  btn.textContent = addMode ? '✓ Add Ray Mode (active)' : '+ Add Ray Mode';
+  wrap.className = addMode ? 'addray-mode' : 'orbit-mode';
+  document.getElementById('mode-badge').textContent = addMode
+    ? '✦ Click-drag on ground plane to place a ray'
+    : '🖱 Drag to orbit · Scroll to zoom';
+};
+
+document.getElementById('weight').addEventListener('input', e => {
+  document.getElementById('weight-val').textContent = parseFloat(e.target.value).toFixed(1);
+});
+
+window.clearAll = () => { rays=[]; result=null; updateSidebar(); draw(); };
+
+window.loadPreset = function() {
+  rays = [
+    { origin:{x:-3,y:0,z:0},  dir:{x:1,y:0,z:0.3},   weight:1,   colour:COLOURS[0] },
+    { origin:{x:3,y:0,z:-1},  dir:{x:-1,y:0,z:0.5},  weight:1,   colour:COLOURS[1] },
+    { origin:{x:0,y:0,z:-4},  dir:{x:0.1,y:0,z:1},   weight:1,   colour:COLOURS[2] },
+    { origin:{x:-2,y:0,z:2},  dir:{x:0.8,y:0,z:-1},  weight:0.4, colour:COLOURS[3] },
+  ];
+  solve();
+};
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+resize();
+</script>
+</body>
+</html>
