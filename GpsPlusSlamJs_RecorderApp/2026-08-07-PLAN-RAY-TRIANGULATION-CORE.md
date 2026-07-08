@@ -18,35 +18,83 @@ The closest-point-of-approach solver: given N weighted rays in one frame, comput
  - strong triangulation baseline out-votes weak depth priors
 
  ### IMPLEMENTATION
- 1. Implement the closest-point-of-approach solver in a new file src/lib/ray-triangulation-core.ts
+ 1. Implement the closest-point-of-approach solver in a new file src/utils/ray-triangulation-core.ts
 
  ```typescript
+ /**
+  * Represents a lightweight 3D Vector to avoid Three.js dependencies.
+  */
  export interface Vec3 {
    x: number;
    y: number;
    z: number;
  }
 
+ /**
+  * Represents a 3D Ray shot by the user.
+  */
  export interface Ray {
    origin: Vec3;
-   direction: Vec3; // Must be a normalized unit vector
+   /** Must be a normalized unit vector */
+   direction: Vec3;
  }
 
+ /**
+  * An Observation represents a single "measurement shot" taken by the user.
+  * It always contains a ray, and may optionally contain a depth reading.
+  * We group them together so that outlier-rejection algorithms (like RANSAC) 
+  * can reject a bad shot (both ray and depth) entirely.
+  */
  export interface Observation {
    ray: Ray;
-   rayWeight: number; // Trust in the ray direction (1.0 default)
+
+   /** 
+    * How much we trust the ray direction. 
+    * Typically 1.0. Lower it if the device tracking was unstable.
+    */
+   rayWeight: number; 
    
-   // Optional depth prior along this specific ray
+   /** Optional 3D point derived from the depth map along this ray. */
    depthPoint?: Vec3; 
-   depthWeight?: number; // Decays with distance. 0 means ignore.
+   
+   /** 
+    * How much we trust the depth reading. 
+    * Should decay with distance (e.g., high for 1m away, near 0 for 50m away).
+    */
+   depthWeight?: number; 
  }
 
+ /**
+  * The computed result of triangulating multiple observations.
+  */
  export interface TriangulationResult {
+   /** The final computed best-fit point */
    point: Vec3;
-   uncertainty: number; // The trace of the covariance matrix (A_inv). Higher means more uncertain.
-   rmsError: number;    // The average physical distance from the calculated point to all rays
+   
+   /** 
+    * A metric indicating how confident we are in the position.
+    * Uses the trace of the covariance matrix. High values mean the rays
+    * were nearly parallel (small baseline) and the user needs to move sideways.
+    */
+   uncertainty: number; 
+   
+   /** 
+    * The Root Mean Square error (average orthogonal distance from the computed
+    * point to the rays). Measures how tightly the rays intersect.
+    */
+   rmsError: number;    
  }
 
+ /**
+  * Computes the point that minimizes the weighted sum of squared distances 
+  * to all provided rays and depth points.
+  * 
+  * Uses a Linear Least Squares approach. It handles any number of rays (N >= 1)
+  * by accumulating their constraints into a single 3x3 matrix.
+  * 
+  * @param observations - An array of 1 to N observations. 
+  * @returns TriangulationResult or null if the math is uninvertible (e.g., 1 ray and no depth prior).
+  */
  export function solveClosestPointOfApproach(observations: Observation[]): TriangulationResult | null {
    if (observations.length === 0) return null;
 
