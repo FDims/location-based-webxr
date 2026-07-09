@@ -22,7 +22,13 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/main.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/**/*.spec.ts',
+        'src/main.ts',
+        // Benchmarks are measurement instruments, not code under test.
+        'src/**/*.bench.ts',
+      ],
       thresholds: {
         statements: 87,
         branches: 75,

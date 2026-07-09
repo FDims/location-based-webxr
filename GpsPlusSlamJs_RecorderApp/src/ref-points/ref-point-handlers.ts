@@ -291,9 +291,15 @@ export function createRefPointHandlers(
       let refPointName: string;
 
       if (nearbyMatch) {
-        // Re-observation: use the matched ref point's H3 index, skip picker
-        refPointId = currentH3;
-        refPointName = nearbyMatch.displayName ?? currentH3;
+        // Re-observation: append to the MATCHED definition's id, skip picker.
+        // The matcher tolerates gridDisk neighbor cells, so `currentH3` may
+        // differ from the matched anchor's cell — persisting under the
+        // current cell would create a sibling refPoints/{id}.json and split
+        // the point's observation history (D5, 2026-07-05 folder-import
+        // feedback, Finding 5). The re-observation cooldown below already
+        // keys on the matched id.
+        refPointId = nearbyMatch.h3Index;
+        refPointName = nearbyMatch.displayName ?? nearbyMatch.h3Index;
 
         // Per-cell cooldown: reject rapid duplicate taps (Aachen audit Issue 3)
         const lastMark = lastReObservationTimestamp.get(nearbyMatch.h3Index);

@@ -1,17 +1,20 @@
 /**
  * Tests for ref-point-recovery.ts
  *
- * Recovery module: extracts full RefPointDefinition objects from ZIP files
- * and merges observations by H3 cell ID. Unlike ref-point-importer (which
- * returns simplified ImportedRefPoint for display), this module preserves
- * complete observation data (AR poses, GPS, timestamps) needed for 3D
- * display and OPFS restoration after browser data loss.
+ * Indexing module: extracts full RefPointDefinition objects from recording
+ * ZIPs, grouped per scenario with observations merged by H3 cell ID
+ * (`indexRefPointDefinitionsFromFolder` — 2026-07-05 folder-import plan).
+ * Unlike ref-point-importer (which returns simplified ImportedRefPoint for
+ * display), this module preserves complete observation data (AR poses, GPS,
+ * timestamps) needed for 3D display and OPFS restoration after browser data
+ * loss.
  *
  * @module ref-point-recovery.test
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
+import { gpsToH3 } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 import type {
   RefPointDefinition,
   RefPointObservation,
@@ -96,6 +99,17 @@ function makeObservation(
   };
 }
 
+// Distinct physical spots (~1.1 km apart) with their REAL H3 cell ids.
+// Since the per-bucket merge (D6(a)) clusters definitions spatially and
+// re-mints legacy ids, fixtures for DISTINCT logical points must carry
+// distinct positions and H3-shaped ids or they would (correctly) merge.
+const POS_A = { lat: 50.0, lon: 8.0 };
+const POS_B = { lat: 50.01, lon: 8.0 };
+const POS_C = { lat: 50.02, lon: 8.0 };
+const CELL_A = gpsToH3(POS_A.lat, POS_A.lon);
+const CELL_B = gpsToH3(POS_B.lat, POS_B.lon);
+const CELL_C = gpsToH3(POS_C.lat, POS_C.lon);
+
 /** Build a RefPointDefinition with the given observations. */
 function makeRefPointDef(
   id: string,
@@ -110,27 +124,39 @@ function makeRefPointDef(
   };
 }
 
-/** Create a ZIP blob containing ref point definitions and an optional session.json. */
+/**
+ * Create a ZIP blob containing ref point definitions and an optional session.json.
+ *
+ * `metadataField` controls how the scenario name is carried (mirrors the
+ * production zips): `'scenarioName'` (legacy field, default — matches the
+ * older tests), `'contextTag'` (current framework field), or `'none'`
+ * (no session.json at all → indexing must fall back to DEFAULT_SCENARIO).
+ */
 async function createTestZipBlob(
   refPoints: RefPointDefinition[],
-  scenarioName: string = 'TestScenario'
+  scenarioName: string = 'TestScenario',
+  metadataField: 'scenarioName' | 'contextTag' | 'none' = 'scenarioName'
 ): Promise<Blob> {
   const blobWriter = new BlobWriter('application/zip');
   const zipWriter = new ZipWriter(blobWriter, { level: 0 });
 
-  await zipWriter.add(
-    'session.json',
-    new TextReader(
-      JSON.stringify({
-        version: 1,
-        startedAt: new Date().toISOString(),
-        scenarioName,
-        actionCount: 0,
-        frameCount: 0,
-        userAgent: 'test',
-      })
-    )
-  );
+  if (metadataField !== 'none') {
+    await zipWriter.add(
+      'session.json',
+      new TextReader(
+        JSON.stringify({
+          version: 1,
+          startedAt: new Date().toISOString(),
+          ...(metadataField === 'contextTag'
+            ? { contextTag: scenarioName }
+            : { scenarioName }),
+          actionCount: 0,
+          frameCount: 0,
+          userAgent: 'test',
+        })
+      )
+    );
+  }
 
   for (const rp of refPoints) {
     await zipWriter.add(
@@ -168,404 +194,476 @@ describe('ref-point-recovery', () => {
     vi.restoreAllMocks();
   });
 
-  describe('recoverRefPointDefinitionsFromZips', () => {
+  // ==========================================================================
+  // indexRefPointDefinitionsFromFolder — the scenario-aware, observable,
+  // abortable full-folder pass (2026-07-05 folder-import plan, Slice 1).
+  // ==========================================================================
+  describe('indexRefPointDefinitionsFromFolder', () => {
     /**
      * Why this test matters:
-     * Empty folder is the base case — recovery should not crash and
-     * should return an empty result set.
+     * D4a (strict per-scenario routing) depends on resolving each ZIP's
+     * scenario from its session.json with the same precedence as the replay
+     * discovery: contextTag (current) → scenarioName (legacy) → the
+     * canonical Default Scenario for zips with no metadata.
      */
-    it('should return empty definitions for empty folder', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('groups definitions per scenario (contextTag primary, legacy scenarioName fallback, missing metadata → Default Scenario)', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
+      const { DEFAULT_SCENARIO } = await import('./session-zip-naming');
 
-      const folderHandle = createMockFolderHandle([]);
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const zipParis = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Paris point', [
+            makeObservation('s1', 1000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+      const zipBerlin = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_B, 'Berlin point', [
+            makeObservation('s2', 2000, POS_B.lat, POS_B.lon),
+          ]),
+        ],
+        'Berlin',
+        'scenarioName'
+      );
+      const zipNoMeta = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_C, 'Orphan point', [
+            makeObservation('s3', 3000, POS_C.lat, POS_C.lon),
+          ]),
+        ],
+        'ignored',
+        'none'
+      );
 
-      expect(result.definitions).toEqual([]);
-      expect(result.zipFilesScanned).toBe(0);
+      const folderHandle = createMockFolderHandle([
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', zipParis),
+        createMockFileEntry('recording-2026-01-02_10-00-00utc.zip', zipBerlin),
+        createMockFileEntry('recording-2026-01-03_10-00-00utc.zip', zipNoMeta),
+      ]);
+
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle);
+
+      expect(result.zipFilesScanned).toBe(3);
       expect(result.errors).toEqual([]);
+      expect([...result.definitionsByScenario.keys()].sort()).toEqual(
+        ['Berlin', DEFAULT_SCENARIO, 'Paris'].sort()
+      );
+      expect(
+        result.definitionsByScenario.get('Paris')!.map((d) => d.id)
+      ).toEqual([CELL_A]);
+      expect(
+        result.definitionsByScenario.get('Berlin')!.map((d) => d.id)
+      ).toEqual([CELL_B]);
+      expect(
+        result.definitionsByScenario.get(DEFAULT_SCENARIO)!.map((d) => d.id)
+      ).toEqual([CELL_C]);
     });
 
     /**
      * Why this test matters:
-     * Core recovery scenario — a single ZIP with one ref point should return
-     * the full RefPointDefinition including all observation data (AR poses,
-     * GPS, timestamps) needed for 3D display and OPFS restoration.
+     * The literal "Default Scenario" written into metadata must land in the
+     * same canonical bucket as missing metadata (UX feedback 2026-03-23
+     * Issue 2) — otherwise the same recordings split into two groups.
      */
-    it('should extract full RefPointDefinition from single ZIP', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('canonicalizes an explicit "Default Scenario" metadata value into the same bucket as missing metadata', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
+      const { DEFAULT_SCENARIO } = await import('./session-zip-naming');
 
-      const obs = makeObservation('session-1', 1000, 50.1, 8.1);
-      const def = makeRefPointDef('h3-cell-a', 'Bench', [obs]);
-      const zipBlob = await createTestZipBlob([def]);
+      const zipExplicit = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'A', [
+            makeObservation('s1', 1000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        DEFAULT_SCENARIO,
+        'contextTag'
+      );
+      const zipNone = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_B, 'B', [
+            makeObservation('s2', 2000, POS_B.lat, POS_B.lon),
+          ]),
+        ],
+        'ignored',
+        'none'
+      );
 
       const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session-1.zip', zipBlob),
+        createMockFileEntry(
+          'recording-2026-01-01_10-00-00utc.zip',
+          zipExplicit
+        ),
+        createMockFileEntry('recording-2026-01-02_10-00-00utc.zip', zipNone),
       ]);
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle);
 
-      expect(result.definitions).toHaveLength(1);
-      expect(result.definitions[0].id).toBe('h3-cell-a');
-      expect(result.definitions[0].name).toBe('Bench');
-      expect(result.definitions[0].observations).toHaveLength(1);
-      // Full observation data preserved (not simplified to lat/lon)
-      expect(result.definitions[0].observations[0].arPose.position).toEqual([
-        1, 2, 3,
+      expect([...result.definitionsByScenario.keys()]).toEqual([
+        DEFAULT_SCENARIO,
       ]);
       expect(
-        result.definitions[0].observations[0].gpsPoint.latitude
-      ).toBeCloseTo(50.1);
-      expect(result.definitions[0].observations[0].sessionId).toBe('session-1');
-      expect(result.zipFilesScanned).toBe(1);
+        result.definitionsByScenario
+          .get(DEFAULT_SCENARIO)!
+          .map((d) => d.id)
+          .sort()
+      ).toEqual([CELL_A, CELL_B].sort());
     });
 
     /**
      * Why this test matters:
-     * The key merge scenario — same H3 cell observed in two different session
-     * ZIPs. Observations must be unioned (not deduplicated by first-wins like
-     * the simplified importer). This is what enables full OPFS reconstruction.
+     * The start-screen progress bar (D2) renders directly from these
+     * callbacks: an initial 0/total event (so the bar appears before the
+     * first ZIP finishes) and one event per processed ZIP. Non-zip files
+     * must not inflate the total.
      */
-    it('should merge observations from multiple ZIPs for the same ref point ID', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('reports an initial 0/total progress event and one event per ZIP, excluding non-zip entries from the total', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
 
-      const obs1 = makeObservation('session-1', 1000, 50.1, 8.1);
-      const obs2 = makeObservation('session-2', 2000, 50.1001, 8.1001);
-
-      const def1 = makeRefPointDef('h3-cell-a', 'Bench', [obs1]);
-      const def2 = makeRefPointDef('h3-cell-a', 'Bench Renamed', [obs2]);
-
-      const zip1 = await createTestZipBlob([def1]);
-      const zip2 = await createTestZipBlob([def2]);
-
-      const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session-1.zip', zip1),
-        createMockFileEntry('session-2.zip', zip2),
-      ]);
-
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
-
-      expect(result.definitions).toHaveLength(1);
-      expect(result.definitions[0].id).toBe('h3-cell-a');
-      // Observations from both ZIPs merged
-      expect(result.definitions[0].observations).toHaveLength(2);
-      // Uses earliest createdAt
-      expect(result.definitions[0].createdAt).toBe(1000);
-      // Uses first-encountered name (consistent with current first-name-wins behavior)
-      expect(result.definitions[0].name).toBe('Bench');
-      expect(result.zipFilesScanned).toBe(2);
-    });
-
-    /**
-     * Why this test matters:
-     * Different H3 cells must remain separate — the merge is by ID only.
-     */
-    it('should keep different H3 cell ref points separate', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
-        await import('./ref-point-recovery');
-
-      const defA = makeRefPointDef('h3-cell-a', 'Bench', [
-        makeObservation('session-1', 1000, 50.1, 8.1),
-      ]);
-      const defB = makeRefPointDef('h3-cell-b', 'Tree', [
-        makeObservation('session-1', 1001, 50.2, 8.2),
-      ]);
-
-      const zip1 = await createTestZipBlob([defA]);
-      const zip2 = await createTestZipBlob([defB]);
-
-      const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session-1.zip', zip1),
-        createMockFileEntry('session-2.zip', zip2),
-      ]);
-
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
-
-      expect(result.definitions).toHaveLength(2);
-      const ids = result.definitions.map((d) => d.id).sort();
-      expect(ids).toEqual(['h3-cell-a', 'h3-cell-b']);
-    });
-
-    /**
-     * Why this test matters:
-     * Deduplication by sessionId + timestamp prevents double-counting when
-     * the same observation appears in multiple exports (e.g., periodic sync
-     * re-exports).
-     */
-    it('should deduplicate observations by sessionId + timestamp', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
-        await import('./ref-point-recovery');
-
-      // Same observation in two ZIPs (periodic sync produced both)
-      const obs = makeObservation('session-1', 1000, 50.1, 8.1);
-      const def1 = makeRefPointDef('h3-cell-a', 'Bench', [obs]);
-      const def2 = makeRefPointDef('h3-cell-a', 'Bench', [obs]);
-
-      const zip1 = await createTestZipBlob([def1]);
-      const zip2 = await createTestZipBlob([def2]);
-
-      const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session-1.zip', zip1),
-        createMockFileEntry('session-1-final.zip', zip2),
-      ]);
-
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
-
-      expect(result.definitions).toHaveLength(1);
-      // Only one observation despite appearing in two ZIPs
-      expect(result.definitions[0].observations).toHaveLength(1);
-    });
-
-    /**
-     * Why this test matters:
-     * ZIPs without refPoints/ should not cause errors — many session ZIPs
-     * from before the Problem 3 fix have no ref points.
-     */
-    it('should handle ZIP without refPoints folder gracefully', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
-        await import('./ref-point-recovery');
-
-      const blobWriter = new BlobWriter('application/zip');
-      const zipWriter = new ZipWriter(blobWriter, { level: 0 });
-      await zipWriter.add('session.json', new TextReader('{}'));
-      const zipBlob = await zipWriter.close();
-
-      const folderHandle = createMockFolderHandle([
-        createMockFileEntry('old-session.zip', zipBlob),
-      ]);
-
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
-
-      expect(result.definitions).toEqual([]);
-      expect(result.zipFilesScanned).toBe(1);
-      expect(result.errors).toEqual([]);
-    });
-
-    /**
-     * Why this test matters:
-     * Malformed JSON should be reported but not block recovery of other
-     * ref points from the same or other ZIPs.
-     */
-    it('should log error for malformed JSON and continue', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
-        await import('./ref-point-recovery');
-
-      // ZIP with one valid and one malformed ref point
-      const blobWriter = new BlobWriter('application/zip');
-      const zipWriter = new ZipWriter(blobWriter, { level: 0 });
-      await zipWriter.add('session.json', new TextReader('{}'));
-      await zipWriter.add(
-        'refPoints/bad.json',
-        new TextReader('{ invalid json }')
+      const zip1 = await createTestZipBlob(
+        [makeRefPointDef('cell-1', 'One', [makeObservation('s1', 1000)])],
+        'Paris',
+        'contextTag'
       );
-      const validDef = makeRefPointDef('good-point', 'Good', [
-        makeObservation('session-1', 1000),
-      ]);
-      await zipWriter.add(
-        'refPoints/good-point.json',
-        new TextReader(JSON.stringify(validDef))
+      const zip2 = await createTestZipBlob(
+        [makeRefPointDef('cell-2', 'Two', [makeObservation('s2', 2000)])],
+        'Paris',
+        'contextTag'
       );
-      const zipBlob = await zipWriter.close();
 
       const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session.zip', zipBlob),
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', zip1),
+        { name: 'notes.txt', kind: 'file' as const },
+        { name: 'subdir', kind: 'directory' as const },
+        createMockFileEntry('recording-2026-01-02_10-00-00utc.zip', zip2),
       ]);
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
-
-      expect(result.definitions).toHaveLength(1);
-      expect(result.definitions[0].id).toBe('good-point');
-      expect(result.errors.length).toBeGreaterThan(0);
-      expect(result.errors[0]).toContain('bad.json');
-    });
-
-    /**
-     * Why this test matters:
-     * Corrupt ZIPs should not block recovery from other valid ZIPs
-     * in the same folder.
-     */
-    it('should continue after corrupt ZIP', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
-        await import('./ref-point-recovery');
-
-      const validDef = makeRefPointDef('point-b', 'Point B', [
-        makeObservation('session-2', 2000),
-      ]);
-      const validZip = await createTestZipBlob([validDef]);
-      const corruptZip = new Blob(['not a zip'], {
-        type: 'application/zip',
+      const events: Array<{ done: number; total: number }> = [];
+      await indexRefPointDefinitionsFromFolder(folderHandle, {
+        onProgress: (p) => events.push({ ...p }),
       });
 
-      const folderHandle = createMockFolderHandle([
-        createMockFileEntry('corrupt.zip', corruptZip),
-        createMockFileEntry('valid.zip', validZip),
+      expect(events).toEqual([
+        { done: 0, total: 2 },
+        { done: 1, total: 2 },
+        { done: 2, total: 2 },
       ]);
-
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
-
-      expect(result.definitions).toHaveLength(1);
-      expect(result.definitions[0].id).toBe('point-b');
-      expect(result.errors.length).toBeGreaterThan(0);
     });
 
     /**
      * Why this test matters:
-     * Non-ZIP files in the folder should be silently ignored.
+     * A corrupt ZIP must not stall the bar (progress still advances past it)
+     * nor abort the pass — its failure is reported via `errors` while the
+     * remaining ZIPs are still indexed (async-UX failure path).
      */
-    it('should ignore non-ZIP files', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('advances progress past a corrupt ZIP, records an error, and still indexes the remaining ZIPs', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
 
+      const corrupt = new Blob(['this is not a zip archive']);
+      const good = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Good', [
+            makeObservation('s1', 1000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+
       const folderHandle = createMockFolderHandle([
-        {
-          name: 'readme.txt',
-          kind: 'file',
-          getFile: () => Promise.resolve(new File(['text'], 'readme.txt')),
-        },
-        { name: 'subfolder', kind: 'directory' },
+        // Newer timestamp → processed first, so the corrupt zip leads.
+        createMockFileEntry('recording-2026-06-01_10-00-00utc.zip', corrupt),
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', good),
       ]);
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const events: Array<{ done: number; total: number }> = [];
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle, {
+        onProgress: (p) => events.push({ ...p }),
+      });
 
-      expect(result.definitions).toEqual([]);
-      expect(result.zipFilesScanned).toBe(0);
+      expect(events).toEqual([
+        { done: 0, total: 2 },
+        { done: 1, total: 2 },
+        { done: 2, total: 2 },
+      ]);
+      expect(result.zipFilesScanned).toBe(1);
+      expect(result.errors.length).toBeGreaterThanOrEqual(1);
+      expect(
+        result.definitionsByScenario.get('Paris')!.map((d) => d.id)
+      ).toEqual([CELL_A]);
     });
 
     /**
      * Why this test matters:
-     * Empty observations is technically valid per the schema but has no
-     * useful data for recovery. The definition should still be included
-     * (it preserves the ref point identity and name).
+     * D3 requires the pass to be abortable (teardown / new folder pick). An
+     * already-aborted signal must prevent any file reads; a mid-pass abort
+     * must stop before the next ZIP and surface as a DOMException AbortError.
      */
-    it('should include ref points with empty observations array', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('throws AbortError without reading any file when the signal is already aborted', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
 
-      const def: RefPointDefinition = {
-        id: 'empty-obs',
-        name: 'Empty Point',
-        createdAt: Date.now(),
-        observations: [],
-      };
-      const zipBlob = await createTestZipBlob([def]);
+      const zip = await createTestZipBlob(
+        [makeRefPointDef('cell-1', 'One', [makeObservation('s1', 1000)])],
+        'Paris',
+        'contextTag'
+      );
+      const entry = createMockFileEntry(
+        'recording-2026-01-01_10-00-00utc.zip',
+        zip
+      );
+      const getFileSpy = vi.spyOn(entry, 'getFile');
+      const folderHandle = createMockFolderHandle([entry]);
 
-      const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session.zip', zipBlob),
-      ]);
+      const controller = new AbortController();
+      controller.abort();
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const events: unknown[] = [];
+      await expect(
+        indexRefPointDefinitionsFromFolder(folderHandle, {
+          signal: controller.signal,
+          onProgress: (p) => events.push(p),
+        })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(getFileSpy).not.toHaveBeenCalled();
+      expect(events).toEqual([]);
+    });
 
-      // Empty-obs ref points are included (schema-valid, preserves identity)
-      expect(result.definitions).toHaveLength(1);
-      expect(result.definitions[0].id).toBe('empty-obs');
-      expect(result.definitions[0].observations).toHaveLength(0);
+    it('stops before the next ZIP when the signal aborts mid-pass', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
+        await import('./ref-point-recovery');
+
+      const mkZip = async (id: string) =>
+        createTestZipBlob(
+          [makeRefPointDef(id, id, [makeObservation('s1', 1000)])],
+          'Paris',
+          'contextTag'
+        );
+      const entries = [
+        createMockFileEntry(
+          'recording-2026-06-03_10-00-00utc.zip',
+          await mkZip('cell-1')
+        ),
+        createMockFileEntry(
+          'recording-2026-06-02_10-00-00utc.zip',
+          await mkZip('cell-2')
+        ),
+        createMockFileEntry(
+          'recording-2026-06-01_10-00-00utc.zip',
+          await mkZip('cell-3')
+        ),
+      ];
+      const spies = entries.map((e) => vi.spyOn(e, 'getFile'));
+      const folderHandle = createMockFolderHandle(entries);
+
+      const controller = new AbortController();
+      await expect(
+        indexRefPointDefinitionsFromFolder(folderHandle, {
+          signal: controller.signal,
+          onProgress: ({ done }) => {
+            if (done === 1) controller.abort();
+          },
+        })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      // Newest-first: only the newest ZIP (entries[0]) was read before abort.
+      expect(spies[0]).toHaveBeenCalledTimes(1);
+      expect(spies[1]).not.toHaveBeenCalled();
+      expect(spies[2]).not.toHaveBeenCalled();
     });
 
     /**
      * Why this test matters:
-     * When 3+ ZIPs contribute observations for the same ref point (some
-     * with duplicates), deduplication must be correct across all merges —
-     * not just the first pair. This catches regressions in the seen-set
-     * lifecycle (e.g., recreating it from scratch on every merge).
+     * D4b-ii — ZIPs are processed newest-first (filename timestamp) so
+     * bucket order keeps the newest recording's definitions first (the
+     * gap-fill acceptance loop walks in order). Name conflicts resolve by
+     * the D6(a) most-observations-wins policy; with an equal observation
+     * count the tie goes to the name with the newest backing observation.
+     * The entries are handed to the mock folder oldest-first to prove the
+     * sort (directory order is arbitrary in real folders).
      */
-    it('should deduplicate correctly across 3+ ZIPs for the same ref point', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('processes ZIPs newest-first; equal-count name conflicts resolve to the newest backing observation (D4b-ii + D6a tie-break)', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
 
-      const obsA = makeObservation('session-1', 1000, 50.1, 8.1);
-      const obsB = makeObservation('session-2', 2000, 50.2, 8.2);
-      const obsC = makeObservation('session-3', 3000, 50.3, 8.3);
-
-      // ZIP 1: obsA
-      const def1 = makeRefPointDef('h3-cell-x', 'Lamp', [obsA]);
-      // ZIP 2: obsA (duplicate) + obsB (new)
-      const def2 = makeRefPointDef('h3-cell-x', 'Lamp', [obsA, obsB]);
-      // ZIP 3: obsB (duplicate) + obsC (new)
-      const def3 = makeRefPointDef('h3-cell-x', 'Lamp', [obsB, obsC]);
-
-      const zip1 = await createTestZipBlob([def1]);
-      const zip2 = await createTestZipBlob([def2]);
-      const zip3 = await createTestZipBlob([def3]);
+      const oldObs = makeObservation('session-old', 1000, POS_A.lat, POS_A.lon);
+      const newObs = makeObservation('session-new', 2000, POS_A.lat, POS_A.lon);
+      const zipOld = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Old Name', [oldObs]),
+          // Unique to the old zip, with the earliest createdAt (500) — pins
+          // that buckets keep FIRST-ENCOUNTER order (newest recording first),
+          // not createdAt order: the Slice-2 gap-fill acceptance loop walks
+          // the bucket in order and must see the newest definitions first.
+          makeRefPointDef(CELL_B, 'Only Old', [
+            makeObservation('session-old', 500, POS_B.lat, POS_B.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+      const zipNew = await createTestZipBlob(
+        [makeRefPointDef(CELL_A, 'New Name', [newObs])],
+        'Paris',
+        'contextTag'
+      );
 
       const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session-1.zip', zip1),
-        createMockFileEntry('session-2.zip', zip2),
-        createMockFileEntry('session-3.zip', zip3),
+        // Oldest handed over first on purpose — the sort must reorder.
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', zipOld),
+        createMockFileEntry('recording-2026-06-01_10-00-00utc.zip', zipNew),
       ]);
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle);
 
-      expect(result.definitions).toHaveLength(1);
-      // Exactly 3 unique observations despite 6 total across ZIPs
-      expect(result.definitions[0].observations).toHaveLength(3);
-      const sessionIds = result.definitions[0].observations
-        .map((o) => o.sessionId)
-        .sort();
-      expect(sessionIds).toEqual(['session-1', 'session-2', 'session-3']);
-      expect(result.zipFilesScanned).toBe(3);
+      const paris = result.definitionsByScenario.get('Paris')!;
+      expect(paris.map((d) => d.id)).toEqual([CELL_A, CELL_B]);
+      expect(paris[0]!.name).toBe('New Name');
+      expect(paris[0]!.createdAt).toBe(1000);
+      expect(paris[0]!.observations).toHaveLength(2);
     });
 
     /**
      * Why this test matters:
-     * folderHandle.values() already yields FileSystemFileHandle objects.
-     * After the `kind === 'file'` guard the entry IS a FileSystemFileHandle,
-     * so calling folderHandle.getFileHandle(entry.name) is a redundant
-     * directory lookup. This test asserts the implementation uses the
-     * iterator entry directly rather than re-resolving through getFileHandle.
+     * D6(a) — a name backed by MORE observations must beat a newer name
+     * backed by fewer (the rename-artifact fix: one throwaway name in the
+     * newest recording cannot override a long consistent naming history),
+     * and sibling definitions of the same physical spot (here: same cell)
+     * collapse into ONE definition on a clean import.
      */
-    it('should use iterator entry directly without calling getFileHandle', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('resolves name conflicts by most observations across ZIPs (D6a name policy)', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
 
-      const def = makeRefPointDef('direct-entry', 'DirectEntry', [
-        makeObservation('session-1', 1000),
-      ]);
-      const zipBlob = await createTestZipBlob([def]);
+      const zipOld = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Haustüre', [
+            makeObservation('session-1', 1000, POS_A.lat, POS_A.lon),
+            makeObservation('session-2', 2000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+      const zipNew = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Trz4', [
+            makeObservation('session-3', 9000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+
       const folderHandle = createMockFolderHandle([
-        createMockFileEntry('session-1.zip', zipBlob),
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', zipOld),
+        createMockFileEntry('recording-2026-06-01_10-00-00utc.zip', zipNew),
       ]);
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle);
 
-      // Recovery should succeed
-      expect(result.definitions).toHaveLength(1);
-      expect(result.definitions[0].id).toBe('direct-entry');
-      // getFileHandle should NOT have been called — entry is used directly
-      expect(folderHandle.getFileHandle).not.toHaveBeenCalled();
+      const paris = result.definitionsByScenario.get('Paris')!;
+      expect(paris).toHaveLength(1);
+      expect(paris[0]!.name).toBe('Haustüre');
+      expect(paris[0]!.observations).toHaveLength(3);
     });
 
     /**
      * Why this test matters:
-     * Sorting by createdAt provides deterministic output order for tests
-     * and consistent display in the UI.
+     * D6(a) — a legacy user-typed id at the same physical spot as an H3
+     * definition is the same anchor; a clean import must persist ONE merged
+     * definition under the H3 identity instead of resurrecting the split.
      */
-    it('should sort merged definitions by createdAt', async () => {
-      const { recoverRefPointDefinitionsFromZips } =
+    it('merges a legacy-id definition into the H3 definition of the same spot (D6a sibling merge)', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
         await import('./ref-point-recovery');
 
-      const defOlder = makeRefPointDef('cell-older', 'Older', [
-        makeObservation('session-1', 1000),
-      ]);
-      const defNewer = makeRefPointDef('cell-newer', 'Newer', [
-        makeObservation('session-2', 5000),
-      ]);
-
-      // Newer ZIP processed first, but older ref point should come first
-      const zip1 = await createTestZipBlob([defNewer]);
-      const zip2 = await createTestZipBlob([defOlder]);
+      const zipLegacy = await createTestZipBlob(
+        [
+          makeRefPointDef('Treppe', 'Treppe', [
+            makeObservation('s-legacy', 500, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+      const zipH3 = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Treppe', [
+            makeObservation('s-h3', 1000, POS_A.lat, POS_A.lon),
+            makeObservation('s-h3b', 2000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
 
       const folderHandle = createMockFolderHandle([
-        createMockFileEntry('newer-session.zip', zip1),
-        createMockFileEntry('older-session.zip', zip2),
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', zipLegacy),
+        createMockFileEntry('recording-2026-06-01_10-00-00utc.zip', zipH3),
       ]);
 
-      const result = await recoverRefPointDefinitionsFromZips(folderHandle);
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle);
 
-      expect(result.definitions).toHaveLength(2);
-      expect(result.definitions[0].id).toBe('cell-older');
-      expect(result.definitions[1].id).toBe('cell-newer');
+      const paris = result.definitionsByScenario.get('Paris')!;
+      expect(paris).toHaveLength(1);
+      expect(paris[0]!.id).toBe(CELL_A);
+      expect(paris[0]!.observations).toHaveLength(3);
+    });
+
+    /**
+     * Why this test matters:
+     * D4a — the same H3 id observed under two different scenarios must stay
+     * in both scenario buckets (strict routing, no cross-scenario merge).
+     */
+    it('keeps the same ref-point id in separate scenario buckets without cross-scenario merging', async () => {
+      const { indexRefPointDefinitionsFromFolder } =
+        await import('./ref-point-recovery');
+
+      const zipParis = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Paris view', [
+            makeObservation('s1', 1000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Paris',
+        'contextTag'
+      );
+      const zipBerlin = await createTestZipBlob(
+        [
+          makeRefPointDef(CELL_A, 'Berlin view', [
+            makeObservation('s2', 2000, POS_A.lat, POS_A.lon),
+          ]),
+        ],
+        'Berlin',
+        'contextTag'
+      );
+
+      const folderHandle = createMockFolderHandle([
+        createMockFileEntry('recording-2026-01-01_10-00-00utc.zip', zipParis),
+        createMockFileEntry('recording-2026-01-02_10-00-00utc.zip', zipBerlin),
+      ]);
+
+      const result = await indexRefPointDefinitionsFromFolder(folderHandle);
+
+      expect(
+        result.definitionsByScenario.get('Paris')!.map((d) => ({
+          id: d.id,
+          obs: d.observations.length,
+        }))
+      ).toEqual([{ id: CELL_A, obs: 1 }]);
+      expect(
+        result.definitionsByScenario.get('Berlin')!.map((d) => ({
+          id: d.id,
+          obs: d.observations.length,
+        }))
+      ).toEqual([{ id: CELL_A, obs: 1 }]);
     });
   });
 });

@@ -148,6 +148,46 @@ describe('opfs-storage', () => {
       expect(handle2).not.toBeNull();
     });
 
+    it('picks a suffixed name when a FILE occupies the timestamp name (PR #158 review)', async () => {
+      // Why: the collision probe (`sessionDirExists`) used to treat EVERY
+      // getDirectoryHandle error as "name free". A FILE occupying
+      // `recording-<ts>` rejects the probe with TypeMismatchError (not
+      // NotFoundError), so the probe reported the name free and the follow-up
+      // getDirectoryHandle(..., {create: true}) crashed session creation with
+      // that same TypeMismatchError. A file-occupied name must instead be
+      // treated as taken, so the probe advances to the `-2` suffix.
+      const sessionsDir = (await (
+        await opfsRoot.getDirectoryHandle('gps-plus-slam')
+      ).getDirectoryHandle('sessions')) as MockOPFSDirectoryHandle;
+      await sessionsDir.getFileHandle('recording-2026-01-26_10-30-00utc', {
+        create: true,
+      });
+
+      const result = await createSession(new Date('2026-01-26T10:30:00Z'));
+
+      expect(result.sessionName).toBe('recording-2026-01-26_10-30-00utc-2');
+      expect(getSessionHandle()).not.toBeNull();
+    });
+
+    it('surfaces unexpected probe errors instead of looping or mislabeling (PR #158 review)', async () => {
+      // Why: a systemic storage failure (e.g. InvalidStateError on every
+      // getDirectoryHandle call) must fail createSession loudly with the real
+      // error. Treating it as "name free" crashes later with a misleading
+      // create-time error; treating it as "name taken" (the reviewer's
+      // suggestion) would make the suffix probe loop forever. Rethrow is the
+      // only behavior that does neither.
+      const sessionsDir = (await (
+        await opfsRoot.getDirectoryHandle('gps-plus-slam')
+      ).getDirectoryHandle('sessions')) as MockOPFSDirectoryHandle;
+      vi.spyOn(sessionsDir, 'getDirectoryHandle').mockRejectedValue(
+        new DOMException('backing store unavailable', 'InvalidStateError')
+      );
+
+      await expect(createSession(new Date())).rejects.toThrow(
+        /backing store unavailable/
+      );
+    });
+
     it('throws if initOpfsStorage was not called', async () => {
       // Why: Must enforce initialization order
       resetOpfsStorage();

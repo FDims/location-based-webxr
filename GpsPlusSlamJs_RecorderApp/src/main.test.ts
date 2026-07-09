@@ -262,6 +262,13 @@ vi.mock('gps-plus-slam-app-framework/visualization/gps-compass-cubes', () => ({
   createGpsCompassCubes: vi.fn(),
 }));
 
+vi.mock('./ui/ref-point-view-wiring', () => ({
+  wireRefPointViews: vi.fn(() => ({
+    refreshMapMarkers: vi.fn(),
+    unsubscribe: vi.fn(),
+  })),
+}));
+
 vi.mock('./ui/hud', () => ({
   initUI: vi.fn(),
   showError: vi.fn(),
@@ -276,6 +283,7 @@ vi.mock('./ui/hud', () => ({
   setFolderSelected: vi.fn(),
   setSaveLocationSelected: vi.fn(),
   setFolderImportExpanded: vi.fn(),
+  setFolderImportProgress: vi.fn(),
   updateFolderStatus: vi.fn(),
   updateSaveStatus: vi.fn(),
   updateSyncStatus: vi.fn(),
@@ -405,6 +413,7 @@ vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
       gpsAlignmentMarkers: true,
       compassCubes: true,
     },
+    loopClosureDebug: { detectorEnabled: false },
   }),
 }));
 
@@ -484,6 +493,7 @@ import {
   setReplayModeForTesting,
   handleReplayScenarioChangeForTesting,
   getReplaySessionEntriesForTesting,
+  handleRefPointIndexingSettled,
 } from './main';
 import { startSession as storageStartSession } from './storage/scenario-storage';
 import { resetForNewSession } from './storage/scenario-storage';
@@ -498,7 +508,9 @@ import {
   resetUIForNewRecording,
   populateScenarios,
   updateFolderStatus,
+  setFolderImportProgress,
 } from './ui/hud';
+import { showToast } from './ui/toast';
 import {
   listScenariosFromFolder,
   extractScenarioNamesFromZips,
@@ -2923,5 +2935,92 @@ describe('handleReplayScenarioChange — zip metadata cache', () => {
     await expect(
       handleReplayScenarioChangeForTesting('MetadataOnly')
     ).resolves.toBeUndefined();
+  });
+});
+
+// ============================================================================
+// handleRefPointIndexingSettled — terminal outcome of the eager folder-import
+// indexing pass (D2/D3, 2026-07-05 plan Slice 4).
+//
+// Why these tests matter: the pass runs in the background and the user may
+// have entered AR before it settles — the toast (mounted in the #app overlay,
+// visible inside AR) is the only completion signal there, while the progress
+// bar's durable end state serves the start screen. Failure/abort must reset
+// the bar (failure additionally surfaces an error toast); a no-op pass stays
+// quiet (no toast spam when every store was already up to date).
+// ============================================================================
+
+describe('handleRefPointIndexingSettled', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('drives the durable bar end state and announces recovered points via toast', () => {
+    handleRefPointIndexingSettled({
+      status: 'success',
+      refPointsWritten: 5,
+      zipFilesScanned: 3,
+      zipFilesTotal: 3,
+      errors: [],
+    });
+
+    expect(setFolderImportProgress).toHaveBeenCalledWith({
+      kind: 'done',
+      refPointsWritten: 5,
+      zipFilesTotal: 3,
+    });
+    expect(showToast).toHaveBeenCalledWith(
+      'Recovered 5 reference points from 3 recordings',
+      { severity: 'info' }
+    );
+  });
+
+  it('uses singular copy for one point from one recording', () => {
+    handleRefPointIndexingSettled({
+      status: 'success',
+      refPointsWritten: 1,
+      zipFilesScanned: 1,
+      zipFilesTotal: 1,
+      errors: [],
+    });
+
+    expect(showToast).toHaveBeenCalledWith(
+      'Recovered 1 reference point from 1 recording',
+      { severity: 'info' }
+    );
+  });
+
+  it('stays quiet (end state only, no toast) when nothing was written', () => {
+    handleRefPointIndexingSettled({
+      status: 'success',
+      refPointsWritten: 0,
+      zipFilesScanned: 4,
+      zipFilesTotal: 4,
+      errors: [],
+    });
+
+    expect(setFolderImportProgress).toHaveBeenCalledWith({
+      kind: 'done',
+      refPointsWritten: 0,
+      zipFilesTotal: 4,
+    });
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('resets the bar and raises an error toast on failure', () => {
+    handleRefPointIndexingSettled({ status: 'error', message: 'boom' });
+
+    expect(setFolderImportProgress).toHaveBeenCalledWith(null);
+    expect(showToast).toHaveBeenCalledWith(
+      expect.stringContaining('boom'),
+      expect.objectContaining({ severity: 'error' })
+    );
+  });
+
+  it('resets the bar silently on abort', () => {
+    handleRefPointIndexingSettled({ status: 'aborted' });
+
+    expect(setFolderImportProgress).toHaveBeenCalledWith(null);
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

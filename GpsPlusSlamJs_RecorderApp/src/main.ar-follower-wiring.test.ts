@@ -109,6 +109,15 @@ vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
     debug: vi.fn(),
   }),
 }));
+vi.mock('./ui/ref-point-view-wiring', () => ({
+  wireRefPointViews: vi.fn(() => ({
+    refreshMapMarkers: vi.fn(),
+    unsubscribe: vi.fn(),
+  })),
+}));
+
+import { wireRefPointViews } from './ui/ref-point-view-wiring';
+
 vi.mock('./ui/hud', () => ({
   initUI: vi.fn(),
   showError: vi.fn(),
@@ -125,6 +134,7 @@ vi.mock('./ui/hud', () => ({
   setFolderSelected: vi.fn(),
   setSaveLocationSelected: vi.fn(),
   setFolderImportExpanded: vi.fn(),
+  setFolderImportProgress: vi.fn(),
   updateFolderStatus: vi.fn(),
   updateSaveStatus: vi.fn(),
   updateSyncStatus: vi.fn(),
@@ -277,6 +287,7 @@ vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
       gpsAlignmentMarkers: true,
       compassCubes: true,
     },
+    loopClosureDebug: { detectorEnabled: false },
   }),
 }));
 vi.mock('gps-plus-slam-app-framework/sensors/gps', () => ({
@@ -546,5 +557,63 @@ describe('Tracking-quality HUD subscription cleanup', () => {
     resetMainState();
 
     expect(trackingQualityDisposers[0]).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Why these tests matter:
+ * Round-3 feedback (2026-07-05): the ref-point view wirers (3D spheres +
+ * live-map markers) used to be session-scoped, so a folder import finishing
+ * before the first recording filled the store with no view subscribed. They
+ * are now AR-scoped and storeRef-following (ui/ref-point-view-wiring.ts) —
+ * wired at Enter AR, disposed before re-wiring on a second entry and on
+ * resetMainState, mirroring the tracking-quality subscription lifecycle.
+ */
+describe('Ref-point view wiring lifecycle (AR-scoped)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetMainState();
+
+    document.body.innerHTML = `
+      <div id="app"></div>
+      <div id="setup-modal">
+        <h1 id="setup-title">Recorder</h1>
+      </div>
+      <div id="controls"></div>
+      <div id="replay-controls" class="hidden"></div>
+      <div id="ref-point-picker-modal"></div>
+    `;
+  });
+
+  function wiringResult(index: number): {
+    unsubscribe: ReturnType<typeof vi.fn>;
+  } {
+    return vi.mocked(wireRefPointViews).mock.results[index]!.value as {
+      unsubscribe: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it('wires the ref-point views on AR entry (storeRef-following, AR_READY covered)', async () => {
+    await handleEnterARForTesting();
+
+    expect(wireRefPointViews).toHaveBeenCalledTimes(1);
+    expect(wiringResult(0).unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('disposes the previous wiring before re-wiring on a second AR entry', async () => {
+    await handleEnterARForTesting();
+    await handleEnterARForTesting();
+
+    expect(wireRefPointViews).toHaveBeenCalledTimes(2);
+    expect(wiringResult(0).unsubscribe).toHaveBeenCalledTimes(1);
+    expect(wiringResult(1).unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('disposes the live wiring on resetMainState', async () => {
+    await handleEnterARForTesting();
+
+    resetMainState();
+
+    expect(wiringResult(0).unsubscribe).toHaveBeenCalledTimes(1);
   });
 });

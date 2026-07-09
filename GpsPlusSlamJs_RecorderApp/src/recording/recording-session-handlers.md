@@ -51,6 +51,12 @@ Factory function. Returns a handlers object that owns the recording lifecycle.
 - `backDuringRecordingInProgress` — guard against double-tap of back button
 - `unsubscribeStore` — store subscriber cleanup
 
+Note: the ref-point VIEW subscribers (3D spheres + live-map markers) are NOT
+wired here any more — they are AR-scoped and store-swap-following via main's
+`storeRef` ([ui/ref-point-view-wiring.ts](../ui/ref-point-view-wiring.md),
+round-3 feedback 2026-07-05); the `setStore(newStore)` call in
+`handleStartRecording` is what triggers their re-wire.
+
 ## Invariants
 
 - `handleStartRecording` always creates a **new store** via `deps.createNewStore()` and pushes it via `deps.setStore()`.

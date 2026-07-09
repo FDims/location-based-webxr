@@ -26,6 +26,7 @@ import {
   startSession,
   setCurrentScenario,
   ensureScenarioDirectory,
+  getScenarioDirectoryHandle,
   getCurrentScenarioHandle,
   clearRefPointsCacheForAllScenarios,
   resetForNewSession,
@@ -321,5 +322,94 @@ describe('ScenarioWrappingStorageBackend', () => {
     const sessions = await backend.listSessions();
     expect(sessions).toContain(a.sessionName);
     expect(sessions).toContain(b.sessionName);
+  });
+});
+
+describe('scenario-storage — getScenarioDirectoryHandle (side-effect-free)', () => {
+  let opfsRoot: MockOPFSDirectoryHandle;
+  let cleanup: () => void;
+
+  beforeEach(async () => {
+    resetScenarioStorage();
+    const mocks = installOPFSMocks();
+    opfsRoot = mocks.root;
+    cleanup = mocks.cleanup;
+    await initStorage();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Why this test matters:
+   * The eager ref-point indexing pass (2026-07-05 folder-import plan §3.2)
+   * writes into MANY scenario directories while the user's selected scenario
+   * must stay current. setCurrentScenario/ensureScenarioDirectory repoint the
+   * module-level current-scenario state as a side effect — this accessor must
+   * not.
+   */
+  it('creates and returns a scenario dir without repointing the current scenario', async () => {
+    const currentHandle = await ensureScenarioDirectory('Current');
+    expect(getCurrentScenarioHandle()).toBe(currentHandle);
+
+    const other = await getScenarioDirectoryHandle('Other', { create: true });
+
+    expect(other).not.toBeNull();
+    await expect(
+      resolvePath(opfsRoot, 'gps-plus-slam', 'scenarios', 'Other')
+    ).resolves.toBeDefined();
+    // Current scenario is untouched.
+    expect(getCurrentScenarioHandle()).toBe(currentHandle);
+  });
+
+  it('returns null for a missing scenario when create is not requested', async () => {
+    expect(await getScenarioDirectoryHandle('DoesNotExist')).toBeNull();
+  });
+
+  /**
+   * Why this test matters:
+   * The documented contract maps ONLY "missing scenario without create" (and
+   * uninitialized storage) to null. A catch-all null used to swallow real
+   * storage failures (QuotaExceededError etc.) too — the eager indexing pass
+   * then skipped the scenario and reported SUCCESS with fewer points written
+   * (PR #165 review, gemini high). Unexpected errors must propagate so
+   * folder-manager's error channel surfaces them to the user.
+   */
+  it('rethrows unexpected storage failures instead of masking them as null', async () => {
+    const scenRoot = await resolvePath(opfsRoot, 'gps-plus-slam', 'scenarios');
+    vi.spyOn(scenRoot, 'getDirectoryHandle').mockRejectedValueOnce(
+      new DOMException('quota exceeded', 'QuotaExceededError')
+    );
+
+    await expect(
+      getScenarioDirectoryHandle('Any', { create: true })
+    ).rejects.toMatchObject({ name: 'QuotaExceededError' });
+  });
+
+  /**
+   * Why this test matters:
+   * A FILE occupying a scenario name makes getDirectoryHandle reject with
+   * TypeMismatchError — that scenario is genuinely unusable, and pretending
+   * it "does not exist" (null) would silently drop its indexed points. The
+   * loud failure is deliberate (mirrors the createSession probe decision,
+   * §PR 158: unknown probe outcomes rethrow rather than mislabel).
+   */
+  it('rethrows TypeMismatchError when a file occupies the scenario name', async () => {
+    const scenRoot = await resolvePath(opfsRoot, 'gps-plus-slam', 'scenarios');
+    await scenRoot.getFileHandle('Collide', { create: true });
+
+    await expect(
+      getScenarioDirectoryHandle('Collide', { create: true })
+    ).rejects.toMatchObject({ name: 'TypeMismatchError' });
+  });
+
+  it('returns null when storage is not initialized', async () => {
+    resetScenarioStorage();
+    vi.stubGlobal('navigator', { storage: undefined });
+    expect(
+      await getScenarioDirectoryHandle('Any', { create: true })
+    ).toBeNull();
   });
 });

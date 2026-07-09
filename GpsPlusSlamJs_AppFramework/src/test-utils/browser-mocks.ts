@@ -764,6 +764,15 @@ export class MockOPFSDirectoryHandle implements FileSystemDirectoryHandle {
     if (handle && handle.kind === 'directory') {
       return Promise.resolve(handle);
     }
+    // Spec fidelity (File System standard): when the name is taken by a FILE,
+    // getDirectoryHandle rejects with TypeMismatchError — with AND without
+    // `create` — it never replaces the entry. Production code branches on this
+    // error name (e.g. opfs-storage's createSession collision probe).
+    if (handle) {
+      return Promise.reject(
+        new DOMException(`${name} is not a directory`, 'TypeMismatchError')
+      );
+    }
     if (options?.create) {
       const newHandle = new MockOPFSDirectoryHandle(name);
       this.contents.set(name, newHandle);
@@ -781,6 +790,13 @@ export class MockOPFSDirectoryHandle implements FileSystemDirectoryHandle {
     const handle = this.contents.get(name);
     if (handle && handle.kind === 'file') {
       return Promise.resolve(handle);
+    }
+    // Spec fidelity: a DIRECTORY occupying the name → TypeMismatchError (see
+    // getDirectoryHandle above for the mirrored case).
+    if (handle) {
+      return Promise.reject(
+        new DOMException(`${name} is not a file`, 'TypeMismatchError')
+      );
     }
     if (options?.create) {
       const newHandle = new MockOPFSFileHandle(name, this, name);

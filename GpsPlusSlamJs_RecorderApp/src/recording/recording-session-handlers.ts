@@ -19,7 +19,7 @@ import {
 import { startSession, endSession } from '../state/recorder-store';
 import type { RecorderStore } from '../state/recorder-store';
 import { wireStoreSubscribers } from 'gps-plus-slam-app-framework/state/store-subscribers';
-import { wireRefPointSubscribers } from '../state/ref-point-subscribers';
+import { refPointEntriesToMarkerData } from '../ui/ref-point-map-markers';
 import { selectRefPointEntries } from '../state/ref-points-slice';
 import type { RecordingOptions } from 'gps-plus-slam-app-framework/state/recording-options';
 import { formatTimestamp } from 'gps-plus-slam-app-framework/storage/file-system-utils';
@@ -250,7 +250,6 @@ export function createRecordingSessionHandlers(
   let backDuringRecordingInProgress = false;
   let stopInProgress = false;
   let unsubscribeStore: (() => void) | null = null;
-  let unsubscribeRefPoints: (() => void) | null = null;
   /** Off-thread blur/blackness analyzer worker for this recording (null when the
    *  quality gate is disabled). Owned here: created on start, disposed on stop. */
   let imageQualityClient: ImageQualityClient | null = null;
@@ -330,6 +329,15 @@ export function createRecordingSessionHandlers(
     }
 
     try {
+      // A3 (2026-07-06 round-4): load + dispatch BEFORE the zeroRef wait.
+      // The entries live in local OPFS and the 2D map needs only lat/lon from
+      // the store; only the 3D sphere placement needs GPS (the visualizer
+      // stays zeroRef-gated internally). Ordering the load after the wait
+      // starved the live map for up to 30 s — or entirely on timeout.
+      const { refPointCount, observationCount } =
+        await deps.loadAndDisplayRefPoints(scenarioHandle);
+      const loadedSummary = `${refPointCount} ref points (${observationCount} observations) loaded`;
+
       updateStatus('Waiting for GPS signal...');
 
       const zeroRef = await deps.waitForZeroReference(30000);
@@ -339,18 +347,18 @@ export function createRecordingSessionHandlers(
         showError(
           'No GPS signal received. Move outdoors for better reception.'
         );
-        updateStatus(`Recording: ${currentSessionName} | GPS unavailable`);
+        // The status must reflect BOTH durable facts: GPS is missing (3D/AR
+        // placement is degraded) AND the local load succeeded (the map shows
+        // the points) — round-4 interview decision 6.
+        updateStatus(
+          `Recording: ${currentSessionName} | GPS unavailable | ${loadedSummary}`
+        );
         return;
       }
 
       refPointVisualizer.setZeroRef(zeroRef);
 
-      const { refPointCount, observationCount } =
-        await deps.loadAndDisplayRefPoints(scenarioHandle);
-
-      updateStatus(
-        `Recording: ${currentSessionName} | ${refPointCount} ref points (${observationCount} observations) loaded`
-      );
+      updateStatus(`Recording: ${currentSessionName} | ${loadedSummary}`);
     } catch (err) {
       log.error('Failed to load prior reference points:', err);
     }
@@ -419,9 +427,6 @@ export function createRecordingSessionHandlers(
       render(data: MapData): void {
         deps.getMapOverlay()?.render(data);
       },
-      addCurrentMarker(lat: number, lon: number, name: string): void {
-        deps.getMapOverlay()?.addCurrentMarker(lat, lon, name);
-      },
     };
     unsubscribeStore = wireStoreSubscribers(store, {
       applyAlignmentMatrix: deps.applyAlignmentMatrix,
@@ -429,7 +434,10 @@ export function createRecordingSessionHandlers(
       mapOverlay: mapOverlayProxy,
       onNewGpsLatLng: deps.onNewGpsLatLng,
     });
-    unsubscribeRefPoints = wireRefPointSubscribers(store, refPointVisualizer);
+    // NOTE: the ref-point VIEW subscribers (3D spheres + live-map markers)
+    // are no longer wired here. They are AR-scoped and follow store swaps
+    // via main's storeRef (ui/ref-point-view-wiring.ts, round-3 feedback
+    // 2026-07-05) — the setStore(store) call above triggers their re-wire.
 
     // Initialize failure trackers
     writeFailureTracker = createWriteFailureTracker({ onWarning: showError });
@@ -736,10 +744,6 @@ export function createRecordingSessionHandlers(
       unsubscribeStore();
       unsubscribeStore = null;
     }
-    if (unsubscribeRefPoints) {
-      unsubscribeRefPoints();
-      unsubscribeRefPoints = null;
-    }
 
     // Collect tracker errors before resetting
     const errors: string[] = [];
@@ -844,12 +848,9 @@ export function createRecordingSessionHandlers(
         alignmentMatrix: gpsEvents?.alignmentMatrix ?? null,
         zeroRef: firstGps?.zeroRef ?? null,
       }),
-      referencePointsForMap: refPoints.map((rp) => ({
-        lat: rp.gpsPoint?.latitude ?? rp.rawGpsPoint.latitude,
-        lng: rp.gpsPoint?.longitude ?? rp.rawGpsPoint.longitude,
-        name: rp.name ?? rp.id,
-        timestamp: rp.timestamp,
-      })),
+      // Shared mapping with the live minimap wirer — both maps must plot
+      // identical coordinates/labels (2026-07-05 live-map feedback).
+      referencePointsForMap: refPointEntriesToMarkerData(refPoints),
       zipSizeBytes: lastSyncResult?.blob?.size,
       zipFileCount: lastSyncResult?.fileCount,
       zipBlob: lastSyncResult?.blob,
@@ -908,10 +909,6 @@ export function createRecordingSessionHandlers(
     if (unsubscribeStore) {
       unsubscribeStore();
       unsubscribeStore = null;
-    }
-    if (unsubscribeRefPoints) {
-      unsubscribeRefPoints();
-      unsubscribeRefPoints = null;
     }
 
     if (writeFailureTracker) {

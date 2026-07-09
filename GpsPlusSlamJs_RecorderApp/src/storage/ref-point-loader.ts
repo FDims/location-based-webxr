@@ -396,10 +396,54 @@ export function flattenRefPointsToMarks(
 }
 
 /**
+ * Horizontal-accuracy gate for the robust average (D6(a), 2026-07-06):
+ * observations whose raw `latLongAccuracy` exceeds this are excluded from
+ * the averaged position. Empirically chosen from recorded-session data:
+ * legitimate ref-point observations sit ≤ ~10 m accuracy (p95 ≈ 7 m), so
+ * 20 m is ~2× above anything real and only fires on genuinely degraded
+ * fixes (indoor-poisoned captures land tens of meters off).
+ */
+export const REF_POINT_ACCURACY_GATE_M = 20;
+
+/**
+ * Starvation guard for the accuracy gate: when fewer than this many
+ * observations survive, the original set is kept — a mostly-poisoned
+ * definition must not be averaged over a tiny unrepresentative remnant.
+ */
+const ACCURACY_GATE_MIN_SURVIVORS = 3;
+
+/**
+ * Apply the accuracy gate to a definition's observations. Observations
+ * without a (finite, numeric) `latLongAccuracy` are kept — the gate only
+ * acts on provably bad fixes. `min(MIN_SURVIVORS, total)` means 1–2
+ * observation definitions always pass through unchanged.
+ */
+function gateObservationsByAccuracy(
+  observations: RefPointObservation[]
+): RefPointObservation[] {
+  const kept = observations.filter((obs) => {
+    const acc = obs.gpsPoint.latLongAccuracy;
+    return (
+      typeof acc !== 'number' ||
+      !Number.isFinite(acc) ||
+      acc <= REF_POINT_ACCURACY_GATE_M
+    );
+  });
+  if (
+    kept.length < Math.min(ACCURACY_GATE_MIN_SURVIVORS, observations.length)
+  ) {
+    return observations;
+  }
+  return kept;
+}
+
+/**
  * Compute one averaged GPS position per reference point ID.
  * For each observation, prefers `fusedGpsPoint` (sub-meter accuracy) when
  * available, falling back to raw `gpsPoint`. Returns the centroid (mean
- * lat/lon) across all observations.
+ * lat/lon) across the observations that pass the accuracy gate
+ * ({@link REF_POINT_ACCURACY_GATE_M} with a starvation guard — D6(a)
+ * robust averaging).
  */
 export function averageGpsPerRefPoint(
   refPointDefs: RefPointDefinition[]
@@ -407,7 +451,7 @@ export function averageGpsPerRefPoint(
   return refPointDefs
     .filter((def) => def.observations.length > 0)
     .map((def) => {
-      const coords = def.observations
+      const coords = gateObservationsByAccuracy(def.observations)
         .map((obs) => {
           if (obs.fusedGpsPoint) {
             return {

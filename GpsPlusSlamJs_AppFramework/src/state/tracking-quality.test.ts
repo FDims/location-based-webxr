@@ -3,8 +3,8 @@
  *
  * Phase A of docs/2026-05-16-tracking-quality-metrics-plan.md. Focus
  * is on the pure compute helpers (§4.1–§4.7) and the slice/listener
- * wiring. The full Investigation parameter sweep is exercised
- * separately in `GpsPlusSlamJs_Investigation/src/investigations/tracking-quality.test.ts`.
+ * wiring. The full corpus parameter sweep is exercised separately in the
+ * downstream analysis harness.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -170,11 +170,11 @@ describe('matrixDelta', () => {
 
   // Why this test matters: §11 (a) of the tracking-quality plan requires
   // matrixDelta to agree numerically with the gl-matrix-quat reference
-  // kernel used by GpsPlusSlamJs_Investigation/src/investigation-helpers.ts
+  // kernel the downstream corpus-analysis harness uses
   // (`computeStabilityDelta`). The §6.1 corpus sweep correlates the
-  // AppFramework's runtime convergence score with the Investigation's
-  // hindsight error — both must use the same numeric definition or the
-  // correlation is meaningless. The reference kernel below mirrors
+  // AppFramework's runtime convergence score with the harness's hindsight
+  // error — both must use the same numeric definition or the correlation
+  // is meaningless. The reference kernel below mirrors
   // computeStabilityDelta exactly; this test asserts identical output on
   // a tricky compound-rotation+translation case.
   it('matches the gl-matrix quat-based reference kernel on compound transforms', async () => {

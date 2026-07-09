@@ -742,6 +742,33 @@ No errors</pre
                     >
                       ❌ No folder selected
                     </p>
+                    <!-- D2 (2026-07-05): determinate progress for the eager
+                       ref-point indexing pass that starts when the folder is
+                       granted. Text label above a small bar; driven by
+                       hud.setFolderImportProgress (hidden when idle). -->
+                    <div
+                      id="folder-import-progress"
+                      data-testid="folder-import-progress"
+                      class="hidden space-y-1"
+                      role="progressbar"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-labelledby="folder-import-progress-text"
+                    >
+                      <p
+                        id="folder-import-progress-text"
+                        class="text-xs text-gray-300"
+                      ></p>
+                      <div
+                        class="w-full bg-gray-600 rounded h-1.5 overflow-hidden"
+                      >
+                        <div
+                          id="folder-import-progress-bar"
+                          class="bg-blue-500 h-full rounded"
+                          style="width: 0%"
+                        ></div>
+                      </div>
+                    </div>
                   </div>
                 </details>
               </div>
@@ -1527,6 +1554,33 @@ No errors</pre
                 <span class="text-sm text-gray-200"
                   >Trust gate — only use compass when consistent with
                   WebXR</span
+                >
+              </label>
+            </div>
+          </div>
+
+          <!-- Loop-closure capture (experimental) -->
+          <div class="mb-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xl">🔁</span>
+              <span class="font-medium text-white">Loop closures (debug)</span>
+            </div>
+            <div class="bg-gray-700/50 rounded-lg p-3 space-y-3">
+              <p class="text-[11px] text-gray-400">
+                Record AR relocalization jumps (&gt;1 m between frames) as
+                loop-closure events. Each closure also corrects the live
+                trajectory, changing the live alignment. Applies on the next
+                session. Needed to collect loop-closure field data.
+              </p>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="loop-closure-detector"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Detect + record loop closures (experimental, off by
+                  default)</span
                 >
               </label>
             </div>

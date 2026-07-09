@@ -1229,6 +1229,42 @@ describe('settings-modal', () => {
       expect(cb?.checked).toBe(true);
     });
 
+    it('persists + populates the loop-closure capture toggle (experimental, default OFF)', () => {
+      // Why: the loop-closure detector wiring is opt-in per the 2026-07-06
+      // recorder wiring plan — the checkbox must default unchecked, persist an
+      // opt-in through save, and populate from a saved ON value.
+      initSettingsModal();
+      showSettingsModal();
+
+      const cb = document.getElementById(
+        'loop-closure-detector'
+      ) as HTMLInputElement | null;
+      expect(cb).not.toBeNull();
+      expect(cb!.checked).toBe(false);
+
+      cb!.checked = true;
+      cb!.dispatchEvent(new Event('change'));
+      document.getElementById('btn-settings-save')?.click();
+
+      expect(loadRecordingOptions().loopClosureDebug.detectorEnabled).toBe(
+        true
+      );
+    });
+
+    it('populates loop-closure-detector CHECKED from a saved ON value', () => {
+      localStorageMock.getItem.mockReturnValueOnce(
+        JSON.stringify({ loopClosureDebug: { detectorEnabled: true } })
+      );
+
+      initSettingsModal();
+      showSettingsModal();
+
+      const cb = document.getElementById(
+        'loop-closure-detector'
+      ) as HTMLInputElement | null;
+      expect(cb?.checked).toBe(true);
+    });
+
     it('populates compass-cold-start-override UNCHECKED from a saved OFF value (opt-out round-trip)', () => {
       // The recorder off-toggle: a persisted coldStartOverride:false must survive
       // load → populate as an unchecked box so the operator can disable Stage 0.

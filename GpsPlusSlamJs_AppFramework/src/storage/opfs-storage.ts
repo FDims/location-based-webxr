@@ -217,9 +217,12 @@ export function getAppRootHandle(): FileSystemDirectoryHandle | null {
 // ============================================================================
 
 /**
- * True when a session directory named `name` already exists under `dir`.
- * Used by {@link createSession} to avoid silently reusing a directory when two
- * recordings start within the same (second-resolution) timestamp.
+ * True when the name `name` is already taken under `dir` (by a session
+ * directory — or by a file, which the follow-up `{ create: true }` call could
+ * not replace either). Used by {@link createSession} to avoid silently reusing
+ * a directory when two recordings start within the same (second-resolution)
+ * timestamp. Rethrows unexpected probe errors (storage failures) so the caller
+ * fails loudly instead of mislabeling the name.
  */
 async function sessionDirExists(
   dir: FileSystemDirectoryHandle,
@@ -228,8 +231,21 @@ async function sessionDirExists(
   try {
     await dir.getDirectoryHandle(name, { create: false });
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    // Only NotFoundError means the name is free. A FILE occupying the name
+    // rejects with TypeMismatchError — report it TAKEN so the probe advances
+    // to the next suffix instead of crashing on the follow-up
+    // `{ create: true }` (which also rejects for a file-occupied name).
+    // Anything else (InvalidStateError etc.) is a storage failure, not
+    // knowledge about the name: rethrow ("free" would crash later with a
+    // misleading create-time error; "taken" would loop the probe forever).
+    if (err instanceof DOMException && err.name === 'NotFoundError') {
+      return false;
+    }
+    if (err instanceof DOMException && err.name === 'TypeMismatchError') {
+      return true;
+    }
+    throw err;
   }
 }
 

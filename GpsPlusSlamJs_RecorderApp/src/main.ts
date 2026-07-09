@@ -38,6 +38,7 @@ import {
   setFolderSelected,
   setSaveLocationSelected,
   setFolderImportExpanded,
+  setFolderImportProgress,
   updateFolderStatus,
   updateSaveStatus,
   resetUIForNewRecording,
@@ -74,6 +75,7 @@ import {
   setTrackingRecoveredCallback,
   setTrackingStore,
   setSessionEndCallback,
+  getCurrentArPose,
   getScene,
   getCamera,
   getArWorldGroup,
@@ -100,7 +102,10 @@ import {
 } from './storage/external-file-storage';
 import { createRecordingSessionHandlers } from './recording/recording-session-handlers';
 import { createSystemSessionEndHandler } from './recording/system-session-end';
-import { createFolderManager } from './storage/folder-manager';
+import {
+  createFolderManager,
+  type FolderManagerDeps,
+} from './storage/folder-manager';
 
 import {
   setImportedRefPointEntries,
@@ -136,9 +141,20 @@ import {
   subscribePermissionChanges,
 } from 'gps-plus-slam-app-framework/sensors/permission-checker';
 
-import type { LatLong } from 'gps-plus-slam-app-framework/core';
-import { odometryTrackingRestarted } from 'gps-plus-slam-app-framework/core';
+import type {
+  LatLong,
+  LoopClosureHandler,
+} from 'gps-plus-slam-app-framework/core';
+import {
+  createLoopClosureHandler,
+  odometryTrackingRestarted,
+} from 'gps-plus-slam-app-framework/core';
 import { createStoreRef } from './state/store-ref';
+import {
+  wireRefPointViews,
+  type RefPointViewWiring,
+} from './ui/ref-point-view-wiring';
+import { refPointVisualizer } from './visualization/ref-point-visualizer';
 import { subscribeHudToTrackingQuality } from './ui/hud-tracking-quality-subscriber';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
@@ -301,6 +317,15 @@ let liveOccluder: DepthOccluder | null = null;
 let liveOccluderUnregisterFrame: (() => void) | null = null;
 let unsubscribeOccupancyGrid: (() => void) | null = null;
 
+// Live loop-closure capture (opt-in, recording-options `loopClosureDebug`).
+// The handler is (re)bound lazily to the CURRENT store inside the per-frame
+// callback — stores swap per recording session, and a rebind also resets the
+// handler's last-pose memory, which is exactly right for a fresh session.
+// Disposed on re-enter + in resetMainState, mirroring the live occluder.
+let loopClosureHandler: LoopClosureHandler | null = null;
+let loopClosureHandlerBoundStore: unknown = null;
+let loopClosureUnregisterFrame: (() => void) | null = null;
+
 // Live QR recording (opt-in, recording-options `qr`). The thin RAW producer
 // (created in handleEnterAR when enabled) receives camera frames via the
 // `setCameraFrameCallback` registered before initAR; `wireQrRecording` owns the
@@ -314,6 +339,12 @@ let unsubscribeQrRecording: (() => void) | null = null;
 // setup → Enter AR again) and `resetMainState` can tear it down instead of
 // leaking an extra subscriber on every cycle.
 let unsubscribeTrackingQuality: (() => void) | null = null;
+
+// Ref-point view wiring (3D spheres + live-map markers) — AR-scoped and
+// store-swap-following via storeRef (round-3 feedback 2026-07-05). Wired at
+// Enter AR so the views react in AR_READY too (e.g. a folder import finishing
+// before the first recording); torn down on re-enter + in resetMainState.
+let refPointViews: RefPointViewWiring | null = null;
 
 // Replay mode handlers — encapsulates all replay state and event handlers
 // (Finding #7 decomposition: extracted from main.ts to replay/replay-handlers.ts)
@@ -521,16 +552,60 @@ const folderManager = createFolderManager({
   setSaveLocationSelected,
   setFolderImportExpanded,
   validateEnterButton,
+  // D2/D3 (2026-07-05): the eager ref-point indexing pass drives the
+  // determinate progress bar inside the folder-import section and announces
+  // its terminal outcome (durable end state + toast).
+  onIndexingProgress: ({ done, total }) =>
+    setFolderImportProgress({ kind: 'progress', done, total }),
+  onIndexingSettled: (outcome) => handleRefPointIndexingSettled(outcome),
   listScenariosFromFolder,
   extractScenarioNamesFromZips,
   discoverScenariosFromZipMetadata,
   populateReplayScenarios,
   updateFolderStatus,
   updateSaveStatus,
-  get mapOverlay() {
-    return mapOverlay ?? undefined;
-  },
 });
+
+/**
+ * Terminal outcome of the eager folder-import ref-point indexing pass
+ * (D2/D3, 2026-07-05 folder-import feedback):
+ * - success → drive the progress bar's durable ✓ end state; when new points
+ *   were written, additionally announce it with an info toast. The toast
+ *   mounts in the #app overlay, so a user who entered AR mid-index (the pass
+ *   never gates Enter AR) still sees the completion signal. A no-op pass
+ *   (every store already up to date) stays quiet — the bar end state suffices.
+ * - error → reset the bar and raise an error toast (the folder-manager also
+ *   routes the message to the HUD error banner for the start screen).
+ * - aborted → reset the bar silently (teardown / replaced by a new pick).
+ *
+ * Exported for testing.
+ */
+export function handleRefPointIndexingSettled(
+  outcome: Parameters<NonNullable<FolderManagerDeps['onIndexingSettled']>>[0]
+): void {
+  if (outcome.status === 'success') {
+    setFolderImportProgress({
+      kind: 'done',
+      refPointsWritten: outcome.refPointsWritten,
+      zipFilesTotal: outcome.zipFilesTotal,
+    });
+    if (outcome.refPointsWritten > 0) {
+      const points = `${outcome.refPointsWritten} reference point${outcome.refPointsWritten === 1 ? '' : 's'}`;
+      const recordings = `${outcome.zipFilesTotal} recording${outcome.zipFilesTotal === 1 ? '' : 's'}`;
+      showToast(`Recovered ${points} from ${recordings}`, {
+        severity: 'info',
+      });
+    }
+    return;
+  }
+  setFolderImportProgress(null);
+  if (outcome.status === 'error') {
+    showToast(`Reference point indexing failed: ${outcome.message}`, {
+      severity: 'error',
+      duration: TOAST_DURATION_ERROR,
+    });
+  }
+}
 
 // --- Exported for testing ---
 
@@ -603,6 +678,57 @@ function disposeLiveOccluder(): void {
 }
 
 /**
+ * Tear down the live loop-closure capture wiring. Safe to call when nothing
+ * is wired. Used on re-enter and in `resetMainState`, mirroring
+ * `disposeLiveOccluder`.
+ */
+function disposeLoopClosureWiring(): void {
+  loopClosureUnregisterFrame?.();
+  loopClosureUnregisterFrame = null;
+  loopClosureHandler = null;
+  loopClosureHandlerBoundStore = null;
+}
+
+/**
+ * Wire the live loop-closure capture (recording-options `loopClosureDebug`,
+ * default OFF). Feeds each frame's RAW WebXR pose (the reducer converts
+ * frames itself) into the library handler, so an AR relocalization jump
+ * (>1 m between consecutive frames) dispatches `arLoopClosureDetected` into
+ * the session store — and therefore into the recording. This is the corpus
+ * producer the pair-refresh T5 verdict is blocked on; see
+ * GpsPlusSlamJs_Docs/docs/2026-07-06-recorder-loop-closure-detector-wiring-plan.md.
+ */
+function wireLoopClosureCapture(): void {
+  loopClosureUnregisterFrame = registerXrFrameUpdate(() => {
+    // Lazy (re)bind to the CURRENT store: `store` swaps per recording
+    // session, and dispatching into a stale store would silently drop the
+    // closures from the recording. A rebind starts with empty last-pose
+    // memory — correct for a fresh session/frame.
+    if (loopClosureHandlerBoundStore !== store) {
+      loopClosureHandler = createLoopClosureHandler(store);
+      loopClosureHandlerBoundStore = store;
+    }
+    // `getCurrentArPose()` is nulled by the framework on tracking loss and
+    // only repopulated AFTER this callback ran on the recovery frame, so the
+    // first pose the handler sees after a reset is genuinely fresh — a
+    // recovery jump can never be misread as a loop closure.
+    const pose = getCurrentArPose();
+    if (!pose) {
+      return;
+    }
+    loopClosureHandler!.processPose(
+      [pose.position.x, pose.position.y, pose.position.z],
+      [
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w,
+      ]
+    );
+  });
+}
+
+/**
  * Reset main module state.
  * Exported for testing purposes to ensure test isolation.
  */
@@ -624,6 +750,12 @@ export function resetMainState(): void {
   if (unsubscribeTrackingQuality) {
     unsubscribeTrackingQuality();
     unsubscribeTrackingQuality = null;
+  }
+  // Ref-point views (3D + map) — AR-scoped; detach the storeRef follower and
+  // remove any drawn map markers.
+  if (refPointViews) {
+    refPointViews.unsubscribe();
+    refPointViews = null;
   }
   // F3.5d — tear down frame-tile visualizer + drop cached frame blobs so
   // GPU textures and JPEG bytes don't outlive the AR session.
@@ -654,6 +786,7 @@ export function resetMainState(): void {
   occluderSinkHandle?.dispose();
   occluderSinkHandle = null;
   disposeLiveOccluder();
+  disposeLoopClosureWiring();
   occupancyGrid = null;
   setOccupancyGrid(null);
   // Live QR teardown — stop capture, detach the producer + debug-viz subscriber.
@@ -1197,6 +1330,9 @@ async function handleEnterAR(): Promise<void> {
     // Set up tracking lost callback to warn user when AR tracking fails
     setTrackingLostCallback(() => {
       updateArInfo('⚠️ LOST');
+      // Stop feeding poses + forget the last pose: the pose jump across a
+      // loss must never be recorded as a loop closure.
+      loopClosureHandler?.setTrackingActive(false);
       showError(
         'AR tracking lost. Try moving to a well-lit area with more visual features.'
       );
@@ -1210,6 +1346,11 @@ async function handleEnterAR(): Promise<void> {
     setTrackingStore(store);
     setTrackingCallbacks((payload) => {
       store.dispatch(odometryTrackingRestarted(payload));
+      // Origin reset: clear the loop-closure handler's last-pose memory
+      // (deactivate ⇒ reset) before re-arming — the reference-space jump is
+      // an origin correction, not a relocalization loop closure.
+      loopClosureHandler?.setTrackingActive(false);
+      loopClosureHandler?.setTrackingActive(true);
       updateArInfo('');
       log.info('AR tracking restarted — alignment correction dispatched');
     });
@@ -1217,9 +1358,18 @@ async function handleEnterAR(): Promise<void> {
     // Wire seamless recovery callback (Case 1: same coordinate frame).
     // Clears the "LOST" UI warning without dispatching alignment correction.
     setTrackingRecoveredCallback(() => {
+      loopClosureHandler?.setTrackingActive(true);
       updateArInfo('');
       log.info('AR tracking recovered (same coordinate frame)');
     });
+
+    // Live loop-closure capture (experimental, default OFF): dispose any
+    // previous wiring, then register the per-frame feed only when the
+    // operator opted in — OFF keeps the frame loop untouched (zero cost).
+    disposeLoopClosureWiring();
+    if (recordingOptions.loopClosureDebug.detectorEnabled) {
+      wireLoopClosureCapture();
+    }
 
     // F3 (2026-07-04): react to a SYSTEM-initiated session end (Android back
     // gesture ends the XRSession directly — uncancelable). Mid-recording this
@@ -1314,6 +1464,17 @@ async function handleEnterAR(): Promise<void> {
       // visibility API. Live only; replay keeps them visible because clearAll
       // resets the shared singleton's visibility on each store swap.
       gpsEventVisualizer.setVisible(viz.gpsAlignmentMarkers);
+
+      // Ref-point views (3D spheres + live-map markers) — AR-scoped and
+      // store-swap-following via storeRef (round-3 feedback 2026-07-05:
+      // previously session-scoped, so imports finishing before the first
+      // recording filled the store with no view subscribed). Dispose-first
+      // on re-enter, same leak-guard pattern as the layers below.
+      refPointViews?.unsubscribe();
+      refPointViews = wireRefPointViews(storeRef, {
+        visualizer: refPointVisualizer,
+        getMap: () => mapOverlay?.getLeafletMap() ?? null,
+      });
 
       // F3.5d — wire the frame-tile visualizer into the live AR scene so
       // captured frames appear as textured planes during recording, using
@@ -1730,6 +1891,15 @@ function handleToggleMap(): void {
   }
 
   mapOverlay.toggle();
+  if (mapOverlay.isVisible()) {
+    // 2026-07-06 round-4 live-map fix: refresh AFTER toggle() — the overlay
+    // creates its inner Leaflet map only inside show(), so a refresh before
+    // toggle() always ran against a null map and drew nothing (green prior /
+    // red captured, same renderer as the summary map). Re-run on every
+    // re-show too: phases without store events (e.g. AR_READY has no GPS
+    // watch) would otherwise never trigger the wirer's subscriber.
+    refPointViews?.refreshMapMarkers();
+  }
   log.info(`Map overlay ${mapOverlay.isVisible() ? 'shown' : 'hidden'}`);
 }
 
@@ -1739,6 +1909,14 @@ function handleMapZoomIn(): void {
 
 function handleMapZoomOut(): void {
   mapOverlay?.zoomOut();
+}
+
+/**
+ * Exported for testing purposes.
+ * Wraps handleToggleMap for the map-toggle wiring tests.
+ */
+export function handleToggleMapForTesting(): void {
+  handleToggleMap();
 }
 
 /**
@@ -1897,6 +2075,8 @@ if (
     setFolderSelected,
     setSaveLocationSelected,
     setFolderImportExpanded,
+    // Folder-import indexing progress bar (D2, 2026-07-05)
+    setFolderImportProgress,
     /**
      * Map-centric recording browser (Step 4B). Mounts the full-bleed browser
      * with fixture tours (GPS paths → H3 coverage), so Playwright can exercise

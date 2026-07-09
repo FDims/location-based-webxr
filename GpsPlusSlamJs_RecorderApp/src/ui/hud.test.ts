@@ -24,6 +24,7 @@ import {
   setFolderSelected,
   setSaveLocationSelected,
   setFolderImportExpanded,
+  setFolderImportProgress,
   updateFolderStatus,
   updateSaveStatus,
   updateRefPointButtonLabel,
@@ -58,6 +59,13 @@ function setupMinimalDOM(): void {
     <button id="btn-choose-save"></button>
     <details id="folder-import-section">
       <p id="folder-import-hint" class="hidden"></p>
+      <p id="folder-status"></p>
+      <div id="folder-import-progress" class="hidden" role="progressbar"
+        aria-valuemin="0" aria-valuemax="100"
+        aria-labelledby="folder-import-progress-text">
+        <p id="folder-import-progress-text"></p>
+        <div><div id="folder-import-progress-bar" style="width: 0%"></div></div>
+      </div>
     </details>
     <div id="setup-modal"></div>
     <div id="new-scenario-section" class="hidden"></div>
@@ -596,6 +604,163 @@ describe('setFolderImportExpanded', () => {
   it('does not throw when the folder-import elements are absent (graceful)', () => {
     document.body.innerHTML = '';
     expect(() => setFolderImportExpanded(true, 'x')).not.toThrow();
+  });
+});
+
+/**
+ * D2 (2026-07-05 folder-import feedback): a determinate progress bar with a
+ * text label above it, inside the folder-import section, visualizing the
+ * eager ref-point indexing pass. Per the CLAUDE.md async-UX rule the bar must
+ * show a transitional state (in-progress) AND a durable end state (✓ summary
+ * that lingers, then hides); failures reset it via `null` (the error itself
+ * goes through the toast/error channel).
+ */
+describe('setFolderImportProgress', () => {
+  function getEls() {
+    return {
+      container: document.getElementById('folder-import-progress')!,
+      text: document.getElementById('folder-import-progress-text')!,
+      bar: document.getElementById('folder-import-progress-bar') as HTMLElement,
+    };
+  }
+
+  beforeEach(() => {
+    setupMinimalDOM();
+  });
+
+  it('is hidden by default', () => {
+    const { container } = getEls();
+    expect(container.classList.contains('hidden')).toBe(true);
+  });
+
+  it('shows text and a proportional bar width while in progress', () => {
+    setFolderImportProgress({ kind: 'progress', done: 1, total: 3 });
+
+    const { container, text, bar } = getEls();
+    expect(container.classList.contains('hidden')).toBe(false);
+    expect(text.textContent).toBe(
+      'Recovering reference points… 1 / 3 recordings'
+    );
+    expect(bar.style.width).toBe('33%');
+  });
+
+  it('stays hidden for an empty folder (total 0)', () => {
+    setFolderImportProgress({ kind: 'progress', done: 0, total: 0 });
+
+    const { container } = getEls();
+    expect(container.classList.contains('hidden')).toBe(true);
+  });
+
+  it('drives aria-valuenow so screen readers can announce progress (PR #168 a11y)', () => {
+    // Why: the visual bar is a plain styled div — without progressbar
+    // semantics assistive tech gets ZERO feedback about the indexing pass.
+    // The static role/aria-valuemin/aria-valuemax live in index.html
+    // (asserted by the setup-modal e2e against the real markup); hud.ts owns
+    // the dynamic aria-valuenow, which must track the completion percentage
+    // and be removed again when the bar hides.
+    vi.useFakeTimers();
+    try {
+      const { container } = getEls();
+
+      setFolderImportProgress({ kind: 'progress', done: 1, total: 3 });
+      expect(container.getAttribute('aria-valuenow')).toBe('33');
+
+      setFolderImportProgress({
+        kind: 'done',
+        refPointsWritten: 5,
+        zipFilesTotal: 3,
+      });
+      expect(container.getAttribute('aria-valuenow')).toBe('100');
+
+      setFolderImportProgress(null);
+      expect(container.getAttribute('aria-valuenow')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the durable ✓ end state at 100%, lingers, then hides', () => {
+    vi.useFakeTimers();
+    try {
+      setFolderImportProgress({ kind: 'progress', done: 2, total: 3 });
+      setFolderImportProgress({
+        kind: 'done',
+        refPointsWritten: 5,
+        zipFilesTotal: 3,
+      });
+
+      const { container, text, bar } = getEls();
+      expect(container.classList.contains('hidden')).toBe(false);
+      expect(bar.style.width).toBe('100%');
+      expect(text.textContent).toBe(
+        '✓ 5 reference points recovered from 3 recordings'
+      );
+
+      // Durable end state lingers, then the bar hides on its own.
+      vi.advanceTimersByTime(10_000);
+      expect(container.classList.contains('hidden')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows an "already up to date" end state when nothing was written', () => {
+    setFolderImportProgress({
+      kind: 'done',
+      refPointsWritten: 0,
+      zipFilesTotal: 4,
+    });
+
+    const { text } = getEls();
+    expect(text.textContent).toBe(
+      '✓ Reference points already up to date (4 recordings scanned)'
+    );
+  });
+
+  it('uses singular wording for one ref point from one recording', () => {
+    setFolderImportProgress({
+      kind: 'done',
+      refPointsWritten: 1,
+      zipFilesTotal: 1,
+    });
+
+    const { text } = getEls();
+    expect(text.textContent).toBe(
+      '✓ 1 reference point recovered from 1 recording'
+    );
+  });
+
+  it('hides immediately and resets the bar on null (failure/abort reset path)', () => {
+    vi.useFakeTimers();
+    try {
+      setFolderImportProgress({ kind: 'progress', done: 1, total: 2 });
+
+      setFolderImportProgress(null);
+
+      const { container, bar } = getEls();
+      expect(container.classList.contains('hidden')).toBe(true);
+      expect(bar.style.width).toBe('0%');
+
+      // A pending linger timer from an earlier done-state must not resurface
+      // the bar after a reset.
+      setFolderImportProgress({
+        kind: 'done',
+        refPointsWritten: 1,
+        zipFilesTotal: 1,
+      });
+      setFolderImportProgress(null);
+      vi.advanceTimersByTime(10_000);
+      expect(container.classList.contains('hidden')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not throw when the progress elements are absent (graceful)', () => {
+    document.body.innerHTML = '';
+    expect(() =>
+      setFolderImportProgress({ kind: 'progress', done: 1, total: 2 })
+    ).not.toThrow();
   });
 });
 

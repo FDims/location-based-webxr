@@ -2127,3 +2127,85 @@ describe('handleMarkRefPoint — refPoints dispatch (Step 5.2 / 5.7)', () => {
     expect(v2Payload.name).toBe('Bank');
   });
 });
+
+// ============================================================================
+// D5 (2026-07-05 folder-import feedback, Finding 5): neighbor-cell
+// re-observations must append to the MATCHED definition, not create a sibling.
+//
+// Why these tests matter: the proximity matcher deliberately tolerates
+// gridDisk neighbor cells, but the persist path used the user's CURRENT cell
+// as the id — so a re-observation made a few metres off the original spot
+// landed in a different refPoints/{id}.json, splitting one physical point's
+// observation history into sibling definitions (two anchors/spheres, and
+// fragmented data for averaging and the import gap-fill).
+// ============================================================================
+
+describe('handleMarkRefPoint — neighbor-cell re-observation routing (D5)', () => {
+  const anchorLat = 49.0;
+  const anchorLon = 8.0;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsRefPointPickerVisible.mockReturnValue(false);
+    mockGetCurrentArPose.mockReturnValue(createMockArPose());
+    mockGetCurrentScenarioHandle.mockReturnValue(createMockScenarioHandle());
+    mockExtractOdomPosition.mockReturnValue([1, 2, 3] as Vector3);
+    mockExtractOdomRotation.mockReturnValue([0, 0, 0, 1] as Quaternion);
+  });
+
+  it('persists a neighbor-cell re-observation under the matched anchor id (no sibling definition)', async () => {
+    // ~33m north of the anchor — a neighbor cell at H3 res-11 (~25m edge),
+    // still inside the gridDisk(1) match zone (same geometry as the
+    // isNeighborCell tests above).
+    const gps = createMockGpsPoint({ latitude: 49.0003, longitude: 8.0 });
+    const store = createMockStore([gps]);
+    const handlers = createRefPointHandlers(
+      createDefaultDeps({ getStore: () => store })
+    );
+    populateKnownAnchor(store, {
+      name: 'Bench Corner',
+      lat: anchorLat,
+      lon: anchorLon,
+    });
+
+    const anchorCell = gpsToH3(anchorLat, anchorLon);
+    const currentCell = gpsToH3(49.0003, 8.0);
+    // Sanity: this really is the neighbor-cell case, not same-cell.
+    expect(currentCell).not.toBe(anchorCell);
+
+    await handlers.handleMarkRefPoint();
+
+    // Re-observation path (no picker), appended to the MATCHED definition.
+    expect(mockShowRefPointPicker).not.toHaveBeenCalled();
+    expect(mockSaveRefPointObservation).toHaveBeenCalledTimes(1);
+    const [, persistedId, persistedName] =
+      mockSaveRefPointObservation.mock.calls[0];
+    expect(persistedId).toBe(anchorCell);
+    expect(persistedName).toBe('Bench Corner');
+
+    // The store entry (visualizer/matcher source) uses the matched id too —
+    // one anchor, one sphere.
+    expect(getLastV2Payload(store)?.id).toBe(anchorCell);
+  });
+
+  it('same-cell re-observation keeps the (identical) matched id — regression pin', async () => {
+    const gps = createMockGpsPoint({
+      latitude: anchorLat,
+      longitude: anchorLon,
+    });
+    const store = createMockStore([gps]);
+    const handlers = createRefPointHandlers(
+      createDefaultDeps({ getStore: () => store })
+    );
+    populateKnownAnchor(store, {
+      name: 'Bench Corner',
+      lat: anchorLat,
+      lon: anchorLon,
+    });
+
+    await handlers.handleMarkRefPoint();
+
+    const [, persistedId] = mockSaveRefPointObservation.mock.calls[0];
+    expect(persistedId).toBe(gpsToH3(anchorLat, anchorLon));
+  });
+});

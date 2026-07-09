@@ -56,20 +56,8 @@ export interface SessionEntry {
 export type ScenarioSessionMap = Map<string, SessionEntry[]>;
 
 // ---------------------------------------------------------------------------
-// Filename date pattern
+// Filename patterns
 // ---------------------------------------------------------------------------
-
-/**
- * Regex matching the timestamp portion of session zip filenames.
- *
- * Matches both formats:
- * - "recording-YYYY-MM-DD_HH-MM-SSutc.zip"
- * - "ScenarioName-session-YYYY-MM-DD_HH-MM-SSutc.zip"
- *
- * Captures: year, month, day, hours, minutes, seconds
- */
-const SESSION_DATE_PATTERN =
-  /(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})utc\.zip$/;
 
 /**
  * Regex matching scenario-prefixed session zip filenames.
@@ -87,39 +75,23 @@ const SCENARIO_PREFIX_PATTERN =
 import { isValidCell } from 'h3-js';
 import { loadSessionMetadataFromBlob } from 'gps-plus-slam-app-framework/storage/zip-reader';
 import { mapWithConcurrencyLimit } from 'gps-plus-slam-app-framework/utils/concurrency';
+import {
+  parseDateFromSessionFilename,
+  resolveScenarioNameFromMetadata,
+} from '../storage/session-zip-naming';
+
+// The naming/identity helpers moved to storage/session-zip-naming.ts so the
+// ref-point indexing pass (storage layer) can share them without violating
+// the no-storage-importing-ui boundary. Re-exported here for the existing
+// consumers of this module (hud, recording-session-handlers, tests).
+export {
+  DEFAULT_SCENARIO,
+  parseDateFromSessionFilename,
+} from '../storage/session-zip-naming';
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-/**
- * Parse a UTC date from a session zip filename.
- *
- * Supports both standard recording filenames and scenario-prefixed filenames:
- * - "recording-2026-02-19_10-15-00utc.zip"
- * - "Paris-session-2026-01-30_14-30-45utc.zip"
- *
- * @param filename - The zip filename to parse
- * @returns Parsed Date in UTC, or null if filename doesn't match the expected pattern
- */
-export function parseDateFromSessionFilename(filename: string): Date | null {
-  const match = SESSION_DATE_PATTERN.exec(filename);
-  if (!match) {
-    return null;
-  }
-
-  const [, year, month, day, hours, minutes, seconds] = match;
-  // Construct ISO 8601 string for unambiguous UTC parsing
-  const iso = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`;
-  const date = new Date(iso);
-
-  // Validate the date is real (e.g., not Feb 30)
-  if (isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
-}
 
 /**
  * Enumerate scenario names (top-level directories) from a folder handle.
@@ -189,13 +161,6 @@ interface ZipMetadataDiscoveryResult {
   /** All unique scenario names found, sorted alphabetically */
   scenarioNames: string[];
 }
-
-/**
- * Canonical scenario name used for recordings with no explicit scenario.
- * Both missing metadata and explicit "Default Scenario" in session.json
- * map to this value (UX feedback 2026-03-23 Issue 2).
- */
-export const DEFAULT_SCENARIO = 'Default Scenario';
 
 /**
  * Maximum number of zip files to read concurrently during metadata discovery.
@@ -305,21 +270,9 @@ export async function discoverScenariosFromZipMetadata(
   // to it for backwards compatibility with previously-exported recordings.
   for (const { name, handle, metadata } of metadataResults) {
     // Merge missing metadata and "Default Scenario" into the same canonical
-    // group (UX feedback 2026-03-23 Issue 2).
-    let scenarioName: string;
-    const legacyScenarioName = metadata?.scenarioName;
-    const tag =
-      typeof metadata?.contextTag === 'string' && metadata.contextTag.length > 0
-        ? metadata.contextTag
-        : typeof legacyScenarioName === 'string' &&
-            legacyScenarioName.length > 0
-          ? legacyScenarioName
-          : null;
-    if (tag !== null && tag !== DEFAULT_SCENARIO) {
-      scenarioName = tag;
-    } else {
-      scenarioName = DEFAULT_SCENARIO;
-    }
+    // group (UX feedback 2026-03-23 Issue 2) — shared resolver, see
+    // resolveScenarioNameFromMetadata.
+    const scenarioName = resolveScenarioNameFromMetadata(metadata);
 
     const h3Cells = parseH3Cells(metadata?.h3Cells);
     const entry: SessionEntry = {

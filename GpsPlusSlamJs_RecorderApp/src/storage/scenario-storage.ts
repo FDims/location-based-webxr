@@ -325,6 +325,47 @@ export async function ensureScenarioDirectory(
   }
 }
 
+/**
+ * Open a scenario directory WITHOUT repointing the module's current-scenario
+ * state — unlike `setCurrentScenario`/`ensureScenarioDirectory`, which cache
+ * the handle as "current" as a side effect. Used by the eager ref-point
+ * indexing pass, which writes into many scenarios while the user's selected
+ * scenario must stay current (2026-07-05 folder-import plan §3.2).
+ *
+ * @returns The directory handle, or `null` when storage is uninitialized or
+ * the scenario does not exist and `create` was not requested.
+ * @throws Any other storage failure (`QuotaExceededError`,
+ * `TypeMismatchError` — a file occupying the scenario name — etc.): mapping
+ * those to `null` made the eager indexing pass skip the scenario and report
+ * SUCCESS with fewer points written instead of surfacing the error.
+ */
+export async function getScenarioDirectoryHandle(
+  scenarioName: string,
+  options: { create?: boolean } = {}
+): Promise<FileSystemDirectoryHandle | null> {
+  const scenRoot = await ensureScenariosDir();
+  if (!scenRoot) {
+    return null;
+  }
+  try {
+    return await scenRoot.getDirectoryHandle(scenarioName, {
+      create: options.create === true,
+    });
+  } catch (err) {
+    // Only "missing scenario, create not requested" is knowledge about the
+    // scenario; everything else is a storage failure the caller must hear
+    // about loudly (see @throws above).
+    if (
+      options.create !== true &&
+      err instanceof DOMException &&
+      err.name === 'NotFoundError'
+    ) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 // ============================================================================
 // Maintenance
 // ============================================================================
