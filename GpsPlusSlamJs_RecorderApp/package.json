@@ -18,6 +18,8 @@
     "test:unit": "node ../scripts/run-vitest-scoped.mjs run --coverage --config=config/vitest.config.ts",
     "test:investigation": "pnpm --filter gps-plus-slam-investigation test",
     "test:watch": "vitest --config config/vitest.config.ts",
+    "bench": "vitest bench --run --config config/vitest.bench.config.ts",
+    "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
     "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
     "test:e2e": "pnpm run build:framework && pnpm exec playwright --version && playwright test --config playwright-tests/playwright.config.js",
     "test:e2e:headed": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --headed",

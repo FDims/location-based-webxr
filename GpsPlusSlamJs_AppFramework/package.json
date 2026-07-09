@@ -44,6 +44,8 @@
     "typecheck:tests": "tsc -p tsconfig.vitest.json --noEmit",
     "lint": "eslint . --config config/eslint.config.mjs --max-warnings 37",
     "test:watch": "vitest --config config/vitest.config.ts",
+    "bench": "vitest bench --run --config config/vitest.bench.config.ts",
+    "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
     "check:cycles": "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts",
     "setup": "bash ./scripts/setup.sh"
   },

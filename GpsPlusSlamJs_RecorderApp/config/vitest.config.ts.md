@@ -22,6 +22,7 @@ Vitest configuration for unit testing with V8 coverage.
 
 - Test files (`*.test.ts`, `*.spec.ts`)
 - Entry point (`main.ts`) - integration layer
+- Benchmarks (`*.bench.ts`) - measurement instruments run via `pnpm bench` ([vitest.bench.config.ts.md](vitest.bench.config.ts.md)), not code under test; excluding them keeps the hard coverage thresholds unaffected
 
 ## Usage
 
