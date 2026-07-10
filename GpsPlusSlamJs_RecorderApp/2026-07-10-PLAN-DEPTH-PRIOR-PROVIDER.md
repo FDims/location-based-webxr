@@ -374,3 +374,70 @@ The caller (e.g. a future `measurement-point-handlers.ts` mirroring `ref-point-h
 4. Attach the `DepthPriorObservation | null` to the `addMeasurementRay` Redux action payload.
 5. The triangulation solver (Components 1 & 3) folds `observation.point` and `observation.weight`
    as the depth soft prior — trusted up close and on flat geometry, fading smoothly to zero at occlusion boundaries.
+
+### DEMO RESULTS
+
+The implementation was successfully completed and verified on 2026-07-10. All 32 unit tests and 4 interactive demo cases passed.
+
+#### 1. Core Utilities Implementation
+- Implemented [depth-prior-provider.ts](file:///c:/Users/fachr/Documents/Github/location-based-webxr/GpsPlusSlamJs_RecorderApp/src/utils/depth-prior-provider.ts) containing:
+  - `sampleDepthPrior`: orchestration entry-point.
+  - `unprojectScreenToCamera`: NDC-to-camera-space inverse projection using sign-aligned Y axis mapping matching `depth-unprojection.ts` (`ndcY = 1.0 - 2.0 * screenY`).
+  - `transformCameraToWorld`: pose translation and quaternion sandwich rotation formula.
+  - `computeDepthWeight`: quartic decay confidence model ($\frac{1}{1 + (d/r)^4}$).
+  - `computeEdgePenalty`: standard deviation check to reject depth prior at discontinuities.
+
+#### 2. Test Verification
+- All tests in [depth-prior-provider.test.ts](file:///c:/Users/fachr/Documents/Github/location-based-webxr/GpsPlusSlamJs_RecorderApp/src/utils/depth-prior-provider.test.ts) pass, including:
+  - Monotonicity and boundary checks for `computeDepthWeight`.
+  - Edge penalty rejection under neighborhood variance.
+  - Equivalence check verifying that our custom camera-to-world transform exactly matches the framework's own `unprojectDepthPoint` across randomized inputs.
+
+#### 3. Interactive Demo Output
+Running `pnpm vitest run src/utils/depth-prior-demo.test.ts --config=config/vitest.config.ts --coverage=false --silent=false` produces the following console output:
+
+```
+================================================================
+DEPTH PRIOR PROVIDER DEMO PROTOTYPE
+================================================================
+Camera Position: [0, 1.6, 0]
+Camera Rotation: [0, 0, 0, 1]
+Reference Range: 2 meters (confidence drops to 0.5 at this distance)
+
+--- TARGET A: Near Object ---
+Aimed screen position   : (0.500, 0.500)
+Raw depth measured      : 1.200 m
+Unprojected 3D point    : (0.0000, 1.6000, -1.2000)  [world/WebXR frame]
+Confidence weight       : 0.88527  [██████████████████░░]
+✓ Near object → HIGH confidence (well inside knee distance)
+
+--- TARGET B: Far Object ---
+Aimed screen position   : (0.500, 0.500)
+Raw depth measured      : 6.000 m
+Unprojected 3D point    : (0.0000, 1.6000, -6.0000)  [world/WebXR frame]
+Confidence weight       : 0.01220  [░░░░░░░░░░░░░░░░░░░░]
+✓ Far object → LOW confidence (quartic collapse 3× past knee)
+
+--- CONFIDENCE COLLAPSE TABLE ---
+  Depth     Weight      Bar (20 chars)            World point  [x, y, z]
+  ────────────────────────────────────────────────────────────────────────────
+  0.5 m     0.99611     [████████████████████]  (0.000, 1.600, -0.500)
+  1.0 m     0.94118     [███████████████████░]  (0.000, 1.600, -1.000)
+  1.5 m     0.75964     [███████████████░░░░░]  (0.000, 1.600, -1.500)
+  2.0 m     0.50000     [██████████░░░░░░░░░░]  (0.000, 1.600, -2.000)  ← knee
+  2.5 m     0.29058     [██████░░░░░░░░░░░░░░]  (0.000, 1.600, -2.500)
+  3.0 m     0.16495     [███░░░░░░░░░░░░░░░░░]  (0.000, 1.600, -3.000)
+  4.0 m     0.05882     [█░░░░░░░░░░░░░░░░░░░]  (0.000, 1.600, -4.000)
+  5.0 m     0.02496     [░░░░░░░░░░░░░░░░░░░░]  (0.000, 1.600, -5.000)
+  6.0 m     0.01220     [░░░░░░░░░░░░░░░░░░░░]  (0.000, 1.600, -6.000)
+  8.0 m     0.00389     [░░░░░░░░░░░░░░░░░░░░]  (0.000, 1.600, -8.000)
+  10.0 m    0.00160     [░░░░░░░░░░░░░░░░░░░░]  (0.000, 1.600, -10.000)
+
+  ► Analytical knee check: computeDepthWeight(2.0, 2.0) = 0.500000
+
+--- TARGET C: Edge Discontinuity (Bleeding Boundary) ---
+Depths in neighborhood: 0.5m, 2.5m, 2.5m (high variance)
+Result                  : null — prior correctly SUPPRESSED on edge boundary ✓
+================================================================
+```
+
