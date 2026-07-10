@@ -347,6 +347,87 @@ function drawLine3(ax,ay,az, bx,by,bz, style, lineWidth=1, dash=[]) {
   ctx.restore();
 }
 
+/**
+ * Draws a ray that extends infinitely (clipped to FAR world units ahead).
+ * The origin dot and a small near-tip arrowhead indicate direction.
+ * A gradient fades the far end to transparent so it reads as infinite.
+ */
+function drawRayInfinite(ox,oy,oz, dx,dy,dz, colour, alpha=1) {
+  const len = Math.sqrt(dx*dx+dy*dy+dz*dz); if(len<1e-9) return;
+  const ndx=dx/len, ndy=dy/len, ndz=dz/len;
+
+  // How far we extend — large enough to leave the visible grid in any direction
+  const FAR = 200;
+
+  // Near arrowhead tip — just a short distance for the head marker
+  const NEAR_TIP = 1.5;
+  const tx=ox+ndx*NEAR_TIP, ty=oy+ndy*NEAR_TIP, tz=oz+ndz*NEAR_TIP;
+
+  // Far end
+  const fx=ox+ndx*FAR, fy=oy+ndy*FAR, fz=oz+ndz*FAR;
+
+  const O = project3(ox,oy,oz);
+  const T = project3(tx,ty,tz); // near tip for arrowhead
+  const F = project3(fx,fy,fz); // far projected point (may be null if behind camera)
+
+  ctx.save(); ctx.globalAlpha=alpha;
+
+  // ── Infinite shaft with a fade-to-transparent gradient ──
+  // We draw from origin toward the far point. If the far point projects off-screen
+  // we still draw toward wherever the direction goes on-screen.
+  if (O) {
+    // Find a far screen point: either the projected FAR end or push it well off-screen
+    // in the direction of travel from origin.
+    let fsx, fsy;
+    if (F) {
+      fsx = F.sx; fsy = F.sy;
+    } else if (T) {
+      // Extrapolate the line from O through T well off-screen
+      const vx = T.sx - O.sx, vy = T.sy - O.sy;
+      const screenDiag = Math.sqrt(W*W + H*H);
+      const mag = Math.sqrt(vx*vx+vy*vy) || 1;
+      fsx = O.sx + (vx/mag) * screenDiag * 2;
+      fsy = O.sy + (vy/mag) * screenDiag * 2;
+    } else {
+      ctx.restore(); return; // direction is behind camera entirely
+    }
+
+    const grad = ctx.createLinearGradient(O.sx, O.sy, fsx, fsy);
+    grad.addColorStop(0,   colour);            // opaque at origin
+    grad.addColorStop(0.3, colour);            // stays solid for the first 30%
+    grad.addColorStop(1,   colour + '00');     // fades to transparent far end
+
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(O.sx, O.sy);
+    ctx.lineTo(fsx, fsy);
+    ctx.stroke();
+  }
+
+  // ── Arrowhead (screen-space, at the near tip) ──
+  if (T && O) {
+    const ang = Math.atan2(T.sy - O.sy, T.sx - O.sx);
+    const hs = 10;
+    ctx.fillStyle = colour;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(T.sx, T.sy);
+    ctx.lineTo(T.sx - hs*Math.cos(ang-0.4), T.sy - hs*Math.sin(ang-0.4));
+    ctx.lineTo(T.sx - hs*Math.cos(ang+0.4), T.sy - hs*Math.sin(ang+0.4));
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ── Origin dot ──
+  if (O) {
+    ctx.fillStyle = colour;
+    ctx.beginPath(); ctx.arc(O.sx,O.sy,5,0,Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawGrid() {
   const N = 6;
   for (let i=-N; i<=N; i++) {
@@ -362,41 +443,6 @@ function drawGrid() {
   if(px) ctx.fillText('+X',px.sx,px.sy);
   if(py) ctx.fillText('+Y',py.sx,py.sy);
   if(pz) ctx.fillText('+Z',pz.sx,pz.sy);
-}
-
-function drawArrow3(ox,oy,oz, dx,dy,dz, colour, alpha=1) {
-  const len = Math.sqrt(dx*dx+dy*dy+dz*dz); if(len<1e-9) return;
-  const ndx=dx/len, ndy=dy/len, ndz=dz/len;
-  const SHAFT = 4; // world units
-  const ex=ox+ndx*SHAFT, ey=oy+ndy*SHAFT, ez=oz+ndz*SHAFT;
-
-  ctx.save(); ctx.globalAlpha=alpha;
-
-  // Shaft
-  drawLine3(ox,oy,oz, ex,ey,ez, colour, 2);
-
-  // Arrowhead (in screen space at projected tip)
-  const A = project3(ex,ey,ez);
-  const B = project3(ox,oy,oz);
-  if (A && B) {
-    const ang = Math.atan2(A.sy-B.sy, A.sx-B.sx);
-    const hs = 10;
-    ctx.fillStyle = colour;
-    ctx.beginPath();
-    ctx.moveTo(A.sx, A.sy);
-    ctx.lineTo(A.sx - hs*Math.cos(ang-0.4), A.sy - hs*Math.sin(ang-0.4));
-    ctx.lineTo(A.sx - hs*Math.cos(ang+0.4), A.sy - hs*Math.sin(ang+0.4));
-    ctx.closePath(); ctx.fill();
-  }
-
-  // Origin dot
-  const O = project3(ox,oy,oz);
-  if (O) {
-    ctx.fillStyle = colour;
-    ctx.beginPath(); ctx.arc(O.sx,O.sy,5,0,Math.PI*2); ctx.fill();
-  }
-
-  ctx.restore();
 }
 
 function drawDot3(wx,wy,wz, r, col, glow=0) {
@@ -449,9 +495,9 @@ function draw() {
     }
   }
 
-  // Rays
+  // Rays — drawn as infinite lines fading to transparent at the far end
   for (const r of rays) {
-    drawArrow3(r.origin.x,r.origin.y,r.origin.z, r.dir.x,r.dir.y,r.dir.z, r.colour);
+    drawRayInfinite(r.origin.x,r.origin.y,r.origin.z, r.dir.x,r.dir.y,r.dir.z, r.colour);
   }
 
   // No drag preview needed — ray shoots on click, not drag
