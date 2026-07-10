@@ -7,20 +7,12 @@ Sample the recorder's existing depth map / occupancy grid along the aimed direct
 - Attach a confidence weight that decays with distance
 - Reuse the recorder's depth-sampling rather than adding a parallel one
 
-### IMPLEMENTATION
-
-Pure math — no Three.js, no DOM, no WebXR. All inputs (depth sample, projection matrix,
-aimed pixel, device pose) are passed by the caller from the store's
-`state.recording.latestDepthSample`. The module only does arithmetic.
-
 #### Viewport Alignment & Coordinates
 To prevent skew from aspect ratio differences (e.g. $19.5:9$ phone screen displaying a letterboxed $4:3$ WebXR camera feed), the caller MUST map screen-space inputs (`aimedScreenX`, `aimedScreenY`) to the normalised camera texture coordinate frame $[0,1]$ matching the projection matrix before passing them to the provider.
 
 #### Types
 
 ```typescript
-import type { Matrix4, Vector3, Quaternion } from 'gps-plus-slam-app-framework/core';
-
 /** Single recorded depth point: screen-normalised coords + depth in metres. */
 export interface DepthPointInput {
   /** Normalised horizontal screen position [0, 1]. */
