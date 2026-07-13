@@ -430,6 +430,10 @@
       </div>
 
       <div class="controls">
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <input type="checkbox" id="depth-prior-toggle" checked>
+          Enable Depth Prior Integration
+        </label>
         <label>
           Ray weight
           <div class="range-row">
@@ -455,6 +459,7 @@
 
   <script type="module">
     import { solveClosestPointOfApproach } from './src/utils/ray-triangulation-core.ts';
+    import { sampleDepthPrior } from './src/utils/depth-prior-provider.ts';
 
     // ─── Vector math ────────────────────────────────────────────────────────────
     const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -497,6 +502,85 @@
       const t = -P.y / d.y;
       if (t < 0) return null;
       return { x: P.x + t * d.x, y: 0, z: P.z + t * d.z };
+    }
+
+    // ─── Depth Prior ────────────────────────────────────────────────────────────
+    function generateDepthSample() {
+      const g = 32;
+      const points = [];
+      const { P, fwd, right, up } = getCameraBasis();
+      const FOV = Math.min(W, H) * 0.7;
+
+      for (let row = 0; row < g; row++) {
+        for (let col = 0; col < g; col++) {
+          const screenX = (col + 1) / (g + 1);
+          const screenY = (row + 1) / (g + 1);
+          
+          const sx = screenX * W;
+          const sy = screenY * H;
+          const d = norm3(add3(add3(scale3(right, (sx - cx) / FOV), scale3(up, -(sy - cy) / FOV)), fwd));
+
+          let depthM = 0;
+          if (d.y < -1e-5) {
+             const tGround = -P.y / d.y;
+             depthM = tGround;
+          } else {
+             depthM = 20; 
+          }
+          
+          // Sphere at (0, 1.5, 0)
+          const sphereC = { x: 0, y: 1.5, z: 0 };
+          const oc = { x: P.x - sphereC.x, y: P.y - sphereC.y, z: P.z - sphereC.z };
+          const b = dot3(oc, d);
+          const c = dot3(oc, oc) - 4;
+          const disc = b*b - c;
+          if (disc > 0) {
+            const tSphere = -b - Math.sqrt(disc);
+            if (tSphere > 0 && (depthM === 0 || tSphere < depthM)) {
+               depthM = tSphere;
+            }
+          }
+          
+          const zDepth = depthM * dot3(d, fwd);
+          if (zDepth > 0 && zDepth < 50) {
+            points.push({ screenX, screenY, depthM: zDepth });
+          }
+        }
+      }
+
+      const m00 = right.x, m01 = up.x, m02 = -fwd.x;
+      const m10 = right.y, m11 = up.y, m12 = -fwd.y;
+      const m20 = right.z, m21 = up.z, m22 = -fwd.z;
+      const tr = m00 + m11 + m22;
+      let qw, qx, qy, qz;
+      if (tr > 0) {
+        const S = Math.sqrt(tr + 1.0) * 2;
+        qw = 0.25 * S; qx = (m21 - m12) / S; qy = (m02 - m20) / S; qz = (m10 - m01) / S;
+      } else if ((m00 > m11) && (m00 > m22)) {
+        const S = Math.sqrt(1.0 + m00 - m11 - m22) * 2;
+        qw = (m21 - m12) / S; qx = 0.25 * S; qy = (m01 + m10) / S; qz = (m02 + m20) / S;
+      } else if (m11 > m22) {
+        const S = Math.sqrt(1.0 + m11 - m00 - m22) * 2;
+        qw = (m02 - m20) / S; qx = (m01 + m10) / S; qy = 0.25 * S; qz = (m12 + m21) / S;
+      } else {
+        const S = Math.sqrt(1.0 + m22 - m00 - m11) * 2;
+        qw = (m10 - m01) / S; qx = (m02 + m20) / S; qy = (m12 + m21) / S; qz = 0.25 * S;
+      }
+
+      const projectionMatrix = [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, -1, -1,
+        0, 0, -0.1, 0
+      ];
+
+      return {
+        timestamp: performance.now(),
+        cameraPos: [P.x, P.y, P.z],
+        cameraRot: [qx, qy, qz, qw],
+        projectionMatrix,
+        points
+      };
     }
 
     // ─── State ──────────────────────────────────────────────────────────────────
@@ -678,6 +762,11 @@
       // Rays
       for (const r of rays) {
         drawArrow3(r.origin.x, r.origin.y, r.origin.z, r.dir.x, r.dir.y, r.dir.z, r.colour);
+        
+        if (r.priorObs && r.priorObs.weight > 0) {
+          const p = r.priorObs.point;
+          drawDot3(p[0], p[1], p[2], 6, '#34d399', 4);
+        }
       }
 
       // No drag preview needed — ray shoots on click, not drag
@@ -704,6 +793,9 @@
       const obs = rays.map(r => ({
         ray: { origin: r.origin, direction: r.dir },
         rayWeight: r.weight,
+        // Passing depth points if they are attached to the ray (e.g. from priorObs)
+        depthPoint: r.priorObs ? { x: r.priorObs.point[0], y: r.priorObs.point[1], z: r.priorObs.point[2] } : undefined,
+        depthWeight: r.priorObs ? r.priorObs.weight : undefined
       }));
       result = solveClosestPointOfApproach(obs);
       updateSidebar();
@@ -756,7 +848,10 @@
         <strong>Ray ${i + 1}</strong><br>
         o=(${fmt(r.origin.x)},${fmt(r.origin.y)},${fmt(r.origin.z)})<br>
         d=(${fmt(r.dir.x, 2)},${fmt(r.dir.y, 2)},${fmt(r.dir.z, 2)})
-        w=${r.weight.toFixed(1)}
+        <br>
+        <span style="color:${r.priorObs ? (r.priorObs.weight > 0 ? 'var(--good)' : 'var(--bad)') : 'var(--text)'}">
+          ${r.priorObs ? (r.priorObs.weight > 0 ? `Prior active (w=${r.priorObs.weight.toFixed(2)})` : `Edge rejected (w=0.0)`) : `w=${r.weight.toFixed(1)}`}
+        </span>
       </div>
       <div class="ray-del" onclick="deleteRay(${i})">×</div>
     </div>
@@ -791,10 +886,21 @@
         const { P, fwd, right, up } = getCameraBasis();
         const FOV = Math.min(W, H) * 0.7;
         const d = norm3(add3(add3(scale3(right, (e.offsetX - cx) / FOV), scale3(up, -(e.offsetY - cy) / FOV)), fwd));
+        
+        let priorObs = null;
+        const useDepthPrior = document.getElementById('depth-prior-toggle').checked;
+        if (useDepthPrior) {
+          const sample = generateDepthSample();
+          const screenX = e.offsetX / W;
+          const screenY = e.offsetY / H;
+          priorObs = sampleDepthPrior(sample, screenX, screenY);
+        }
+
         rays.push({
           origin: { x: P.x, y: P.y, z: P.z },
           dir: { x: d.x, y: d.y, z: d.z },
           weight: parseFloat(document.getElementById('weight').value),
+          priorObs,
           colour: COLOURS[rays.length % COLOURS.length],
         });
         solve();
