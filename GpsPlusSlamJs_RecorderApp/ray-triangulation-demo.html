@@ -29,7 +29,7 @@
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: Inter, sans-serif;
       background: var(--bg);
       color: var(--text);
       height: 100dvh;
@@ -102,7 +102,7 @@
       bottom: 12px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(22, 27, 36, .85);
+      background: rgb(22 27 36 / 85%);
       border: 1px solid var(--border);
       border-radius: 99px;
       padding: 4px 14px;
@@ -252,7 +252,7 @@
 
     .ray-del:hover {
       color: var(--bad);
-      background: rgba(248, 113, 113, .1);
+      background: rgb(248 113 113 / 10%);
     }
 
     .empty-state {
@@ -286,11 +286,11 @@
 
     .btn:hover {
       border-color: var(--accent);
-      background: rgba(79, 142, 247, .08);
+      background: rgb(79 142 247 / 8%);
     }
 
     .btn.active {
-      background: rgba(79, 142, 247, .18);
+      background: rgb(79 142 247 / 18%);
       border-color: var(--accent);
       color: var(--accent);
     }
@@ -313,7 +313,7 @@
       gap: 4px;
     }
 
-    input[type=range] {
+    input[type="range"] {
       width: 100%;
       accent-color: var(--accent);
     }
@@ -358,7 +358,7 @@
 
     #tooltip {
       position: fixed;
-      background: rgba(22, 27, 36, .95);
+      background: rgb(22 27 36 / 95%);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 5px 10px;
@@ -525,18 +525,18 @@
     function drawLine3(ax, ay, az, bx, by, bz, style, lineWidth = 1, dash = []) {
       const { P, fwd, right, up } = getCameraBasis();
       const FOV = Math.min(W, H) * 0.7;
-      
+
       const vA = { x: ax - P.x, y: ay - P.y, z: az - P.z };
       const cA = { x: dot3(vA, right), y: dot3(vA, up), z: dot3(vA, fwd) };
-      
+
       const vB = { x: bx - P.x, y: by - P.y, z: bz - P.z };
       const cB = { x: dot3(vB, right), y: dot3(vB, up), z: dot3(vB, fwd) };
 
       const NEAR = 0.05;
       if (cA.z < NEAR && cB.z < NEAR) return; // both entirely behind camera
-      
+
       let pA = cA, pB = cB;
-      
+
       // Clip to near plane
       if (pA.z < NEAR) {
         const t = (NEAR - cA.z) / (cB.z - cA.z);
@@ -563,10 +563,10 @@
     function drawArrow3(ox, oy, oz, dx, dy, dz, colour, alpha = 1) {
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz); if (len < 1e-9) return;
       const ndx = dx / len, ndy = dy / len, ndz = dz / len;
-      
+
       const FAR = 200;
       const fx = ox + ndx * FAR, fy = oy + ndy * FAR, fz = oz + ndz * FAR;
-      
+
       const TIP = 3; // arrowhead distance from origin
       const tx = ox + ndx * TIP, ty = oy + ndy * TIP, tz = oz + ndz * TIP;
 
@@ -610,7 +610,7 @@
       }
       // Y axis (vertical)
       drawLine3(0, 0, 0, 0, 4, 0, 'rgba(255,255,255,0.4)', 2);
-      
+
       // Highlight the XZ plane perimeter bounds
       drawLine3(-N, 0, -N, N, 0, -N, 'rgba(255,255,255,0.3)', 1.5);
       drawLine3(N, 0, -N, N, 0, N, 'rgba(255,255,255,0.3)', 1.5);
