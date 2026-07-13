@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Depth Prior Provider - Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #020617;
+      --bg-gradient: radial-gradient(circle at top right, #1e293b, #020617);
+      --glass-bg: rgba(30, 41, 59, 0.4);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --success: #34d399;
+      --danger: #f87171;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      overflow: hidden;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+
+    p.subtitle {
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    main {
+      display: flex;
+      gap: 2rem;
+      align-items: stretch;
+      max-width: 1000px;
+      width: 100%;
+    }
+
+    .canvas-container {
+      position: relative;
+      flex: 1;
+      aspect-ratio: 1;
+      max-width: 600px;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--glass-border);
+      background: #000;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    #crosshair {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: border-color 0.15s ease, transform 0.05s ease-out;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      display: none;
+    }
+
+    #crosshair::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 4px;
+      height: 4px;
+      background: white;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .telemetry {
+      width: 320px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .telemetry-header {
+      font-size: 1.25rem;
+      font-weight: 600;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .metric-label {
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      align-items: baseline;
+      gap: 0.25rem;
+    }
+
+    .metric-unit {
+      font-size: 1rem;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.15s ease-out, background-color 0.15s ease;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      font-weight: 500;
+      font-size: 0.875rem;
+      margin-top: auto;
+      transition: all 0.3s ease;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background-color 0.3s ease;
+    }
+
+    .status-badge.valid {
+      background: rgba(52, 211, 153, 0.1);
+      border-color: rgba(52, 211, 153, 0.2);
+      color: var(--success);
+    }
+    .status-badge.valid .status-dot { background: var(--success); }
+
+    .status-badge.rejected {
+      background: rgba(248, 113, 113, 0.1);
+      border-color: rgba(248, 113, 113, 0.2);
+      color: var(--danger);
+      animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+    }
+    .status-badge.rejected .status-dot { background: var(--danger); }
+
+    @keyframes shake {
+      10%, 90% { transform: translate3d(-1px, 0, 0); }
+      20%, 80% { transform: translate3d(2px, 0, 0); }
+      30%, 50%, 70% { transform: translate3d(-2px, 0, 0); }
+      40%, 60% { transform: translate3d(2px, 0, 0); }
+    }
+
+    .point-data {
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--muted);
+      background: rgba(0,0,0,0.3);
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-top: 0.5rem;
+      white-space: pre-wrap;
+      min-height: 4.5rem;
+    }
+
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Depth Prior Telemetry</h1>
+    <p class="subtitle">Hover over the synthetic depth map to evaluate real-time triangulation confidence.</p>
+  </header>
+
+  <main>
+    <div class="canvas-container">
+      <canvas id="depthCanvas" width="512" height="512"></canvas>
+      <div id="crosshair"></div>
+    </div>
+
+    <div class="telemetry">
+      <div class="telemetry-header">Live Evaluation</div>
+
+      <div class="metric">
+        <div class="metric-label">Interpolated Depth</div>
+        <div class="metric-value">
+          <span id="depth-val">--</span>
+          <span class="metric-unit">meters</span>
+        </div>
+      </div>
+
+      <div class="metric">
+        <div class="metric-label">Distance Weight (Quartic)</div>
+        <div class="metric-value">
+          <span id="weight-val">0.00</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="weight-bar"></div>
+        </div>
+      </div>
+
+      <div class="metric-label" style="margin-top: 0.5rem;">Unprojected Point</div>
+      <div class="point-data" id="point-data">Awaiting tracking...</div>
+
+      <div class="status-badge" id="status-badge">
+        <div class="status-dot"></div>
+        <span id="status-text">Hover to evaluate</span>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { sampleDepthPrior } from './src/utils/depth-prior-provider.ts';
+
+    // 1. Generate Synthetic Depth Sample
+    function generateSyntheticDepthMap() {
+      const g = 32;
+      const points = [];
+      
+      for (let row = 0; row < g; row++) {
+        for (let col = 0; col < g; col++) {
+          const screenX = (col + 1) / (g + 1);
+          const screenY = (row + 1) / (g + 1);
+          
+          let depthM = 0;
+          
+          // Create an interesting geometry:
+          // Left half: sloped wall (2m to 3m)
+          // Right half: distant background (8m)
+          // Center: a floating sphere (1m to 1.5m)
+          
+          const dx = screenX - 0.5;
+          const dy = screenY - 0.5;
+          const distSq = dx * dx + dy * dy;
+          
+          if (distSq < 0.03) {
+            // Sphere in the center
+            depthM = 1.0 + Math.sqrt(distSq) * 3;
+          } else if (screenX < 0.5) {
+            // Left wall
+            depthM = 2.0 + screenY * 1.5;
+          } else {
+            // Distant background
+            depthM = 8.0 + screenY; 
+          }
+          
+          points.push({ screenX, screenY, depthM });
+        }
+      }
+
+      // Standard perspective projection matrix (90 deg FOV approx)
+      const projectionMatrix = [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, -1, -1,
+        0, 0, -0.1, 0
+      ];
+
+      return {
+        timestamp: performance.now(),
+        cameraPos: [0, 1.5, 0], // 1.5m off ground
+        cameraRot: [0, 0, 0, 1], // Identity
+        projectionMatrix,
+        points
+      };
+    }
+
+    const syntheticSample = generateSyntheticDepthMap();
+
+    // 2. Render Canvas
+    const canvas = document.getElementById('depthCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    function renderDepthMap() {
+      ctx.clearRect(0, 0, W, H);
+      
+      // Draw 32x32 grid
+      const g = 32;
+      const cellW = W / g;
+      const cellH = H / g;
+      
+      for (let i = 0; i < syntheticSample.points.length; i++) {
+        const pt = syntheticSample.points[i];
+        const col = i % g;
+        const row = Math.floor(i / g);
+        
+        // Depth mapped to color (Near = bright cyan, Far = dark blue/purple)
+        const depth = pt.depthM;
+        const hue = 200 + (depth * 8); // 200 (cyan) to ~260 (purple)
+        const lightness = Math.max(10, 70 - depth * 6);
+        
+        ctx.fillStyle = `hsl(${hue}, 80%, ${lightness}%)`;
+        ctx.fillRect(col * cellW, row * cellH, cellW + 1, cellH + 1); // +1 prevents gaps
+      }
+    }
+    
+    renderDepthMap();
+
+    // 3. UI Interaction
+    const crosshair = document.getElementById('crosshair');
+    const depthVal = document.getElementById('depth-val');
+    const weightVal = document.getElementById('weight-val');
+    const weightBar = document.getElementById('weight-bar');
+    const pointData = document.getElementById('point-data');
+    const statusBadge = document.getElementById('status-badge');
+    const statusText = document.getElementById('status-text');
+
+    let isHovering = false;
+    let currentObs = null;
+
+    canvas.addEventListener('mouseenter', () => {
+      crosshair.style.display = 'block';
+      isHovering = true;
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      crosshair.style.display = 'none';
+      isHovering = false;
+      resetTelemetry();
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      // Update crosshair
+      crosshair.style.left = `${x}px`;
+      crosshair.style.top = `${y}px`;
+
+      // Normalized coordinates [0, 1]
+      const screenX = x / rect.width;
+      const screenY = y / rect.height;
+
+      // Sample depth prior
+      evaluatePrior(screenX, screenY);
+    });
+
+    function evaluatePrior(screenX, screenY) {
+      // Find the raw nearest depth for UI display (since sampleDepthPrior might return null)
+      let nearestDepth = 0;
+      let minD = Infinity;
+      for (const pt of syntheticSample.points) {
+        const d = Math.pow(pt.screenX - screenX, 2) + Math.pow(pt.screenY - screenY, 2);
+        if (d < minD) { minD = d; nearestDepth = pt.depthM; }
+      }
+
+      depthVal.textContent = nearestDepth.toFixed(2);
+
+      const obs = sampleDepthPrior(syntheticSample, screenX, screenY);
+      
+      if (obs) {
+        // Valid observation
+        weightVal.textContent = obs.weight.toFixed(3);
+        weightVal.style.color = 'var(--text)';
+        weightBar.style.width = `${obs.weight * 100}%`;
+        weightBar.style.backgroundColor = obs.weight > 0.5 ? 'var(--success)' : 'var(--accent)';
+        
+        pointData.textContent = `[X] ${obs.point[0].toFixed(3)}\n[Y] ${obs.point[1].toFixed(3)}\n[Z] ${obs.point[2].toFixed(3)}`;
+        
+        statusBadge.className = 'status-badge valid';
+        statusText.textContent = 'Prior Active';
+        crosshair.style.borderColor = 'var(--success)';
+      } else {
+        // Edge penalty triggered
+        weightVal.textContent = '0.000';
+        weightVal.style.color = 'var(--danger)';
+        weightBar.style.width = '0%';
+        
+        pointData.textContent = 'Discarded by variance penalty\n(High standard deviation in neighborhood)';
+        
+        statusBadge.className = 'status-badge rejected';
+        statusText.textContent = 'Edge Discontinuity Detected';
+        crosshair.style.borderColor = 'var(--danger)';
+      }
+    }
+
+    function resetTelemetry() {
+      depthVal.textContent = '--';
+      weightVal.textContent = '0.00';
+      weightVal.style.color = 'var(--text)';
+      weightBar.style.width = '0%';
+      pointData.textContent = 'Awaiting tracking...';
+      statusBadge.className = 'status-badge';
+      statusText.textContent = 'Hover to evaluate';
+    }
+
+  </script>
+</body>
+</html>
