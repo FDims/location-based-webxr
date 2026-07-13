@@ -454,48 +454,7 @@
   <div id="tooltip"></div>
 
   <script type="module">
-    // ─── Solver (inlined from ray-triangulation-core.ts) ───────────────────────
-    function solveClosestPointOfApproach(observations) {
-      if (observations.length === 0) return null;
-      const A = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-      const B = [0, 0, 0];
-      for (const obs of observations) {
-        const len = Math.sqrt(obs.ray.direction.x ** 2 + obs.ray.direction.y ** 2 + obs.ray.direction.z ** 2);
-        if (len < 1e-10) continue;
-        const dx = obs.ray.direction.x / len, dy = obs.ray.direction.y / len, dz = obs.ray.direction.z / len;
-        if (obs.rayWeight > 0) {
-          const { x: ox, y: oy, z: oz } = obs.ray.origin; const w = obs.rayWeight;
-          const M = [1 - dx * dx, -dx * dy, -dx * dz, -dy * dx, 1 - dy * dy, -dy * dz, -dz * dx, -dz * dy, 1 - dz * dz];
-          for (let i = 0; i < 9; i++) A[i] += M[i] * w;
-          B[0] += (M[0] * ox + M[1] * oy + M[2] * oz) * w; B[1] += (M[3] * ox + M[4] * oy + M[5] * oz) * w; B[2] += (M[6] * ox + M[7] * oy + M[8] * oz) * w;
-        }
-        if (obs.depthPoint && obs.depthWeight > 0) {
-          const { x: px, y: py, z: pz } = obs.depthPoint; const w = obs.depthWeight;
-          A[0] += dx * dx * w; A[1] += dx * dy * w; A[2] += dx * dz * w; A[3] += dy * dx * w; A[4] += dy * dy * w; A[5] += dy * dz * w; A[6] += dz * dx * w; A[7] += dz * dy * w; A[8] += dz * dz * w;
-          const d = dx * px + dy * py + dz * pz; B[0] += dx * d * w; B[1] += dy * d * w; B[2] += dz * d * w;
-        }
-      }
-      const inv = invertMatrix3x3(A);
-      if (!inv) return null;
-      const P = { x: inv[0] * B[0] + inv[1] * B[1] + inv[2] * B[2], y: inv[3] * B[0] + inv[4] * B[1] + inv[5] * B[2], z: inv[6] * B[0] + inv[7] * B[1] + inv[8] * B[2] };
-      let sumSq = 0, valid = 0;
-      for (const obs of observations) {
-        if (obs.rayWeight <= 0) continue;
-        const len2 = Math.sqrt(obs.ray.direction.x ** 2 + obs.ray.direction.y ** 2 + obs.ray.direction.z ** 2);
-        if (len2 < 1e-10) continue;
-        const dx = obs.ray.direction.x / len2, dy = obs.ray.direction.y / len2, dz = obs.ray.direction.z / len2;
-        const { x: ox, y: oy, z: oz } = obs.ray.origin;
-        const pox = P.x - ox, poy = P.y - oy, poz = P.z - oz;
-        sumSq += (poy * dz - poz * dy) ** 2 + (poz * dx - pox * dz) ** 2 + (pox * dy - poy * dx) ** 2; valid++;
-      }
-      return { point: P, rmsError: valid > 0 ? Math.sqrt(sumSq / valid) : 0, uncertainty: inv[0] + inv[4] + inv[8] };
-    }
-    function invertMatrix3x3(m) {
-      const det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
-      if (Math.abs(det) < 1e-8) return null;
-      const i = 1 / det;
-      return [(m[4] * m[8] - m[7] * m[5]) * i, (m[2] * m[7] - m[1] * m[8]) * i, (m[1] * m[5] - m[2] * m[4]) * i, (m[5] * m[6] - m[3] * m[8]) * i, (m[0] * m[8] - m[2] * m[6]) * i, (m[3] * m[2] - m[0] * m[5]) * i, (m[3] * m[7] - m[6] * m[4]) * i, (m[6] * m[1] - m[0] * m[7]) * i, (m[0] * m[4] - m[3] * m[1]) * i];
-    }
+    import { solveClosestPointOfApproach } from './src/utils/ray-triangulation-core.ts';
 
     // ─── Vector math ────────────────────────────────────────────────────────────
     const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
