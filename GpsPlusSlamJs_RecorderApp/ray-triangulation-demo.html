@@ -430,6 +430,17 @@
       </div>
 
       <div class="controls">
+        <label style="flex-direction: row; align-items: center; justify-content: space-between;">
+          <span>Enable Depth Sensor</span>
+          <input type="checkbox" id="enable-depth" checked>
+        </label>
+        <label>
+          Sensor Knee Range (m)
+          <div class="range-row">
+            <input type="range" id="depth-range" min="0.5" max="20" step="0.5" value="6.0">
+            <span class="range-val" id="depth-range-val">6.0</span>
+          </div>
+        </label>
         <label>
           Ray weight
           <div class="range-row">
@@ -455,12 +466,14 @@
 
   <script type="module">
     import { solveClosestPointOfApproach } from './src/utils/ray-triangulation-core.ts';
+    import { sampleDepthPrior } from './src/utils/depth-prior-provider.ts';
 
     // ─── Vector math ────────────────────────────────────────────────────────────
     const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
     const cross3 = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
     const norm3 = v => { const l = Math.sqrt(dot3(v, v)); return l < 1e-12 ? v : { x: v.x / l, y: v.y / l, z: v.z / l }; };
     const add3 = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+    const sub3 = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
     const scale3 = (v, s) => ({ x: v.x * s, y: v.y * s, z: v.z * s });
 
     // ─── Camera ─────────────────────────────────────────────────────────────────
@@ -497,6 +510,72 @@
       const t = -P.y / d.y;
       if (t < 0) return null;
       return { x: P.x + t * d.x, y: 0, z: P.z + t * d.z };
+    }
+
+    // Generate simulated depth sensor data
+    function getProjectionMatrix() {
+      // Math.min(W, H) * 0.7 used in project3 corresponds to focal length in pixels
+      const f = Math.min(W, H) * 0.7;
+      const near = 0.1, far = 100.0, nf = 1.0 / (near - far);
+      return [
+        (2 * f) / W, 0,           0,                        0,
+        0,           (2 * f) / H, 0,                        0,
+        0,           0,           (far + near) * nf,       -1,
+        0,           0,           2 * far * near * nf,      0,
+      ];
+    }
+
+    function getCameraQuaternion() {
+      const { fwd, right, up } = getCameraBasis();
+      // Right is X, Up is Y, Fwd is -Z
+      const m00 = right.x, m01 = up.x, m02 = -fwd.x;
+      const m10 = right.y, m11 = up.y, m12 = -fwd.y;
+      const m20 = right.z, m21 = up.z, m22 = -fwd.z;
+      
+      const tr = m00 + m11 + m22;
+      let qx, qy, qz, qw;
+      if (tr > 0) {
+        const S = Math.sqrt(tr + 1.0) * 2;
+        qw = 0.25 * S; qx = (m21 - m12) / S; qy = (m02 - m20) / S; qz = (m10 - m01) / S;
+      } else if (m00 > m11 && m00 > m22) {
+        const S = Math.sqrt(1.0 + m00 - m11 - m22) * 2;
+        qw = (m21 - m12) / S; qx = 0.25 * S; qy = (m01 + m10) / S; qz = (m02 + m20) / S;
+      } else if (m11 > m22) {
+        const S = Math.sqrt(1.0 + m11 - m00 - m22) * 2;
+        qw = (m02 - m20) / S; qx = (m01 + m10) / S; qy = 0.25 * S; qz = (m12 + m21) / S;
+      } else {
+        const S = Math.sqrt(1.0 + m22 - m00 - m11) * 2;
+        qw = (m10 - m01) / S; qx = (m02 + m20) / S; qy = (m12 + m21) / S; qz = 0.25 * S;
+      }
+      return [qx, qy, qz, qw];
+    }
+
+    function simulateDepthSample(cxScreen, cyScreen) {
+      const points = [];
+      const { P, fwd } = getCameraBasis();
+      
+      // Generate a 5x5 grid around the clicked point
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dy = -2; dy <= 2; dy++) {
+          const sx = cxScreen + dx * 8;
+          const sy = cyScreen + dy * 8;
+          const hit = unprojectGround(sx, sy);
+          if (hit) {
+            // true depth is along the camera's forward vector
+            const depthM = dot3(sub3(hit, P), fwd);
+            if (depthM > 0.1) {
+              points.push({ screenX: sx / W, screenY: sy / H, depthM });
+            }
+          }
+        }
+      }
+      
+      return {
+        points,
+        projectionMatrix: getProjectionMatrix(),
+        cameraPos: [P.x, P.y, P.z],
+        cameraRot: getCameraQuaternion(),
+      };
     }
 
     // ─── State ──────────────────────────────────────────────────────────────────
@@ -678,6 +757,17 @@
       // Rays
       for (const r of rays) {
         drawArrow3(r.origin.x, r.origin.y, r.origin.z, r.dir.x, r.dir.y, r.dir.z, r.colour);
+        
+        // Draw depth point if available
+        if (r.depthPoint && r.depthWeight > 0.01) {
+          const sz = 4 + 4 * r.depthWeight;
+          const p = project3(r.depthPoint.x, r.depthPoint.y, r.depthPoint.z);
+          if (p) {
+            ctx.strokeStyle = r.colour;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(p.sx - sz/2, p.sy - sz/2, sz, sz);
+          }
+        }
       }
 
       // No drag preview needed — ray shoots on click, not drag
@@ -704,6 +794,8 @@
       const obs = rays.map(r => ({
         ray: { origin: r.origin, direction: r.dir },
         rayWeight: r.weight,
+        depthPoint: r.depthPoint,
+        depthWeight: r.depthWeight,
       }));
       result = solveClosestPointOfApproach(obs);
       updateSidebar();
@@ -755,14 +847,23 @@
       <div class="ray-info">
         <strong>Ray ${i + 1}</strong><br>
         o=(${fmt(r.origin.x)},${fmt(r.origin.y)},${fmt(r.origin.z)})<br>
-        d=(${fmt(r.dir.x, 2)},${fmt(r.dir.y, 2)},${fmt(r.dir.z, 2)})
-        w=${r.weight.toFixed(1)}
+        d=(${fmt(r.dir.x, 2)},${fmt(r.dir.y, 2)},${fmt(r.dir.z, 2)}) w=${r.weight.toFixed(1)}<br>
+        ${r.depthWeight > 0 ? `<span style="color:var(--good)">prior: p=(${fmt(r.depthPoint.x)},${fmt(r.depthPoint.y)},${fmt(r.depthPoint.z)}) w=${r.depthWeight.toFixed(2)}</span>` : '<span style="color:var(--muted)">no depth prior</span>'}
       </div>
       <div class="ray-del" onclick="deleteRay(${i})">×</div>
     </div>
   `).join('');
     }
     window.deleteRay = i => { rays.splice(i, 1); solve(); };
+
+    // ─── Controls ─────────────────────────────────────────────────────────────────
+    document.getElementById('weight').addEventListener('input', e => {
+      document.getElementById('weight-val').textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    document.getElementById('depth-range').addEventListener('input', e => {
+      document.getElementById('depth-range-val').textContent = parseFloat(e.target.value).toFixed(1);
+    });
 
     // ─── Interaction ──────────────────────────────────────────────────────────────
     canvas.addEventListener('mousedown', e => {
@@ -791,11 +892,27 @@
         const { P, fwd, right, up } = getCameraBasis();
         const FOV = Math.min(W, H) * 0.7;
         const d = norm3(add3(add3(scale3(right, (e.offsetX - cx) / FOV), scale3(up, -(e.offsetY - cy) / FOV)), fwd));
+        
+        let depthPoint = undefined;
+        let depthWeight = undefined;
+        
+        if (document.getElementById('enable-depth').checked) {
+          const sample = simulateDepthSample(e.offsetX, e.offsetY);
+          const refRange = parseFloat(document.getElementById('depth-range').value);
+          const prior = sampleDepthPrior(sample, e.offsetX / W, e.offsetY / H, { referenceRangeM: refRange });
+          if (prior) {
+            depthPoint = { x: prior.point[0], y: prior.point[1], z: prior.point[2] };
+            depthWeight = prior.weight;
+          }
+        }
+        
         rays.push({
           origin: { x: P.x, y: P.y, z: P.z },
           dir: { x: d.x, y: d.y, z: d.z },
           weight: parseFloat(document.getElementById('weight').value),
           colour: COLOURS[rays.length % COLOURS.length],
+          depthPoint,
+          depthWeight,
         });
         solve();
       }
@@ -811,22 +928,6 @@
     }, { passive: false });
 
     canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-    // ─── Controls ─────────────────────────────────────────────────────────────────
-    window.toggleAddRay = function () {
-      addMode = !addMode;
-      const btn = document.getElementById('add-ray-btn');
-      btn.classList.toggle('active', addMode);
-      btn.textContent = addMode ? '✓ Add Ray Mode (active)' : '+ Add Ray Mode';
-      wrap.className = addMode ? 'addray-mode' : 'orbit-mode';
-      document.getElementById('mode-badge').textContent = addMode
-        ? '✦ Click-drag on ground plane to place a ray'
-        : '🖱 Drag to orbit · Scroll to zoom';
-    };
-
-    document.getElementById('weight').addEventListener('input', e => {
-      document.getElementById('weight-val').textContent = parseFloat(e.target.value).toFixed(1);
-    });
 
     window.clearAll = () => { rays = []; result = null; updateSidebar(); draw(); };
 
