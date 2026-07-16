@@ -1,33 +1,28 @@
-/** Lightweight 3D vector — no Three.js dependency. */
-interface Vec3 {
-  x: number;
-  y: number;
-  z: number;
-}
+import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 
 /** A 3D ray. Direction need not be pre-normalized; the solver normalizes internally. */
-interface Ray {
-  origin: Vec3;
-  direction: Vec3;
+export interface Ray {
+  origin: Vector3;
+  direction: Vector3;
 }
 
 /**
  * One "measurement shot". Ray + optional depth reading are grouped so
- * outlier-rejection (e.g. RANSAC) can atomically discard both.
+ * outlier-rejection (e.g. MSAC) can atomically discard both.
  */
 export interface Observation {
   ray: Ray;
   /** Confidence in the ray direction. Typically 1.0; lower if tracking was unstable. */
   rayWeight: number;
   /** 3D point derived from the depth map along this ray. */
-  depthPoint?: Vec3;
+  depthPoint?: Vector3;
   /** Confidence in the depth reading. Decays with distance. */
   depthWeight?: number;
 }
 
 /** Result of triangulating N observations. */
 export interface TriangulationResult {
-  point: Vec3;
+  point: Vector3;
   /**
    * trace(A⁻¹) — high when rays are nearly parallel (small baseline).
    * Drives the "move sideways" coaching prompt.
@@ -66,17 +61,19 @@ export function solveClosestPointOfApproach(
 
   for (const obs of observations) {
     const len = Math.sqrt(
-      obs.ray.direction.x ** 2 +
-        obs.ray.direction.y ** 2 +
-        obs.ray.direction.z ** 2
+      obs.ray.direction[0] ** 2 +
+      obs.ray.direction[1] ** 2 +
+      obs.ray.direction[2] ** 2
     );
     if (len < 1e-10) continue;
-    const dx = obs.ray.direction.x / len;
-    const dy = obs.ray.direction.y / len;
-    const dz = obs.ray.direction.z / len;
+    const dx = obs.ray.direction[0] / len;
+    const dy = obs.ray.direction[1] / len;
+    const dz = obs.ray.direction[2] / len;
 
     if (obs.rayWeight > 0) {
-      const { x: ox, y: oy, z: oz } = obs.ray.origin;
+      const ox = obs.ray.origin[0];
+      const oy = obs.ray.origin[1];
+      const oz = obs.ray.origin[2];
       const w = obs.rayWeight;
       // M = I − d·dᵀ
       const M: [
@@ -90,16 +87,16 @@ export function solveClosestPointOfApproach(
         number,
         number,
       ] = [
-        1 - dx * dx,
-        -dx * dy,
-        -dx * dz,
-        -dy * dx,
-        1 - dy * dy,
-        -dy * dz,
-        -dz * dx,
-        -dz * dy,
-        1 - dz * dz,
-      ];
+          1 - dx * dx,
+          -dx * dy,
+          -dx * dz,
+          -dy * dx,
+          1 - dy * dy,
+          -dy * dz,
+          -dz * dx,
+          -dz * dy,
+          1 - dz * dz,
+        ];
       A[0] += M[0] * w;
       A[1] += M[1] * w;
       A[2] += M[2] * w;
@@ -115,7 +112,9 @@ export function solveClosestPointOfApproach(
     }
 
     if (obs.depthPoint && obs.depthWeight != null && obs.depthWeight > 0) {
-      const { x: px, y: py, z: pz } = obs.depthPoint;
+      const px = obs.depthPoint[0];
+      const py = obs.depthPoint[1];
+      const pz = obs.depthPoint[2];
       const w = obs.depthWeight;
       // D = d·dᵀ (along-ray projector — orthogonal complement of M)
       A[0] += dx * dx * w;
@@ -137,11 +136,11 @@ export function solveClosestPointOfApproach(
   const A_inv = invertMatrix3x3(A);
   if (!A_inv) return null;
 
-  const P: Vec3 = {
-    x: A_inv[0] * B[0] + A_inv[1] * B[1] + A_inv[2] * B[2],
-    y: A_inv[3] * B[0] + A_inv[4] * B[1] + A_inv[5] * B[2],
-    z: A_inv[6] * B[0] + A_inv[7] * B[1] + A_inv[8] * B[2],
-  };
+  const P: Vector3 = [
+    A_inv[0] * B[0] + A_inv[1] * B[1] + A_inv[2] * B[2],
+    A_inv[3] * B[0] + A_inv[4] * B[1] + A_inv[5] * B[2],
+    A_inv[6] * B[0] + A_inv[7] * B[1] + A_inv[8] * B[2],
+  ];
 
   const rmsError = computeRMSError(observations, P);
   const uncertainty = A_inv[0] + A_inv[4] + A_inv[8];
@@ -149,29 +148,40 @@ export function solveClosestPointOfApproach(
   return { point: P, uncertainty, rmsError };
 }
 
+/**
+ * Compute the perpendicular distance from a point P to a ray.
+ * Uses the cross-product identity: ||(P − origin) × d̂|| = perpendicular distance.
+ */
+export function perpendicularDistanceToRay(
+  point: Vector3,
+  rayOrigin: Vector3,
+  rayDirection: Vector3
+): number {
+  const len = Math.sqrt(
+    rayDirection[0] ** 2 + rayDirection[1] ** 2 + rayDirection[2] ** 2
+  );
+  if (len < 1e-10) return 0;
+  const dx = rayDirection[0] / len;
+  const dy = rayDirection[1] / len;
+  const dz = rayDirection[2] / len;
+  const pox = point[0] - rayOrigin[0];
+  const poy = point[1] - rayOrigin[1];
+  const poz = point[2] - rayOrigin[2];
+  return Math.sqrt(
+    (poy * dz - poz * dy) ** 2 +
+    (poz * dx - pox * dz) ** 2 +
+    (pox * dy - poy * dx) ** 2
+  );
+}
+
 /** Computes the Root Mean Square perpendicular distance from point P to all valid rays. */
-function computeRMSError(observations: Observation[], P: Vec3): number {
+function computeRMSError(observations: Observation[], P: Vector3): number {
   let sumSq = 0;
   let validRays = 0;
   for (const obs of observations) {
     if (obs.rayWeight <= 0) continue;
-    const len2 = Math.sqrt(
-      obs.ray.direction.x ** 2 +
-        obs.ray.direction.y ** 2 +
-        obs.ray.direction.z ** 2
-    );
-    if (len2 < 1e-10) continue;
-    const dx = obs.ray.direction.x / len2;
-    const dy = obs.ray.direction.y / len2;
-    const dz = obs.ray.direction.z / len2;
-    const { x: ox, y: oy, z: oz } = obs.ray.origin;
-    const pox = P.x - ox;
-    const poy = P.y - oy;
-    const poz = P.z - oz;
-    sumSq +=
-      (poy * dz - poz * dy) ** 2 +
-      (poz * dx - pox * dz) ** 2 +
-      (pox * dy - poy * dx) ** 2;
+    const dist = perpendicularDistanceToRay(P, obs.ray.origin, obs.ray.direction);
+    sumSq += dist ** 2;
     validRays++;
   }
   return validRays > 0 ? Math.sqrt(sumSq / validRays) : 0;

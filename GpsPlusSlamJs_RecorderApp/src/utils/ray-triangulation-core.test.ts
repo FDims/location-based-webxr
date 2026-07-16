@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   solveClosestPointOfApproach,
+  perpendicularDistanceToRay,
   type Observation,
 } from './ray-triangulation-core';
 
@@ -16,7 +17,7 @@ describe('solveClosestPointOfApproach', () => {
   test('returns null for a single ray with no depth prior (under-determined)', () => {
     const obs: Observation[] = [
       {
-        ray: { origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [0, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
       },
     ];
@@ -31,19 +32,19 @@ describe('solveClosestPointOfApproach', () => {
     // They meet at the origin (0, 0, 0).
     const obs: Observation[] = [
       {
-        ray: { origin: { x: -1, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [-1, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 0, y: -1, z: 0 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, -1, 0], direction: [0, 1, 0] },
         rayWeight: 1,
       },
     ];
     const result = solveClosestPointOfApproach(obs);
     expect(result).not.toBeNull();
-    expect(result!.point.x).toBeCloseTo(0, 5);
-    expect(result!.point.y).toBeCloseTo(0, 5);
-    expect(result!.point.z).toBeCloseTo(0, 5);
+    expect(result!.point[0]).toBeCloseTo(0, 5);
+    expect(result!.point[1]).toBeCloseTo(0, 5);
+    expect(result!.point[2]).toBeCloseTo(0, 5);
     expect(result!.rmsError).toBeCloseTo(0, 5);
   });
 
@@ -53,19 +54,19 @@ describe('solveClosestPointOfApproach', () => {
     // Midpoint is (0, 0, 0.5). Perpendicular distance from midpoint to each ray = 0.5 m.
     const obs: Observation[] = [
       {
-        ray: { origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [0, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 0, y: 0, z: 1 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, 0, 1], direction: [0, 1, 0] },
         rayWeight: 1,
       },
     ];
     const result = solveClosestPointOfApproach(obs);
     expect(result).not.toBeNull();
-    expect(result!.point.x).toBeCloseTo(0, 5);
-    expect(result!.point.y).toBeCloseTo(0, 5);
-    expect(result!.point.z).toBeCloseTo(0.5, 5);
+    expect(result!.point[0]).toBeCloseTo(0, 5);
+    expect(result!.point[1]).toBeCloseTo(0, 5);
+    expect(result!.point[2]).toBeCloseTo(0.5, 5);
     expect(result!.rmsError).toBeCloseTo(0.5, 5);
   });
 
@@ -76,17 +77,17 @@ describe('solveClosestPointOfApproach', () => {
     // Weighted result should be pulled well below z=0.5.
     const obs: Observation[] = [
       {
-        ray: { origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [0, 0, 0], direction: [1, 0, 0] },
         rayWeight: 9,
       },
       {
-        ray: { origin: { x: 0, y: 0, z: 1 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, 0, 1], direction: [0, 1, 0] },
         rayWeight: 1,
       },
     ];
     const result = solveClosestPointOfApproach(obs);
     expect(result).not.toBeNull();
-    expect(result!.point.z).toBeLessThan(0.5);
+    expect(result!.point[2]).toBeLessThan(0.5);
   });
 
   test('a zero-weight ray is fully ignored', () => {
@@ -94,23 +95,23 @@ describe('solveClosestPointOfApproach', () => {
     // Result should still converge to the intersection of the two valid rays at origin.
     const obs: Observation[] = [
       {
-        ray: { origin: { x: -1, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [-1, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 0, y: -1, z: 0 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, -1, 0], direction: [0, 1, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 5, y: 5, z: 5 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [5, 5, 5], direction: [1, 0, 0] },
         rayWeight: 0,
       },
     ];
     const result = solveClosestPointOfApproach(obs);
     expect(result).not.toBeNull();
-    expect(result!.point.x).toBeCloseTo(0, 5);
-    expect(result!.point.y).toBeCloseTo(0, 5);
-    expect(result!.point.z).toBeCloseTo(0, 5);
+    expect(result!.point[0]).toBeCloseTo(0, 5);
+    expect(result!.point[1]).toBeCloseTo(0, 5);
+    expect(result!.point[2]).toBeCloseTo(0, 5);
   });
 
   // ─── Depth prior ───────────────────────────────────────────────────────────
@@ -120,17 +121,17 @@ describe('solveClosestPointOfApproach', () => {
     // A strong along-ray depth prior pins the answer on the ray at the given distance.
     const obs: Observation[] = [
       {
-        ray: { origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [0, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
-        depthPoint: { x: 5, y: 0, z: 0 },
+        depthPoint: [5, 0, 0],
         depthWeight: 10,
       },
     ];
     const result = solveClosestPointOfApproach(obs);
     expect(result).not.toBeNull();
-    expect(result!.point.x).toBeCloseTo(5, 2);
-    expect(result!.point.y).toBeCloseTo(0, 2);
-    expect(result!.point.z).toBeCloseTo(0, 2);
+    expect(result!.point[0]).toBeCloseTo(5, 2);
+    expect(result!.point[1]).toBeCloseTo(0, 2);
+    expect(result!.point[2]).toBeCloseTo(0, 2);
   });
 
   test('strong triangulation baseline out-votes weak depth priors', () => {
@@ -140,32 +141,32 @@ describe('solveClosestPointOfApproach', () => {
     const obs: Observation[] = [
       {
         ray: {
-          origin: { x: -1, y: 1, z: 0 },
-          direction: { x: INV_SQRT2, y: -INV_SQRT2, z: 0 },
+          origin: [-1, 1, 0],
+          direction: [INV_SQRT2, -INV_SQRT2, 0],
         },
         rayWeight: 1,
-        depthPoint: { x: 0, y: 0, z: 1 },
+        depthPoint: [0, 0, 1],
         depthWeight: 0.1,
       },
       {
         ray: {
-          origin: { x: 1, y: 1, z: 0 },
-          direction: { x: -INV_SQRT2, y: -INV_SQRT2, z: 0 },
+          origin: [1, 1, 0],
+          direction: [-INV_SQRT2, -INV_SQRT2, 0],
         },
         rayWeight: 1,
-        depthPoint: { x: 0, y: 0, z: 1 },
+        depthPoint: [0, 0, 1],
         depthWeight: 0.1,
       },
       {
-        ray: { origin: { x: 0, y: -1, z: 0 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, -1, 0], direction: [0, 1, 0] },
         rayWeight: 1,
-        depthPoint: { x: 0, y: 0, z: 1 },
+        depthPoint: [0, 0, 1],
         depthWeight: 0.1,
       },
     ];
     const result = solveClosestPointOfApproach(obs);
     expect(result).not.toBeNull();
-    expect(result!.point.z).toBeLessThan(0.5);
+    expect(result!.point[2]).toBeLessThan(0.5);
   });
 
   // ─── Uncertainty metric ────────────────────────────────────────────────────
@@ -173,18 +174,18 @@ describe('solveClosestPointOfApproach', () => {
   test('adding more consistent rays lowers the uncertainty', () => {
     const twoRays: Observation[] = [
       {
-        ray: { origin: { x: -1, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [-1, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 0, y: -1, z: 0 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, -1, 0], direction: [0, 1, 0] },
         rayWeight: 1,
       },
     ];
     const threeRays: Observation[] = [
       ...twoRays,
       {
-        ray: { origin: { x: 0, y: 0, z: -1 }, direction: { x: 0, y: 0, z: 1 } },
+        ray: { origin: [0, 0, -1], direction: [0, 0, 1] },
         rayWeight: 1,
       },
     ];
@@ -196,26 +197,26 @@ describe('solveClosestPointOfApproach', () => {
   test('near-parallel rays (tiny baseline) produce higher uncertainty than wide-baseline rays', () => {
     const wideBaseline: Observation[] = [
       {
-        ray: { origin: { x: -1, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 } },
+        ray: { origin: [-1, 0, 0], direction: [1, 0, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 0, y: -1, z: 0 }, direction: { x: 0, y: 1, z: 0 } },
+        ray: { origin: [0, -1, 0], direction: [0, 1, 0] },
         rayWeight: 1,
       },
     ];
     const narrowBaseline: Observation[] = [
       {
         ray: {
-          origin: { x: -0.001, y: 0, z: 0 },
-          direction: { x: 1, y: 0, z: 0 },
+          origin: [-0.001, 0, 0],
+          direction: [1, 0, 0],
         },
         rayWeight: 1,
       },
       {
         ray: {
-          origin: { x: 0.001, y: 0, z: 0 },
-          direction: { x: 1, y: 0.001, z: 0 },
+          origin: [0.001, 0, 0],
+          direction: [1, 0.001, 0],
         },
         rayWeight: 1,
       },
@@ -231,19 +232,42 @@ describe('solveClosestPointOfApproach', () => {
     // Same geometry as the intersecting-perpendicular test but directions scaled by 2.
     const unnormalized: Observation[] = [
       {
-        ray: { origin: { x: -1, y: 0, z: 0 }, direction: { x: 2, y: 0, z: 0 } },
+        ray: { origin: [-1, 0, 0], direction: [2, 0, 0] },
         rayWeight: 1,
       },
       {
-        ray: { origin: { x: 0, y: -1, z: 0 }, direction: { x: 0, y: 2, z: 0 } },
+        ray: { origin: [0, -1, 0], direction: [0, 2, 0] },
         rayWeight: 1,
       },
     ];
     const result = solveClosestPointOfApproach(unnormalized);
     expect(result).not.toBeNull();
-    expect(result!.point.x).toBeCloseTo(0, 5);
-    expect(result!.point.y).toBeCloseTo(0, 5);
-    expect(result!.point.z).toBeCloseTo(0, 5);
+    expect(result!.point[0]).toBeCloseTo(0, 5);
+    expect(result!.point[1]).toBeCloseTo(0, 5);
+    expect(result!.point[2]).toBeCloseTo(0, 5);
     expect(result!.rmsError).toBeCloseTo(0, 5);
+  });
+});
+
+describe('perpendicularDistanceToRay', () => {
+  test('returns 0 for a point exactly on the ray', () => {
+    const origin: [number, number, number] = [1, 1, 1];
+    const dir: [number, number, number] = [0, 1, 0];
+    const point: [number, number, number] = [1, 5, 1];
+    expect(perpendicularDistanceToRay(point, origin, dir)).toBeCloseTo(0, 5);
+  });
+
+  test('returns correct distance for offset point', () => {
+    const origin: [number, number, number] = [0, 0, 0];
+    const dir: [number, number, number] = [1, 0, 0]; // Ray along X axis
+    const point: [number, number, number] = [5, 3, 4]; // Dist to X axis is sqrt(3^2 + 4^2) = 5
+    expect(perpendicularDistanceToRay(point, origin, dir)).toBeCloseTo(5, 5);
+  });
+
+  test('handles un-normalized directions correctly', () => {
+    const origin: [number, number, number] = [0, 0, 0];
+    const dir: [number, number, number] = [2, 0, 0]; 
+    const point: [number, number, number] = [5, 3, 4]; 
+    expect(perpendicularDistanceToRay(point, origin, dir)).toBeCloseTo(5, 5);
   });
 });

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Robust Triangulation Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #030712;
+      --surface: rgba(17, 24, 39, 0.7);
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.4);
+      --good: #10b981;
+      --good-bg: rgba(16, 185, 129, 0.15);
+      --warn: #f59e0b;
+      --warn-bg: rgba(245, 158, 11, 0.15);
+      --bad: #ef4444;
+      --bad-bg: rgba(239, 68, 68, 0.15);
+      --text: #f9fafb;
+      --muted: #9ca3af;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: radial-gradient(circle at 50% -20%, #064e3b 0%, var(--bg) 70%);
+      color: var(--text);
+      height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 24px;
+      background: rgba(3, 7, 18, 0.6);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+    header p { font-size: 13px; color: var(--muted); }
+    .hdot { 
+      width: 10px; height: 10px; border-radius: 50%; 
+      background: var(--good);
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      overflow: hidden;
+    }
+
+    #canvas-wrap {
+      position: relative;
+      cursor: crosshair;
+      overflow: hidden;
+    }
+
+    canvas { width: 100%; height: 100%; display: block; }
+
+    #warning-banner {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(3, 7, 18, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      opacity: 0;
+      transform: translate(-50%, -20px);
+    }
+    #warning-banner.visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    aside {
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .section { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+    .section-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+    }
+
+    .story-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+    .story-card h3 {
+      font-size: 14px;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .story-card p {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      color: white;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover:not(:disabled) {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .metric { margin-bottom: 16px; }
+    .metric:last-child { margin-bottom: 0; }
+    .metric-label { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+    .metric-value { 
+      font-family: 'JetBrains Mono', monospace; 
+      font-size: 24px; font-weight: 600; 
+      letter-spacing: -0.02em; transition: color 0.3s; 
+    }
+    .metric-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .coords { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px;}
+    .coord-box {
+      background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .coord-axis { font-size: 10px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+    .coord-val { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; }
+
+    .legend { display: flex; gap: 12px; font-size: 11px; margin-top: 16px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-color { width: 10px; height: 10px; border-radius: 2px; }
+
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="hdot"></div>
+    <div>
+      <h1>Robust Triangulation Interactive Tour</h1>
+      <p>Follow the steps to understand how the phone estimates target positions in 3D space.</p>
+    </div>
+  </header>
+
+  <main>
+    <div id="canvas-wrap">
+      <canvas id="c"></canvas>
+      <div id="warning-banner" class="warn">
+        <span style="font-size: 18px">⚠️</span>
+        Insufficient Parallax Baseline — Move Sideways
+      </div>
+    </div>
+
+    <aside>
+      <div class="section">
+        <div class="section-title">Interactive Story Mode</div>
+        
+        <div class="button-row">
+          <button id="btn-prev" disabled>← Previous Step</button>
+          <button id="btn-next">Next Step →</button>
+        </div>
+
+        <div class="story-card">
+          <h3 id="story-title">Step 1: The First Tap</h3>
+          <p id="story-text">You point your phone at an object and tap to mark it. With only 1 ray, triangulation is mathematically impossible. We rely 100% on the phone's LiDAR depth sensor (the light blue dot on the line) to guess the distance.</p>
+        </div>
+        
+        <div class="legend">
+          <div class="legend-item"><div class="legend-color" style="background:var(--good)"></div>Good Ray</div>
+          <div class="legend-item"><div class="legend-color" style="background:var(--bad)"></div>Bad Ray</div>
+          <div class="legend-item"><div class="legend-color" style="background:var(--accent)"></div>Calculated Guess</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">System Telemetry</div>
+        
+        <div class="metric">
+          <div class="metric-label">Solver Status</div>
+          <div class="metric-value" id="status-val" style="color:var(--warn); font-size: 18px;">Warning: No Parallax</div>
+        </div>
+
+        <div class="metric">
+          <div class="metric-label">MSAC Score</div>
+          <div class="metric-value" id="msac-val">0.0000</div>
+          <div class="metric-sub">Geometric error (lower is better)</div>
+        </div>
+
+        <div class="metric" style="margin-top: 24px;">
+          <div class="metric-label">Calculated Target Position</div>
+          <div class="coords">
+            <div class="coord-box"><div class="coord-axis">Left/Right (X)</div><div class="coord-val" id="px">—</div></div>
+            <div class="coord-box"><div class="coord-axis">Depth (Z)</div><div class="coord-val" id="pz">—</div></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module">
+    import { solveRobustTriangulation } from './src/utils/robust-triangulation.ts';
+
+    // ─── Synthetic Scene ────────────────────────────────────────────────────
+    // Target is at X=0, Z=-10
+    const SYNTHETIC_RAYS = [
+      { id: '1', rayOrigin: [0, 0, 0], rayDirection: [0, 0, -1], rayWeight: 1, depthPoint: [0, 0, -7], depthWeight: 0.8 },
+      { id: '2', rayOrigin: [0.01, 0, 0], rayDirection: [0, 0, -1], rayWeight: 1 },
+      { id: '3', rayOrigin: [-0.01, 0, 0], rayDirection: [0, 0, -1], rayWeight: 1 },
+      { id: '4', rayOrigin: [2, 0, 0], rayDirection: [-0.196, 0, -0.98], rayWeight: 1 },
+      { id: 'bad5', rayOrigin: [3, 0, -1], rayDirection: [-0.707, 0, -0.707], rayWeight: 1 }, // Outlier!
+      { id: '6', rayOrigin: [-2, 0, 0], rayDirection: [0.196, 0, -0.98], rayWeight: 1 },
+      { id: '7', rayOrigin: [-4, 0, -2], rayDirection: [0.447, 0, -0.894], rayWeight: 1 },
+      { id: '8', rayOrigin: [4, 0, -2], rayDirection: [-0.447, 0, -0.894], rayWeight: 1 },
+    ];
+
+    const STORY_STEPS = [
+      {
+        rays: 1,
+        title: "Step 1: The First Tap",
+        text: "You point your phone at the target and tap. With only 1 ray, triangulation is mathematically impossible. The system relies entirely on the phone's LiDAR depth sensor (the light blue dot) to guess the distance."
+      },
+      {
+        rays: 3,
+        title: "Step 2: Standing Still",
+        text: "You tapped a few more times without walking anywhere. All rays originate from the exact same spot. The system warns you: 'Insufficient Parallax Baseline'. Triangulation needs you to walk sideways!"
+      },
+      {
+        rays: 4,
+        title: "Step 3: Taking a Step Sideways",
+        text: "You took a step to the right! Now we have a wide angle (parallax). The solver activates true triangulation, mathematically overriding the LiDAR depth prior. The warning disappears and our Calculated Guess jumps to the True Object position."
+      },
+      {
+        rays: 5,
+        title: "Step 4: Glitch in the Matrix!",
+        text: "Uh oh! A bad GPS reading or sensor glitch caused a ray to point completely the wrong way (the red ray). The MSAC algorithm instantly detects this mathematically inconsistent outlier, paints it red, and safely ignores it."
+      },
+      {
+        rays: 8,
+        title: "Step 5: Rock Solid Tracking",
+        text: "As you continue walking around the object and tapping, more good rays accumulate. The solver cross-references them all, rejecting outliers and refining the exact 3D position of the target with extreme precision."
+      }
+    ];
+
+    let currentStepIndex = 0;
+
+    // ─── Rendering ──────────────────────────────────────────────────────────
+    let W, H;
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('canvas-wrap');
+
+    const SCALE = 35; // px per meter
+    function w2s(x, z) {
+      return {
+        sx: W / 2 + x * SCALE,
+        sy: H - 50 - (-z) * SCALE
+      };
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+      for (let x = -10; x <= 10; x += 1) {
+        const p1 = w2s(x, 2);
+        const p2 = w2s(x, -15);
+        ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke();
+      }
+      for (let z = 2; z >= -15; z -= 1) {
+        const p1 = w2s(-10, z);
+        const p2 = w2s(10, z);
+        ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke();
+      }
+
+      // Draw True Physical Target
+      const tp = w2s(0, -10);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath(); ctx.arc(tp.sx, tp.sy, 8, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.beginPath(); ctx.arc(tp.sx, tp.sy, 16, 0, Math.PI*2); ctx.stroke();
+      
+      // Label True Target
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '12px Outfit';
+      ctx.textAlign = 'center';
+      ctx.fillText('True Physical Object', tp.sx, tp.sy - 24);
+
+      const stepData = STORY_STEPS[currentStepIndex];
+      const activeRays = SYNTHETIC_RAYS.slice(0, stepData.rays);
+
+      const result = solveRobustTriangulation(activeRays, { seed: 12345 });
+
+      updateUI(result, stepData);
+
+      // Draw rays
+      activeRays.forEach((ray, i) => {
+        const isOutlier = result && result.outlierIds.includes(ray.id);
+        const color = isOutlier ? '#ef4444' : '#10b981'; // --bad or --good
+        
+        const p1 = w2s(ray.rayOrigin[0], ray.rayOrigin[2]);
+        const endX = ray.rayOrigin[0] + ray.rayDirection[0] * 15;
+        const endZ = ray.rayOrigin[2] + ray.rayDirection[2] * 15;
+        const p2 = w2s(endX, endZ);
+
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = isOutlier ? 0.4 : 0.8;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke();
+
+        // Phone/Camera dot
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(p1.sx, p1.sy, 5, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px JetBrains Mono';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Cam ${i+1}`, p1.sx, p1.sy + 16);
+
+        // Depth prior (LiDAR guess)
+        if (ray.depthPoint) {
+          const dp = w2s(ray.depthPoint[0], ray.depthPoint[2]);
+          ctx.fillStyle = '#3b82f6'; // --accent
+          ctx.beginPath(); ctx.arc(dp.sx, dp.sy, 6, 0, Math.PI*2); ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.beginPath(); ctx.arc(dp.sx, dp.sy, 6, 0, Math.PI*2); ctx.stroke();
+          
+          if (stepData.rays === 1) {
+            ctx.fillStyle = '#3b82f6'; // --accent
+            ctx.font = '12px Outfit';
+            ctx.fillText('LiDAR Depth Guess', dp.sx + 60, dp.sy + 4);
+          }
+        }
+      });
+
+      // Draw Result Point (Calculated Guess)
+      if (result) {
+        const rp = w2s(result.point[0], result.point[2]);
+        ctx.fillStyle = '#3b82f6'; // --accent
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#3b82f6'; // --accent
+        ctx.beginPath(); ctx.arc(rp.sx, rp.sy, 8, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#3b82f6'; // --accent
+        ctx.font = 'bold 13px Outfit';
+        ctx.textAlign = 'center';
+        ctx.fillText('Calculated Guess', rp.sx, rp.sy + 24);
+      }
+    }
+
+    function updateUI(result, stepData) {
+      document.getElementById('story-title').textContent = stepData.title;
+      document.getElementById('story-text').textContent = stepData.text;
+
+      const banner = document.getElementById('warning-banner');
+      const statusVal = document.getElementById('status-val');
+      
+      if (!result) return;
+
+      document.getElementById('px').textContent = result.point[0].toFixed(3);
+      document.getElementById('pz').textContent = result.point[2].toFixed(3);
+      document.getElementById('msac-val').textContent = result.msacScore.toFixed(4);
+
+      if (result.hasSufficientBaseline) {
+        banner.className = '';
+        statusVal.textContent = 'Good (Parallax Active)';
+        statusVal.style.color = 'var(--good)';
+      } else {
+        banner.className = 'visible';
+        statusVal.textContent = 'Warning: No Parallax';
+        statusVal.style.color = 'var(--warn)';
+      }
+    }
+
+    // ─── Setup ──────────────────────────────────────────────────────────────
+    function resize() {
+      W = canvas.width = wrap.clientWidth;
+      H = canvas.height = wrap.clientHeight;
+      draw();
+    }
+    new ResizeObserver(resize).observe(wrap);
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+      if (currentStepIndex > 0) {
+        currentStepIndex--;
+        updateButtons();
+        draw();
+      }
+    });
+
+    document.getElementById('btn-next').addEventListener('click', () => {
+      if (currentStepIndex < STORY_STEPS.length - 1) {
+        currentStepIndex++;
+        updateButtons();
+        draw();
+      }
+    });
+
+    function updateButtons() {
+      document.getElementById('btn-prev').disabled = currentStepIndex === 0;
+      document.getElementById('btn-next').disabled = currentStepIndex === STORY_STEPS.length - 1;
+    }
+
+    resize();
+  </script>
+</body>
+</html>
