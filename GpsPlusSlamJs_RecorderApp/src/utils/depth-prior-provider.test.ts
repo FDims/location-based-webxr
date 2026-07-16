@@ -14,8 +14,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { DepthPoint, DepthSample } from 'gps-plus-slam-app-framework/types/ar-types';
-import type { Matrix4, Quaternion, Vector3 } from 'gps-plus-slam-app-framework/core';
+import type {
+  DepthPoint,
+  DepthSample,
+} from 'gps-plus-slam-app-framework/types/ar-types';
+import type {
+  Matrix4,
+  Quaternion,
+  Vector3,
+} from 'gps-plus-slam-app-framework/core';
 import {
   computeDepthWeight,
   computeEdgePenalty,
@@ -40,10 +47,22 @@ function dp(screenX: number, screenY: number, depthM: number): DepthPoint {
 function centredProjectionMatrix(fx = 1.7, fy = 1.7): Matrix4 {
   // Column-major: [col0] [col1] [col2] [col3]
   return [
-    fx, 0, 0, 0, // col 0
-    0, fy, 0, 0, // col 1
-    0, 0, -1.0002, -1, // col 2 (near/far encode)
-    0, 0, -0.020002, 0, // col 3
+    fx,
+    0,
+    0,
+    0, // col 0
+    0,
+    fy,
+    0,
+    0, // col 1
+    0,
+    0,
+    -1.0002,
+    -1, // col 2 (near/far encode)
+    0,
+    0,
+    -0.020002,
+    0, // col 3
   ] as unknown as Matrix4;
 }
 
@@ -79,7 +98,7 @@ function makeSample(
     cameraPos?: Vector3;
     cameraRot?: Quaternion;
     projectionMatrix?: Matrix4;
-  },
+  }
 ): DepthSample {
   return {
     timestamp: 1000,
@@ -375,7 +394,9 @@ describe('sampleDepthPrior', () => {
 
   it('returns null when depth at aimed pixel is zero', () => {
     const sample = makeSample(uniformGrid(0, 4)); // all depth = 0
-    expect(sampleDepthPrior(sample, 0.4, 0.4, { maxScreenDist: 0.25 })).toBeNull();
+    expect(
+      sampleDepthPrior(sample, 0.4, 0.4, { maxScreenDist: 0.25 })
+    ).toBeNull();
   });
 
   it('custom referenceRangeM shifts the quartic knee', () => {
