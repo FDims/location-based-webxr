@@ -11,7 +11,8 @@ const INV_SQRT2 = 1 / Math.sqrt(2);
 // ---------------------------------------------------------------------------
 // Helper — shorthand for Vector3 tuples
 // ---------------------------------------------------------------------------
-const v3 = (x: number, y: number, z: number): Vector3 => [x, y, z] as unknown as Vector3;
+const v3 = (x: number, y: number, z: number): Vector3 =>
+  [x, y, z] as unknown as Vector3;
 
 // ---------------------------------------------------------------------------
 // perpendicularDistanceToRay
@@ -20,20 +21,28 @@ const v3 = (x: number, y: number, z: number): Vector3 => [x, y, z] as unknown as
 describe('perpendicularDistanceToRay', () => {
   test('point on the ray returns distance 0', () => {
     // Point (3,0,0) lies on ray from origin along +X
-    expect(perpendicularDistanceToRay(v3(3, 0, 0), v3(0, 0, 0), v3(1, 0, 0))).toBeCloseTo(0, 10);
+    expect(
+      perpendicularDistanceToRay(v3(3, 0, 0), v3(0, 0, 0), v3(1, 0, 0))
+    ).toBeCloseTo(0, 10);
   });
 
   test('point 1 m away from a ray returns distance 1', () => {
     // Point (0,1,0) is 1 m from the +X ray through origin
-    expect(perpendicularDistanceToRay(v3(0, 1, 0), v3(0, 0, 0), v3(1, 0, 0))).toBeCloseTo(1, 10);
+    expect(
+      perpendicularDistanceToRay(v3(0, 1, 0), v3(0, 0, 0), v3(1, 0, 0))
+    ).toBeCloseTo(1, 10);
   });
 
   test('handles un-normalized direction', () => {
-    expect(perpendicularDistanceToRay(v3(0, 1, 0), v3(0, 0, 0), v3(5, 0, 0))).toBeCloseTo(1, 10);
+    expect(
+      perpendicularDistanceToRay(v3(0, 1, 0), v3(0, 0, 0), v3(5, 0, 0))
+    ).toBeCloseTo(1, 10);
   });
 
   test('returns Infinity for zero-length direction', () => {
-    expect(perpendicularDistanceToRay(v3(1, 1, 1), v3(0, 0, 0), v3(0, 0, 0))).toBe(Infinity);
+    expect(
+      perpendicularDistanceToRay(v3(1, 1, 1), v3(0, 0, 0), v3(0, 0, 0))
+    ).toBe(Infinity);
   });
 });
 

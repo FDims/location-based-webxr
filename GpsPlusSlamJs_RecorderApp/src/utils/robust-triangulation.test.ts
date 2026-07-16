@@ -20,7 +20,10 @@ import {
   solveRobustTriangulation,
   type MeasurementRayObservation,
 } from './robust-triangulation';
-import { perpendicularDistanceToRay, type Observation } from './ray-triangulation-core';
+import {
+  perpendicularDistanceToRay,
+  type Observation,
+} from './ray-triangulation-core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,7 +38,7 @@ function makeObs(
   rayDirection: Vector3,
   rayWeight = 1,
   depthPoint?: Vector3,
-  depthWeight?: number,
+  depthWeight?: number
 ): MeasurementRayObservation {
   return {
     id: `obs-${idCounter++}`,
@@ -212,14 +215,22 @@ describe('perpendicularDistanceToRay (from core)', () => {
   it('diagonal distance is correct', () => {
     // Ray along +X from origin. Point at (3, 4, 0).
     // Perpendicular distance = 4 (the Y component)
-    const dist = perpendicularDistanceToRay(v3(3, 4, 0), v3(0, 0, 0), v3(1, 0, 0));
+    const dist = perpendicularDistanceToRay(
+      v3(3, 4, 0),
+      v3(0, 0, 0),
+      v3(1, 0, 0)
+    );
     expect(dist).toBeCloseTo(4, 10);
   });
 
   it('3D perpendicular distance is correct', () => {
     // Ray along +Z from origin. Point at (3, 4, 7).
     // Perpendicular distance = sqrt(3² + 4²) = 5
-    const dist = perpendicularDistanceToRay(v3(3, 4, 7), v3(0, 0, 0), v3(0, 0, 1));
+    const dist = perpendicularDistanceToRay(
+      v3(3, 4, 7),
+      v3(0, 0, 0),
+      v3(0, 0, 1)
+    );
     expect(dist).toBeCloseTo(5, 10);
   });
 });
@@ -395,7 +406,10 @@ describe('solveRobustTriangulation', () => {
       makeObs(v3(0, 2, 0), v3(3, -2, 0), 1),
       makeObs(v3(0, 0, -2), v3(3, 0, 2), 1),
     ];
-    const multiResult = solveRobustTriangulation(multiObs, { seed: 42, iterations: 200 });
+    const multiResult = solveRobustTriangulation(multiObs, {
+      seed: 42,
+      iterations: 200,
+    });
     expect(multiResult).not.toBeNull();
     // Solution should be closer to the triangulated target (3,0,0) than the depth point (5,0,0)
     const distToTriangulated = Math.abs(multiResult!.point[0] - realTarget[0]);
