@@ -13,7 +13,7 @@ import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 // ---------------------------------------------------------------------------
 
 /** A 3D ray. Direction need not be pre-normalized; the solver normalizes internally. */
-export interface Ray {
+interface Ray {
   origin: Vector3;
   direction: Vector3;
 }
@@ -48,10 +48,20 @@ export interface TriangulationResult {
 // 3×3 matrix helpers
 // ---------------------------------------------------------------------------
 
-type Mat3 = [number, number, number, number, number, number, number, number, number];
+type Mat3 = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
 
 /** Inverts a 3×3 row-major matrix. Returns null when |det| < 1e-8 (singular). */
-export function invertMatrix3x3(m: Mat3): Mat3 | null {
+function invertMatrix3x3(m: Mat3): Mat3 | null {
   const det =
     m[0] * (m[4] * m[8] - m[5] * m[7]) -
     m[1] * (m[3] * m[8] - m[5] * m[6]) +
@@ -84,10 +94,10 @@ export function invertMatrix3x3(m: Mat3): Mat3 | null {
 export function perpendicularDistanceToRay(
   point: Vector3,
   rayOrigin: Vector3,
-  rayDirection: Vector3,
+  rayDirection: Vector3
 ): number {
   const len = Math.sqrt(
-    rayDirection[0] ** 2 + rayDirection[1] ** 2 + rayDirection[2] ** 2,
+    rayDirection[0] ** 2 + rayDirection[1] ** 2 + rayDirection[2] ** 2
   );
   if (len < 1e-10) return Infinity;
   const dx = rayDirection[0] / len;
@@ -117,7 +127,7 @@ export function perpendicularDistanceToRay(
  * never fight each other. Returns null when A is singular.
  */
 export function solveClosestPointOfApproach(
-  observations: Observation[],
+  observations: Observation[]
 ): TriangulationResult | null {
   if (observations.length === 0) return null;
 
@@ -128,7 +138,7 @@ export function solveClosestPointOfApproach(
     const len = Math.sqrt(
       obs.ray.direction[0] ** 2 +
         obs.ray.direction[1] ** 2 +
-        obs.ray.direction[2] ** 2,
+        obs.ray.direction[2] ** 2
     );
     if (len < 1e-10) continue;
     const dx = obs.ray.direction[0] / len;
@@ -213,7 +223,11 @@ function computeRMSError(observations: Observation[], P: Vector3): number {
   let validRays = 0;
   for (const obs of observations) {
     if (obs.rayWeight <= 0) continue;
-    const dist = perpendicularDistanceToRay(P, obs.ray.origin, obs.ray.direction);
+    const dist = perpendicularDistanceToRay(
+      P,
+      obs.ray.origin,
+      obs.ray.direction
+    );
     if (!Number.isFinite(dist)) continue;
     sumSq += dist * dist;
     validRays++;

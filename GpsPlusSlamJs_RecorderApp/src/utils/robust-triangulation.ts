@@ -95,7 +95,7 @@ export function computeAdaptiveThreshold(
   hypothesisPoint: Vector3,
   cameraOrigins: Vector3[],
   baseTolerance: number,
-  angularThresholdRadians: number,
+  angularThresholdRadians: number
 ): number {
   if (cameraOrigins.length === 0) return baseTolerance;
 
@@ -123,10 +123,10 @@ export function computeAdaptiveThreshold(
 function alongRayDepthError(
   point: Vector3,
   depthPoint: Vector3,
-  rayDirection: Vector3,
+  rayDirection: Vector3
 ): number {
   const len = Math.sqrt(
-    rayDirection[0] ** 2 + rayDirection[1] ** 2 + rayDirection[2] ** 2,
+    rayDirection[0] ** 2 + rayDirection[1] ** 2 + rayDirection[2] ** 2
   );
   if (len < 1e-10) return Infinity;
   const dx = rayDirection[0] / len;
@@ -149,17 +149,26 @@ function alongRayDepthError(
 export function evaluateObservation(
   point: Vector3,
   obs: Observation,
-  threshold: number,
+  threshold: number
 ): { isInlier: boolean; msacScore: number } {
   const thresh2 = threshold * threshold;
-  const rayDist = perpendicularDistanceToRay(point, obs.ray.origin, obs.ray.direction);
+  const rayDist = perpendicularDistanceToRay(
+    point,
+    obs.ray.origin,
+    obs.ray.direction
+  );
   const rayDist2 = rayDist * rayDist;
 
   let isInlier = rayDist < threshold;
-  let msacScore = (obs.rayWeight > 0 ? obs.rayWeight : 1) * Math.min(rayDist2, thresh2);
+  let msacScore =
+    (obs.rayWeight > 0 ? obs.rayWeight : 1) * Math.min(rayDist2, thresh2);
 
   if (obs.depthPoint && obs.depthWeight != null && obs.depthWeight > 0) {
-    const depthDist = alongRayDepthError(point, obs.depthPoint, obs.ray.direction);
+    const depthDist = alongRayDepthError(
+      point,
+      obs.depthPoint,
+      obs.ray.direction
+    );
     const depthDist2 = depthDist * depthDist;
     if (depthDist >= threshold) isInlier = false;
     msacScore += obs.depthWeight * Math.min(depthDist2, thresh2);
@@ -208,8 +217,7 @@ function angleBetweenRays(d1: Vector3, d2: Vector3): number {
   const len1 = Math.sqrt(d1[0] ** 2 + d1[1] ** 2 + d1[2] ** 2);
   const len2 = Math.sqrt(d2[0] ** 2 + d2[1] ** 2 + d2[2] ** 2);
   if (len1 < 1e-10 || len2 < 1e-10) return 0;
-  const dot =
-    (d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]) / (len1 * len2);
+  const dot = (d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]) / (len1 * len2);
   return Math.acos(Math.max(-1, Math.min(1, Math.abs(dot))));
 }
 
@@ -222,7 +230,7 @@ function generateHypothesis(
   allObs: Observation[],
   depthIndices: number[],
   rng: () => number,
-  minParallaxAngle: number,
+  minParallaxAngle: number
 ): Observation[] | null {
   const useStrategyA = depthIndices.length > 0 && rng() < 0.5;
 
@@ -241,10 +249,10 @@ function generateHypothesis(
 
       const angle = angleBetweenRays(
         observations[i]!.rayDirection,
-        observations[j]!.rayDirection,
+        observations[j]!.rayDirection
       );
       // Reject near-parallel pairs (< minParallaxAngle)
-      if (angle >= minParallaxAngle && angle <= (Math.PI - minParallaxAngle)) {
+      if (angle >= minParallaxAngle && angle <= Math.PI - minParallaxAngle) {
         return [allObs[i]!, allObs[j]!];
       }
     }
@@ -253,36 +261,87 @@ function generateHypothesis(
 }
 
 // ---------------------------------------------------------------------------
-// Main MSAC solver
+// Hypothesis evaluation
 // ---------------------------------------------------------------------------
 
-/**
- * Robust triangulation using MSAC (M-Estimator Sample Consensus).
- *
- * - **1 observation with depth**: direct solve, `hasSufficientBaseline = false`.
- * - **2 observations**: direct solve, baseline computed.
- * - **≥ 3 observations**: full MSAC with dual-mode hypothesis generation.
- *
- * Returns `null` if no valid solution can be found.
- */
-export function solveRobustTriangulation(
+function scoreHypothesis(
+  hypothesisPoint: Vector3,
+  allObs: Observation[],
   observations: MeasurementRayObservation[],
-  options?: RobustTriangulationOptions,
+  threshold: number
+): { totalScore: number; inlierIds: string[]; outlierIds: string[] } {
+  let totalScore = 0;
+  const inlierIds: string[] = [];
+  const outlierIds: string[] = [];
+  const n = observations.length;
+
+  for (let i = 0; i < n; i++) {
+    const { isInlier, msacScore } = evaluateObservation(
+      hypothesisPoint,
+      allObs[i]!,
+      threshold
+    );
+    totalScore += msacScore;
+    if (isInlier) {
+      inlierIds.push(observations[i]!.id);
+    } else {
+      outlierIds.push(observations[i]!.id);
+    }
+  }
+
+  return { totalScore, inlierIds, outlierIds };
+}
+
+// ---------------------------------------------------------------------------
+// Inlier Resolution
+// ---------------------------------------------------------------------------
+
+function resolveInliers(
+  observations: MeasurementRayObservation[],
+  bestInlierIds: string[],
+  bestOutlierIds: string[],
+  bestPoint: Vector3,
+  bestScore: number,
+  hasSufficientBaseline: boolean
+): RobustTriangulationResult {
+  const inlierSet = new Set(bestInlierIds);
+  const inlierObs = observations
+    .filter((o) => inlierSet.has(o.id))
+    .map(toObservation);
+
+  const finalResult = solveClosestPointOfApproach(inlierObs);
+  if (!finalResult) {
+    return {
+      point: bestPoint,
+      uncertainty: Infinity,
+      rmsError: Infinity,
+      msacScore: bestScore,
+      inlierIds: bestInlierIds,
+      outlierIds: bestOutlierIds,
+      hasSufficientBaseline,
+    };
+  }
+
+  return {
+    point: finalResult.point,
+    uncertainty: finalResult.uncertainty,
+    rmsError: finalResult.rmsError,
+    msacScore: bestScore,
+    inlierIds: bestInlierIds,
+    outlierIds: bestOutlierIds,
+    hasSufficientBaseline,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Early Exits
+// ---------------------------------------------------------------------------
+
+function tryEarlyExit(
+  observations: MeasurementRayObservation[],
+  allObs: Observation[],
+  hasSufficientBaseline: boolean
 ): RobustTriangulationResult | null {
-  if (observations.length === 0) return null;
-
-  const baseThr = options?.baseDistanceThreshold ?? 0.5;
-  const angThr = options?.angularThresholdRadians ?? 0.005;
-  const maxIter = options?.iterations ?? 100;
-  const seed = options?.seed ?? 42;
-  const minBaselineM = options?.minBaselineM ?? 0.5;
-  const minParallaxAngle = options?.minParallaxAngle ?? (Math.PI / 180); // 1°
-
-  const allObs = observations.map(toObservation);
-  const allOrigins = observations.map((m) => m.rayOrigin);
-  const baseline = computeMaxBaseline(allOrigins);
-  const hasSufficientBaseline = baseline >= minBaselineM;
-
   // ── Early exit: 1 observation ──────────────────────────────────────────
   if (observations.length === 1) {
     const obs = allObs[0]!;
@@ -317,6 +376,44 @@ export function solveRobustTriangulation(
       hasSufficientBaseline,
     };
   }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Main MSAC solver
+// ---------------------------------------------------------------------------
+
+/**
+ * Robust triangulation using MSAC (M-Estimator Sample Consensus).
+ *
+ * - **1 observation with depth**: direct solve, `hasSufficientBaseline = false`.
+ * - **2 observations**: direct solve, baseline computed.
+ * - **≥ 3 observations**: full MSAC with dual-mode hypothesis generation.
+ *
+ * Returns `null` if no valid solution can be found.
+ */
+// eslint-disable-next-line complexity
+export function solveRobustTriangulation(
+  observations: MeasurementRayObservation[],
+  options?: RobustTriangulationOptions
+): RobustTriangulationResult | null {
+  if (observations.length === 0) return null;
+
+  const baseThr = options?.baseDistanceThreshold ?? 0.5;
+  const angThr = options?.angularThresholdRadians ?? 0.005;
+  const maxIter = options?.iterations ?? 100;
+  const seed = options?.seed ?? 42;
+  const minBaselineM = options?.minBaselineM ?? 0.5;
+  const minParallaxAngle = options?.minParallaxAngle ?? Math.PI / 180; // 1°
+
+  const allObs = observations.map(toObservation);
+  const allOrigins = observations.map((m) => m.rayOrigin);
+  const baseline = computeMaxBaseline(allOrigins);
+  const hasSufficientBaseline = baseline >= minBaselineM;
+
+  if (observations.length <= 2) {
+    return tryEarlyExit(observations, allObs, hasSufficientBaseline);
+  }
 
   // ── ≥ 3 observations: full MSAC ───────────────────────────────────────
   const rng = createSeededRng(seed);
@@ -338,7 +435,13 @@ export function solveRobustTriangulation(
 
   for (let iter = 0; iter < maxIter; iter++) {
     // ── Hypothesis generation ────────────────────────────────────────────
-    const hypothesisObs = generateHypothesis(observations, allObs, depthIndices, rng, minParallaxAngle);
+    const hypothesisObs = generateHypothesis(
+      observations,
+      allObs,
+      depthIndices,
+      rng,
+      minParallaxAngle
+    );
     if (!hypothesisObs) continue;
 
     // Solve hypothesis
@@ -352,27 +455,16 @@ export function solveRobustTriangulation(
       hypothesisPoint,
       allOrigins,
       baseThr,
-      angThr,
+      angThr
     );
 
     // ── Score all observations ───────────────────────────────────────────
-    let totalScore = 0;
-    const inlierIds: string[] = [];
-    const outlierIds: string[] = [];
-
-    for (let i = 0; i < n; i++) {
-      const { isInlier, msacScore } = evaluateObservation(
-        hypothesisPoint,
-        allObs[i]!,
-        threshold,
-      );
-      totalScore += msacScore;
-      if (isInlier) {
-        inlierIds.push(observations[i]!.id);
-      } else {
-        outlierIds.push(observations[i]!.id);
-      }
-    }
+    const { totalScore, inlierIds, outlierIds } = scoreHypothesis(
+      hypothesisPoint,
+      allObs,
+      observations,
+      threshold
+    );
 
     if (totalScore < bestScore) {
       bestScore = totalScore;
@@ -384,33 +476,12 @@ export function solveRobustTriangulation(
 
   if (!bestPoint || bestInlierIds.length === 0) return null;
 
-  // ── Re-solve using only inliers ────────────────────────────────────────
-  const inlierSet = new Set(bestInlierIds);
-  const inlierObs = observations
-    .filter((o) => inlierSet.has(o.id))
-    .map(toObservation);
-
-  const finalResult = solveClosestPointOfApproach(inlierObs);
-  if (!finalResult) {
-    // Fallback to the hypothesis point
-    return {
-      point: bestPoint,
-      uncertainty: Infinity,
-      rmsError: Infinity,
-      msacScore: bestScore,
-      inlierIds: bestInlierIds,
-      outlierIds: bestOutlierIds,
-      hasSufficientBaseline,
-    };
-  }
-
-  return {
-    point: finalResult.point,
-    uncertainty: finalResult.uncertainty,
-    rmsError: finalResult.rmsError,
-    msacScore: bestScore,
-    inlierIds: bestInlierIds,
-    outlierIds: bestOutlierIds,
-    hasSufficientBaseline,
-  };
+  return resolveInliers(
+    observations,
+    bestInlierIds,
+    bestOutlierIds,
+    bestPoint,
+    bestScore,
+    hasSufficientBaseline
+  );
 }
