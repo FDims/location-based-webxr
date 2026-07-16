@@ -6,52 +6,79 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Aiming Ray Capture Demo</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0d0f14; --surface: #161b24; --border: #252d3d;
-      --accent: #4f8ef7; --text: #e2e8f0; --muted: #64748b;
+      --bg: #000000;
+      --surface: rgb(0 0 0 / 75%);
+      --border: rgb(255 255 255 / 45%);
+      --accent: #ff2b2b;
+      --text: #f5f5f5;
+      --muted: #b8b8b8;
     }
 
     body {
-      font-family: Inter, sans-serif; background: var(--bg); color: var(--text);
+      font-family: 'Space Mono', monospace; background: var(--bg); color: var(--text);
       height: 100dvh; display: grid; grid-template-rows: auto 1fr; overflow: hidden;
     }
 
     header {
       display: flex; align-items: center; gap: 12px; padding: 12px 20px;
-      border-bottom: 1px solid var(--border); background: var(--surface);
+      border-bottom: 1px solid var(--border); background: rgb(0 0 0 / 90%);
     }
-    header h1 { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
-    header p { font-size: 12px; color: var(--muted); }
-    .hdot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    header h1 { font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    header p { font-size: 11px; color: var(--muted); }
+    .hdot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgb(255 43 43 / 80%); }
 
-    main { position: relative; overflow: hidden; background: radial-gradient(circle at 50% 50%, #1a2035 0%, #0d0f14 70%); cursor: crosshair; }
+    main { position: relative; overflow: hidden; background: #000; cursor: crosshair; }
     canvas { display: block; width: 100%; height: 100%; }
 
     #mode-badge {
       position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-      background: rgb(22 27 36 / 85%); border: 1px solid var(--border); border-radius: 99px;
-      padding: 8px 18px; font-size: 13px; color: var(--text); pointer-events: none;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 99px;
+      padding: 8px 18px; font-size: 11px; color: var(--text); pointer-events: none;
+      text-transform: uppercase; letter-spacing: 0.06em;
     }
 
     #sidebar {
       position: absolute; top: 20px; right: 20px; width: 260px;
-      background: rgb(22 27 36 / 90%); border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
       padding: 16px; display: flex; flex-direction: column; gap: 12px;
+      backdrop-filter: blur(2px);
     }
     .btn {
       padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
-      background: var(--bg); color: var(--text); font-size: 12px; cursor: pointer;
+      background: #050505; color: var(--text); font-size: 12px; cursor: pointer;
       transition: border-color .15s, background .15s;
+      font-family: inherit;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
-    .btn:hover { border-color: var(--accent); background: rgb(79 142 247 / 8%); }
-    
+    .btn:hover { border-color: var(--accent); background: rgb(255 43 43 / 12%); }
+
     .ray-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-    .ray-item { font-size: 11px; padding: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--muted); }
+    .ray-item { font-size: 11px; padding: 6px; background: #040404; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); }
     .ray-item strong { color: var(--text); }
+
+    #warning {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 1px solid #ff7171;
+      background: rgb(60 0 0 / 90%);
+      color: #ffd7d7;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+    }
+    #warning.show { opacity: 1; }
   </style>
 </head>
 
@@ -67,12 +94,13 @@
   <main id="canvas-wrap">
     <canvas id="c"></canvas>
     <div id="sidebar">
-      <button class="btn" onclick="shootCrosshair()">🎯 Shoot Center Crosshair</button>
-      <button class="btn" onclick="clearAll()">🗑 Clear Rays</button>
+      <button class="btn" onclick="shootCrosshair()">Shoot Center Crosshair (Space)</button>
+      <button class="btn" onclick="clearAll()">Clear Rays</button>
       <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; margin-top: 8px;">Captured Rays</div>
       <div class="ray-list" id="ray-list"></div>
     </div>
-    <div id="mode-badge">🖱 Drag to orbit camera · 👆 Click anywhere to shoot a tap ray</div>
+    <div id="warning" role="status" aria-live="polite"></div>
+    <div id="mode-badge">Drag to orbit camera · Click to shoot tap ray · Press Space for center shot</div>
   </main>
 
   <script type="module">
@@ -81,11 +109,14 @@
     const canvas = document.getElementById('c');
     const wrap = document.getElementById('canvas-wrap');
     const ctx = canvas.getContext('2d');
+    const warningEl = document.getElementById('warning');
     let W, H, cx, cy;
 
     // Camera state
-    const cam = { az: 0.2, el: 0.3, dist: 8 };
+    const cam = { az: -0.55, el: 0.34, dist: 9.6 };
     let rays = [];
+    const GRID_Y = -2;
+    const GRID_EXTENT = 14;
 
     // Math utils
     const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -104,13 +135,25 @@
       return { P, fwd, right, up };
     }
 
-    // A mock projection matrix matching our FOV
-    const getProjectionMatrix = () => [
-      1.4, 0, 0, 0,
-      0, 1.4 * (W/H), 0, 0,
-      0, 0, -1, -1,
-      0, 0, -0.2, 0
-    ];
+    // Perspective projection used both for createTapRay and local 3D preview rendering.
+    const getProjectionParams = () => {
+      const fovY = Math.PI / 3; // 60deg
+      const aspect = W / H;
+      const near = 0.1;
+      const far = 100;
+      const f = 1 / Math.tan(fovY / 2);
+      return { f, aspect, near, far };
+    };
+
+    const getProjectionMatrix = () => {
+      const { f, aspect, near, far } = getProjectionParams();
+      return [
+        f / aspect, 0, 0, 0,
+        0, f, 0, 0,
+        0, 0, (far + near) / (near - far), -1,
+        0, 0, (2 * far * near) / (near - far), 0
+      ];
+    };
 
     function getCameraQuaternion() {
       const { fwd, right, up } = getCameraBasis();
@@ -140,9 +183,13 @@
       const v = { x: wx - P.x, y: wy - P.y, z: wz - P.z };
       const vx = dot3(v, right), vy = dot3(v, up), vz = dot3(v, fwd);
       if (vz < 0.1) return null;
-      // Reverse match the mock projection matrix FOV scaling (1.4 is roughly FOV)
-      const scale = 1.4 * Math.min(W, H) / 2;
-      return { sx: cx + vx * scale / vz, sy: cy - vy * scale / vz * (W/H) };
+      const { f, aspect } = getProjectionParams();
+      const ndcX = (vx / vz) * (f / aspect);
+      const ndcY = (vy / vz) * f;
+      return {
+        sx: (ndcX * 0.5 + 0.5) * W,
+        sy: (1 - (ndcY * 0.5 + 0.5)) * H,
+      };
     }
 
     function drawLine3(ax, ay, az, bx, by, bz, style, width = 1) {
@@ -154,32 +201,50 @@
       }
     }
 
+    function drawAxes() {
+      // Axis gizmo uses the exact same world basis as the grid (X/Z on plane, Y vertical).
+      const baseX = 1.4;
+      const baseY = GRID_Y;
+      const baseZ = 0.6;
+      const axisLen = 5.2;
+      drawLine3(baseX, baseY, baseZ, baseX + axisLen, baseY, baseZ, '#f9a825', 2.0); // +X
+      drawLine3(baseX, baseY, baseZ, baseX, baseY + axisLen, baseZ, '#9cff00', 2.0); // +Y
+      drawLine3(baseX, baseY, baseZ, baseX, baseY, baseZ + axisLen, '#33b5ff', 2.0); // +Z
+    }
+
     function drawGrid() {
-      for (let i = -10; i <= 10; i++) {
-        const alpha = i === 0 ? 0.5 : 0.1;
-        drawLine3(-10, -2, i, 10, -2, i, `rgba(255,255,255,${alpha})`);
-        drawLine3(i, -2, -10, i, -2, 10, `rgba(255,255,255,${alpha})`);
+      for (let i = -GRID_EXTENT; i <= GRID_EXTENT; i++) {
+        const alpha = i === 0 ? 0.62 : (i % 5 === 0 ? 0.44 : 0.24);
+        drawLine3(-GRID_EXTENT, GRID_Y, i, GRID_EXTENT, GRID_Y, i, `rgba(255,255,255,${alpha})`);
+        drawLine3(i, GRID_Y, -GRID_EXTENT, i, GRID_Y, GRID_EXTENT, `rgba(255,255,255,${alpha})`);
       }
     }
 
     function draw() {
       ctx.clearRect(0, 0, W, H);
       drawGrid();
+      drawAxes();
 
       rays.forEach((ray, i) => {
-        // Draw ray from origin to origin + direction * 10
-        const fx = ray.origin[0] + ray.direction[0] * 10;
-        const fy = ray.origin[1] + ray.direction[1] * 10;
-        const fz = ray.origin[2] + ray.direction[2] * 10;
-        drawLine3(ray.origin[0], ray.origin[1], ray.origin[2], fx, fy, fz, '#4f8ef7', 2);
-        
-        // Draw origin point
-        const p = project3(ray.origin[0], ray.origin[1], ray.origin[2]);
-        if (p) {
-          ctx.fillStyle = '#4f8ef7';
-          ctx.beginPath(); ctx.arc(p.sx, p.sy, 4, 0, Math.PI*2); ctx.fill();
-        }
+        // Start a little in front of the camera so the segment is projectable.
+        const near = 0.2;
+        const far = 24;
+        const sx = ray.origin[0] + ray.direction[0] * near;
+        const sy = ray.origin[1] + ray.direction[1] * near;
+        const sz = ray.origin[2] + ray.direction[2] * near;
+        const fx = ray.origin[0] + ray.direction[0] * far;
+        const fy = ray.origin[1] + ray.direction[1] * far;
+        const fz = ray.origin[2] + ray.direction[2] * far;
+        drawLine3(sx, sy, sz, fx, fy, fz, '#ff1414', 2.1);
       });
+    }
+
+    let warningTimer = null;
+    function showWarning(message) {
+      warningEl.textContent = message;
+      warningEl.classList.add('show');
+      if (warningTimer) clearTimeout(warningTimer);
+      warningTimer = setTimeout(() => warningEl.classList.remove('show'), 1800);
     }
 
     function updateList() {
@@ -197,12 +262,14 @@
       const { P } = getCameraBasis();
       const rot = getCameraQuaternion();
       const proj = getProjectionMatrix();
-      
+
       const ray = createTapRay([P.x, P.y, P.z], rot, proj, screenX, screenY);
       if (ray) {
         rays.push(ray);
         updateList();
         draw();
+      } else {
+        showWarning('Could not create ray for this shot. Try again.');
       }
     }
 
@@ -218,7 +285,8 @@
         if (Math.hypot(dx, dy) > 5) drag.moved = true;
         if (drag.moved) {
           cam.az = drag.ax - dx * 0.007;
-          cam.el = Math.max(-1.5, Math.min(1.5, drag.el + dy * 0.007));
+          // Keep camera above the grid so perspective remains consistent and intuitive.
+          cam.el = Math.max(0.08, Math.min(1.15, drag.el + dy * 0.007));
           draw();
         }
       }
@@ -231,6 +299,12 @@
       drag = null;
     });
     canvas.addEventListener('wheel', e => { e.preventDefault(); cam.dist = Math.max(2, Math.min(20, cam.dist + e.deltaY * 0.01)); draw(); }, { passive: false });
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        window.shootCrosshair();
+      }
+    });
 
     function resize() { W = canvas.width = wrap.clientWidth; H = canvas.height = wrap.clientHeight; cx = W/2; cy = H/2; draw(); }
     new ResizeObserver(resize).observe(wrap);
