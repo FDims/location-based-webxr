@@ -745,7 +745,7 @@
 
       // Per-ray dashed perpendicular lines to solved point
       if (result) {
-        const { x: px, y: py, z: pz } = result.point;
+        const [px, py, pz] = result.point;
         for (const r of rays) {
           if (r.weight <= 0) continue;
           const { x: ox, y: oy, z: oz } = r.origin;
@@ -773,7 +773,7 @@
 
       // Solved point
       if (result) {
-        const { x: px, y: py, z: pz } = result.point;
+        const [px, py, pz] = result.point;
         const col = result.uncertainty > 2 ? '#fbbf24' : '#34d399';
         // uncertainty ring on ground plane (at solved y height)
         const uncR = Math.min(3, result.uncertainty * 0.3);
@@ -791,10 +791,10 @@
     // ─── Solve ────────────────────────────────────────────────────────────────────
     function solve() {
       const obs = rays.map(r => ({
-        ray: { origin: r.origin, direction: r.dir },
+        ray: { origin: [r.origin.x, r.origin.y, r.origin.z], direction: [r.dir.x, r.dir.y, r.dir.z] },
         rayWeight: r.weight,
         // Passing depth points if they are attached to the ray (e.g. from priorObs)
-        depthPoint: r.priorObs ? { x: r.priorObs.point[0], y: r.priorObs.point[1], z: r.priorObs.point[2] } : undefined,
+        depthPoint: r.priorObs ? [r.priorObs.point[0], r.priorObs.point[1], r.priorObs.point[2]] : undefined,
         depthWeight: r.priorObs ? r.priorObs.weight : undefined
       }));
       result = solveClosestPointOfApproach(obs);
@@ -807,9 +807,9 @@
 
     function updateSidebar() {
       const R = result;
-      document.getElementById('px').textContent = R ? fmt(R.point.x) : '—';
-      document.getElementById('py').textContent = R ? fmt(R.point.y) : '—';
-      document.getElementById('pz').textContent = R ? fmt(R.point.z) : '—';
+      document.getElementById('px').textContent = R ? fmt(R.point[0]) : '—';
+      document.getElementById('py').textContent = R ? fmt(R.point[1]) : '—';
+      document.getElementById('pz').textContent = R ? fmt(R.point[2]) : '—';
 
       if (R) {
         const rCol = R.rmsError < 0.05 ? 'var(--good)' : R.rmsError < 0.5 ? 'var(--warn)' : 'var(--bad)';
