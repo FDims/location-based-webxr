@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aiming Ray Capture Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #000;
+      --surface: rgb(10 10 10 / 85%);
+      --border: rgb(255 255 255 / 18%);
+      --text: #f5f5f5;
+      --muted: #9f9f9f;
+      --accent: #ff3030;
+      --accent-2: #1ea7ff;
+      --good: #2ed39c;
+      --warn: #ffc857;
+      --bad: #ff5d73;
+    }
+
+    body {
+      font-family: Outfit, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      background: rgb(0 0 0 / 78%);
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 330px;
+      min-height: 0;
+    }
+
+    #canvas-wrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    #scene {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #crosshair {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 26px;
+      height: 26px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      opacity: 0.9;
+    }
+
+    #crosshair::before,
+    #crosshair::after {
+      content: '';
+      position: absolute;
+      background: var(--accent);
+      box-shadow: 0 0 9px rgb(255 122 24 / 70%);
+    }
+
+    #crosshair::before {
+      width: 2px;
+      height: 26px;
+      left: 12px;
+      top: 0;
+    }
+
+    #crosshair::after {
+      width: 26px;
+      height: 2px;
+      top: 12px;
+      left: 0;
+    }
+
+    #hint {
+      position: absolute;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgb(0 0 0 / 75%);
+      padding: 7px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    aside {
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      overflow-y: auto;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: rgb(5 10 20 / 40%);
+    }
+
+    .title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+      color: var(--muted);
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .row {
+      font-size: 13px;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+
+    .row:last-child {
+      margin-bottom: 0;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent-2);
+    }
+
+    .btns {
+      display: grid;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: rgb(255 255 255 / 3%);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+      background: rgb(255 122 24 / 11%);
+      transform: translateY(-1px);
+    }
+
+    button:focus-visible {
+      outline: 2px solid rgb(30 167 255 / 90%);
+      outline-offset: 2px;
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .primary {
+      background: linear-gradient(130deg, var(--accent), #ff6d6d);
+      border-color: rgb(255 255 255 / 20%);
+      color: #fff;
+      text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+    }
+
+    .primary:hover {
+      background: linear-gradient(130deg, #ff4545, #ff7f7f);
+      color: #fff;
+    }
+
+    .primary:active {
+      background: linear-gradient(130deg, #d92525, #dc6c6c);
+      color: #fff;
+    }
+
+    #status {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+      background: rgb(255 255 255 / 2%);
+      min-height: 58px;
+    }
+
+    #status.warn {
+      border-color: var(--warn);
+      color: #ffe7b6;
+      background: rgb(255 200 87 / 11%);
+    }
+
+    #status.good {
+      border-color: var(--good);
+      color: #c8ffec;
+      background: rgb(46 211 156 / 10%);
+    }
+
+    @media (width <= 980px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(280px, 1fr) auto;
+      }
+
+      aside {
+        border-left: none;
+        border-top: 1px solid var(--border);
+      }
+
+      #hint {
+        width: calc(100% - 20px);
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Aiming Ray Capture Demo</h1>
+    <p class="sub">Component 4 demo: shoot center crosshair or tap screen to create world-space rays via createTapRay().</p>
+  </header>
+
+  <main>
+    <div id="canvas-wrap">
+      <canvas id="scene"></canvas>
+      <div id="crosshair"></div>
+      <div id="hint">Drag to orbit, right-drag to pan, wheel to zoom. Tap/click anywhere to shoot a tap ray.</div>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <div class="title">Capture</div>
+        <div class="btns">
+          <button id="shoot-crosshair" class="primary" title="Hotkey: Space">Shoot Crosshair Ray (Space)</button>
+          <button id="clear-rays">Clear Rays</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="title">Camera Pose</div>
+        <div class="row"><span>Position</span><span id="cam-pos" class="mono">[0.00, 1.60, 3.50]</span></div>
+        <div class="row"><span>Quaternion</span><span id="cam-rot" class="mono">[0, 0, 0, 1]</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="title">Stats</div>
+        <div class="row"><span>Total Rays</span><span id="ray-count" class="mono">0</span></div>
+        <div class="row"><span>Last Mode</span><span id="last-mode" class="mono">none</span></div>
+        <div class="row"><span>Last Screen</span><span id="last-screen" class="mono">[-, -]</span></div>
+      </div>
+
+      <div id="status">Ready. Shoot a crosshair ray or tap the viewport.</div>
+    </aside>
+  </main>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import { createTapRay } from './src/utils/aiming-ray-capture.ts';
+
+    const canvas = document.getElementById('scene');
+    const wrap = document.getElementById('canvas-wrap');
+    const statusEl = document.getElementById('status');
+    const rayCountEl = document.getElementById('ray-count');
+    const lastModeEl = document.getElementById('last-mode');
+    const lastScreenEl = document.getElementById('last-screen');
+    const camPosEl = document.getElementById('cam-pos');
+    const camRotEl = document.getElementById('cam-rot');
+    const shootCrosshairBtn = document.getElementById('shoot-crosshair');
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight, false);
+    renderer.setClearColor(0x000000, 1);
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(62, wrap.clientWidth / wrap.clientHeight, 0.05, 120);
+    camera.position.set(0, 1.6, 3.5);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.target.set(0, 1.2, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 0.35;
+    controls.maxDistance = 28;
+    controls.maxPolarAngle = Math.PI - 0.01;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.14));
+    const key = new THREE.DirectionalLight(0xffffff, 0.45);
+    key.position.set(3, 6, 4);
+    scene.add(key);
+
+    const grid = new THREE.GridHelper(30, 30, 0xffffff, 0xffffff);
+    grid.material.opacity = 0.78;
+    grid.material.transparent = true;
+    grid.position.y = 0;
+    scene.add(grid);
+
+    const axes = new THREE.AxesHelper(4);
+    axes.position.set(0, 0, 0);
+    scene.add(axes);
+
+    const raysGroup = new THREE.Group();
+    scene.add(raysGroup);
+
+    let rayCount = 0;
+    const TAP_MOVE_TOLERANCE_PX = 6;
+    let activeTap = null;
+
+    function fmt(n) {
+      return n.toFixed(3);
+    }
+
+    function updatePosePanel() {
+      camPosEl.textContent = `[${fmt(camera.position.x)}, ${fmt(camera.position.y)}, ${fmt(camera.position.z)}]`;
+      camRotEl.textContent = `[${fmt(camera.quaternion.x)}, ${fmt(camera.quaternion.y)}, ${fmt(camera.quaternion.z)}, ${fmt(camera.quaternion.w)}]`;
+    }
+
+    function setStatus(text, mode = 'neutral') {
+      statusEl.classList.remove('warn', 'good');
+      if (mode === 'warn') statusEl.classList.add('warn');
+      if (mode === 'good') statusEl.classList.add('good');
+      statusEl.textContent = text;
+    }
+
+    function addRayToScene(ray, color) {
+      const origin = new THREE.Vector3(ray.origin[0], ray.origin[1], ray.origin[2]);
+      const dir = new THREE.Vector3(ray.direction[0], ray.direction[1], ray.direction[2]);
+      const length = 20;
+      const end = origin.clone().addScaledVector(dir, length);
+
+      const geom = new THREE.BufferGeometry().setFromPoints([origin, end]);
+      const line = new THREE.Line(
+        geom,
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 })
+      );
+      raysGroup.add(line);
+
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 12, 12),
+        new THREE.MeshBasicMaterial({ color })
+      );
+      dot.position.copy(origin);
+      raysGroup.add(dot);
+    }
+
+    function shootAt(screenX, screenY, modeLabel) {
+      const pos = [camera.position.x, camera.position.y, camera.position.z];
+      const rot = [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w];
+      const proj = camera.projectionMatrix.elements;
+
+      if (!Number.isFinite(screenX) || !Number.isFinite(screenY) || screenX < 0 || screenX > 1 || screenY < 0 || screenY > 1) {
+        setStatus('Shot aborted: aimed coordinates are outside [0,1].', 'warn');
+        return;
+      }
+
+      const ray = createTapRay(pos, rot, proj, screenX, screenY);
+      if (!ray) {
+        setStatus('Shot aborted: createTapRay() returned null (invalid/degenerate projection).', 'warn');
+        return;
+      }
+
+      const color = modeLabel === 'crosshair' ? 0xff2020 : 0xd80000;
+      addRayToScene(ray, color);
+
+      rayCount += 1;
+      rayCountEl.textContent = String(rayCount);
+      lastModeEl.textContent = modeLabel;
+      lastScreenEl.textContent = `[${screenX.toFixed(3)}, ${screenY.toFixed(3)}]`;
+      setStatus(`Ray #${rayCount} captured via ${modeLabel}. Move around and look back: rays stay fixed in world space.`, 'good');
+    }
+
+    function shootCrosshair() {
+      // Crosshair is explicitly routed through the same tap-ray path at center.
+      shootAt(0.5, 0.5, 'crosshair');
+    }
+
+    shootCrosshairBtn.addEventListener('click', shootCrosshair);
+
+    document.getElementById('clear-rays').addEventListener('click', () => {
+      while (raysGroup.children.length > 0) {
+        const child = raysGroup.children.pop();
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            for (const material of child.material) material.dispose();
+          } else {
+            child.material.dispose();
+          }
+        }
+      }
+      rayCount = 0;
+      rayCountEl.textContent = '0';
+      lastModeEl.textContent = 'none';
+      lastScreenEl.textContent = '[-, -]';
+      setStatus('Cleared all rays.', 'neutral');
+    });
+
+    canvas.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      activeTap = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+      };
+    });
+
+    canvas.addEventListener('pointermove', event => {
+      if (!activeTap || activeTap.pointerId !== event.pointerId) return;
+      const dx = event.clientX - activeTap.startX;
+      const dy = event.clientY - activeTap.startY;
+      if (dx * dx + dy * dy > TAP_MOVE_TOLERANCE_PX * TAP_MOVE_TOLERANCE_PX) {
+        activeTap.moved = true;
+      }
+    });
+
+    canvas.addEventListener('pointerup', event => {
+      if (!activeTap || activeTap.pointerId !== event.pointerId) return;
+      const shouldShoot = !activeTap.moved;
+      activeTap = null;
+      if (!shouldShoot) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width;
+      const y = (event.clientY - rect.top) / rect.height;
+      shootAt(x, y, 'tap');
+    });
+
+    function clearActiveTap(event) {
+      if (!activeTap || activeTap.pointerId !== event.pointerId) return;
+      activeTap = null;
+    }
+
+    canvas.addEventListener('pointercancel', clearActiveTap);
+    canvas.addEventListener('pointerleave', clearActiveTap);
+
+    window.addEventListener('keydown', event => {
+      if (event.code !== 'Space') return;
+
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') {
+        return;
+      }
+
+      event.preventDefault();
+      shootCrosshair();
+    });
+
+    window.addEventListener('resize', () => {
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    });
+
+    function animate(timeMs) {
+      controls.update();
+      updatePosePanel();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    updatePosePanel();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+
+</html>
