@@ -3,7 +3,10 @@
  * Samples the depth map along a ray, unprojects it, and attaches a confidence weight.
  */
 
-import type { DepthPoint, DepthSample } from 'gps-plus-slam-app-framework/types/ar-types';
+import type {
+  DepthPoint,
+  DepthSample,
+} from 'gps-plus-slam-app-framework/types/ar-types';
 import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import { createDepthGridLookup } from 'gps-plus-slam-app-framework/ar/depth-grid-lookup';
 import { createDepthUnprojector } from 'gps-plus-slam-app-framework/ar/depth-unprojection';
@@ -40,52 +43,60 @@ export interface SampleDepthPriorOptions {
  * Main entry point. Bilinearly interpolates depth, checks for edges,
  * unprojects to world space, and computes a confidence weight.
  */
+function parsePriorOptions(options?: SampleDepthPriorOptions) {
+  return {
+    maxScreenDist: options?.maxScreenDist ?? 0.1,
+    referenceRangeM: options?.referenceRangeM ?? 2.0,
+    maxAllowedDepthStdDevM: options?.maxAllowedDepthStdDevM ?? 0.5,
+  };
+}
+
 export function sampleDepthPrior(
   sample: DepthSample | null | undefined,
   aimedScreenX: number,
   aimedScreenY: number,
-  options: SampleDepthPriorOptions = {},
+  options?: SampleDepthPriorOptions
 ): DepthPriorObservation | null {
-  if (!sample) return null;
+  if (!sample?.projectionMatrix) return null;
 
+  const { maxScreenDist, referenceRangeM, maxAllowedDepthStdDevM } =
+    parsePriorOptions(options);
   const { projectionMatrix, points, cameraPos, cameraRot } = sample;
-  if (!projectionMatrix) return null;
 
-  const maxScreenDist = options.maxScreenDist ?? 0.1;
-  const referenceRangeM = options.referenceRangeM ?? 2.0;
-  const maxAllowedDepthStdDevM = options.maxAllowedDepthStdDevM ?? 0.5;
-
-  const depthLookup = createDepthGridLookup(points);
-  const depthM = depthLookup.depthAt(aimedScreenX, aimedScreenY);
-  if (depthM === null || depthM <= 0) return null;
+  const depthM = createDepthGridLookup(points).depthAt(
+    aimedScreenX,
+    aimedScreenY
+  );
+  if (!(depthM! > 0)) return null;
 
   const localPoints = findDepthPointsInRadius(
     points,
     aimedScreenX,
     aimedScreenY,
-    maxScreenDist,
+    maxScreenDist
   );
   if (localPoints.length === 0) return null;
 
-  const edgePenalty = computeEdgePenalty(localPoints, maxAllowedDepthStdDevM);
-  if (edgePenalty <= 0) return null;
+  const finalWeight =
+    computeDepthWeight(depthM!, referenceRangeM) *
+    computeEdgePenalty(localPoints, maxAllowedDepthStdDevM);
+  if (finalWeight <= 0) return null;
 
-  const unprojector = createDepthUnprojector(cameraPos, cameraRot, projectionMatrix);
+  const unprojector = createDepthUnprojector(
+    cameraPos,
+    cameraRot,
+    projectionMatrix
+  );
   if (!unprojector) return null;
 
   const worldPt = unprojector.unproject({
     screenX: aimedScreenX,
     screenY: aimedScreenY,
-    depthM,
+    depthM: depthM!,
   });
   if (!worldPt) return null;
 
-  const baseWeight = computeDepthWeight(depthM, referenceRangeM);
-  const finalWeight = baseWeight * edgePenalty;
-
-  if (finalWeight <= 0) return null;
-
-  return { point: worldPt, weight: finalWeight, depthM };
+  return { point: worldPt, weight: finalWeight, depthM: depthM! };
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +108,7 @@ export function findDepthPointsInRadius(
   points: readonly DepthPoint[],
   aimedX: number,
   aimedY: number,
-  maxDist: number,
+  maxDist: number
 ): DepthPoint[] {
   const maxDist2 = maxDist * maxDist;
   const results: DepthPoint[] = [];
@@ -116,7 +127,7 @@ export function findDepthPointsInRadius(
 /** Compute edge confidence penalty based on local depth variance. */
 export function computeEdgePenalty(
   localPoints: readonly DepthPoint[],
-  maxAllowedDepthStdDevM: number,
+  maxAllowedDepthStdDevM: number
 ): number {
   if (localPoints.length <= 1) return 1.0;
 
@@ -141,7 +152,10 @@ export function computeEdgePenalty(
 }
 
 /** Quartic confidence weight matching active sensor noise laws. */
-export function computeDepthWeight(depthM: number, referenceRangeM: number): number {
+export function computeDepthWeight(
+  depthM: number,
+  referenceRangeM: number
+): number {
   if (!Number.isFinite(depthM) || depthM < 0) return 0;
   if (!Number.isFinite(referenceRangeM) || referenceRangeM <= 0) return 0;
   const ratio = depthM / referenceRangeM;
