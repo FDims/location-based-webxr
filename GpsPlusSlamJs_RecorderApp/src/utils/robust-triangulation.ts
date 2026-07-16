@@ -214,6 +214,45 @@ function angleBetweenRays(d1: Vector3, d2: Vector3): number {
 }
 
 // ---------------------------------------------------------------------------
+// Hypothesis generation
+// ---------------------------------------------------------------------------
+
+function generateHypothesis(
+  observations: MeasurementRayObservation[],
+  allObs: Observation[],
+  depthIndices: number[],
+  rng: () => number,
+  minParallaxAngle: number,
+): Observation[] | null {
+  const useStrategyA = depthIndices.length > 0 && rng() < 0.5;
+
+  if (useStrategyA) {
+    // Strategy A: pick 1 ray with depth prior
+    const idx = depthIndices[Math.floor(rng() * depthIndices.length)]!;
+    return [allObs[idx]!];
+  } else {
+    // Strategy B: pick 2 rays for pure triangulation
+    // Try up to 10 times to find a non-degenerate pair
+    const n = observations.length;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const i = Math.floor(rng() * n);
+      let j = Math.floor(rng() * (n - 1));
+      if (j >= i) j++;
+
+      const angle = angleBetweenRays(
+        observations[i]!.rayDirection,
+        observations[j]!.rayDirection,
+      );
+      // Reject near-parallel pairs (< minParallaxAngle)
+      if (angle >= minParallaxAngle && angle <= (Math.PI - minParallaxAngle)) {
+        return [allObs[i]!, allObs[j]!];
+      }
+    }
+    return null; // All attempts degenerate — skip this iteration
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main MSAC solver
 // ---------------------------------------------------------------------------
 
@@ -299,37 +338,8 @@ export function solveRobustTriangulation(
 
   for (let iter = 0; iter < maxIter; iter++) {
     // ── Hypothesis generation ────────────────────────────────────────────
-    let hypothesisObs: Observation[];
-    const useStrategyA = depthIndices.length > 0 && rng() < 0.5;
-
-    if (useStrategyA) {
-      // Strategy A: pick 1 ray with depth prior
-      const idx = depthIndices[Math.floor(rng() * depthIndices.length)]!;
-      hypothesisObs = [allObs[idx]!];
-    } else {
-      // Strategy B: pick 2 rays for pure triangulation
-      // Try up to 10 times to find a non-degenerate pair
-      let found = false;
-      hypothesisObs = [];
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const i = Math.floor(rng() * n);
-        let j = Math.floor(rng() * (n - 1));
-        if (j >= i) j++;
-
-        const angle = angleBetweenRays(
-          observations[i]!.rayDirection,
-          observations[j]!.rayDirection,
-        );
-        // Reject near-parallel pairs (< minParallaxAngle)
-        if (angle < minParallaxAngle || angle > (Math.PI - minParallaxAngle)) {
-          continue;
-        }
-        hypothesisObs = [allObs[i]!, allObs[j]!];
-        found = true;
-        break;
-      }
-      if (!found) continue; // All attempts degenerate — skip this iteration
-    }
+    const hypothesisObs = generateHypothesis(observations, allObs, depthIndices, rng, minParallaxAngle);
+    if (!hypothesisObs) continue;
 
     // Solve hypothesis
     const hypothesisResult = solveClosestPointOfApproach(hypothesisObs);

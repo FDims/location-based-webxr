@@ -11,7 +11,7 @@
  *     and depth-prior fading
  */
 
-import { describe, it, expect, test } from 'vitest';
+import { describe, it, expect, test, beforeEach } from 'vitest';
 import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import {
   createSeededRng,
@@ -19,7 +19,6 @@ import {
   evaluateObservation,
   solveRobustTriangulation,
   type MeasurementRayObservation,
-  type RobustTriangulationOptions,
 } from './robust-triangulation';
 import { perpendicularDistanceToRay, type Observation } from './ray-triangulation-core';
 
@@ -29,8 +28,6 @@ import { perpendicularDistanceToRay, type Observation } from './ray-triangulatio
 
 const v3 = (x: number, y: number, z: number): Vector3 =>
   [x, y, z] as unknown as Vector3;
-
-const INV_SQRT2 = 1 / Math.sqrt(2);
 
 let idCounter = 0;
 function makeObs(
@@ -351,7 +348,7 @@ describe('solveRobustTriangulation', () => {
     const result = solveRobustTriangulation(obs, { seed: 42, iterations: 200 });
     expect(result).not.toBeNull();
     // Should still converge reasonably near target
-    expect(result!.point[0]).toBeCloseTo(5, 0);
+    expect(result!.point[0]).toBeCloseTo(target[0], 0);
   });
 
   // ─── Determinism ───────────────────────────────────────────────────────
