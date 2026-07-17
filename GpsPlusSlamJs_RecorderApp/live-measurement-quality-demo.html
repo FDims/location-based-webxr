@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Measurement UX + Baseline Coaching Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #070911;
+      --surface: rgb(15 20 33 / 82%);
+      --border: rgb(255 255 255 / 14%);
+      --text: #eaf2ff;
+      --muted: #94a4bf;
+      --accent: #3f8cff;
+      --good: #2fd79e;
+      --warn: #f0c35d;
+      --bad: #ff6d7a;
+      --panel: rgb(10 14 24 / 85%);
+    }
+
+    body {
+      font-family: Outfit, sans-serif;
+      background:
+        radial-gradient(1000px 400px at 10% -20%, rgb(90 60 180 / 22%), transparent 70%),
+        radial-gradient(1000px 500px at 120% 30%, rgb(45 130 255 / 18%), transparent 70%),
+        var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgb(5 8 16 / 74%);
+      backdrop-filter: blur(8px);
+    }
+
+    .header-copy {
+      min-width: 0;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .help-button {
+      border: 1px solid rgb(255 255 255 / 18%);
+      border-radius: 999px;
+      background: rgb(255 255 255 / 6%);
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .15s ease;
+      white-space: nowrap;
+    }
+
+    .help-button:hover {
+      background: rgb(63 140 255 / 14%);
+      border-color: rgb(63 140 255 / 50%);
+    }
+
+    .hint-panel {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 20;
+      width: min(360px, calc(100vw - 32px));
+      max-height: calc(100dvh - 32px);
+      overflow: auto;
+      border: 1px solid rgb(255 255 255 / 16%);
+      border-radius: 16px;
+      background: rgb(7 9 17 / 92%);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 22px 60px rgb(0 0 0 / 40%);
+      padding: 14px;
+    }
+
+    .hint-panel[hidden] {
+      display: none;
+    }
+
+    .hint-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .hint-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .hint-close {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgb(255 255 255 / 5%);
+      color: var(--text);
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .hint-body {
+      display: grid;
+      gap: 10px;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .hint-body p {
+      color: var(--muted);
+    }
+
+    .hint-body ul {
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+      color: var(--text);
+    }
+
+    .hint-body strong {
+      color: var(--text);
+    }
+
+    .hint-kicker {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(300px, 1fr) 420px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    #viz {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      border-right: 1px solid var(--border);
+      background:
+        linear-gradient(180deg, rgb(255 255 255 / 2%), transparent),
+        radial-gradient(circle at 50% 42%, rgb(63 140 255 / 10%), transparent 45%);
+      overflow: hidden;
+    }
+
+    .scene-ring {
+      position: absolute;
+      width: min(66vmin, 560px);
+      aspect-ratio: 1;
+      border: 1px dashed rgb(255 255 255 / 16%);
+      border-radius: 50%;
+      transform: translateY(20px);
+    }
+
+    .scene-ring::before,
+    .scene-ring::after {
+      content: '';
+      position: absolute;
+      inset: 12%;
+      border: 1px dashed rgb(255 255 255 / 10%);
+      border-radius: 50%;
+    }
+
+    #sphere {
+      position: absolute;
+      width: 190px;
+      height: 190px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      box-shadow:
+        inset 0 0 30px rgb(63 140 255 / 25%),
+        0 0 35px rgb(63 140 255 / 22%);
+      background: radial-gradient(circle at 35% 25%, rgb(255 255 255 / 25%), rgb(63 140 255 / 5%) 55%, transparent 75%);
+      transition: width .28s ease, height .28s ease, border-color .25s ease, box-shadow .25s ease;
+    }
+
+    #uncertainty-chip {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 1px solid var(--border);
+      background: rgb(10 14 24 / 82%);
+      backdrop-filter: blur(8px);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    aside {
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-gutter: stable;
+      min-height: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 12px;
+    }
+
+    .title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .row:last-child {
+      margin-bottom: 0;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .good {
+      border-color: rgb(47 215 158 / 40%);
+      background: rgb(47 215 158 / 18%);
+      color: var(--good);
+    }
+
+    .warn {
+      border-color: rgb(240 195 93 / 40%);
+      background: rgb(240 195 93 / 15%);
+      color: var(--warn);
+    }
+
+    .bad {
+      border-color: rgb(255 109 122 / 40%);
+      background: rgb(255 109 122 / 14%);
+      color: var(--bad);
+    }
+
+    .bar {
+      height: 6px;
+      border-radius: 5px;
+      background: rgb(255 255 255 / 8%);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      transition: width .2s ease, background .2s ease;
+    }
+
+    .inputs {
+      display: grid;
+      gap: 10px;
+    }
+
+    label {
+      display: grid;
+      grid-template-columns: 130px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input[type='range'] {
+      width: 100%;
+    }
+
+    .value {
+      width: 56px;
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 9px 10px;
+      background: rgb(255 255 255 / 4%);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .15s ease;
+    }
+
+    button:hover {
+      border-color: rgb(63 140 255 / 55%);
+      background: rgb(63 140 255 / 12%);
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .primary {
+      background: linear-gradient(130deg, #3f8cff, #63a5ff);
+      border-color: rgb(255 255 255 / 22%);
+      color: #fff;
+    }
+
+    .secondary {
+      background: rgb(255 255 255 / 7%);
+    }
+
+    .tiny {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    #reasons {
+      list-style: none;
+      display: grid;
+      gap: 5px;
+      max-height: 128px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    #reasons li {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 7px;
+      background: rgb(255 255 255 / 2%);
+    }
+
+    @media (max-width: 1080px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(220px, 38dvh) 1fr;
+      }
+
+      header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .header-actions {
+        align-self: flex-start;
+      }
+
+      #viz {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      aside {
+        padding-bottom: 30px;
+      }
+    }
+
+    @media (max-height: 860px) {
+      header {
+        padding: 10px 14px;
+      }
+
+      .sub {
+        font-size: 11px;
+      }
+
+      aside {
+        padding: 12px;
+        gap: 10px;
+      }
+
+      .panel {
+        padding: 10px;
+      }
+
+      .title {
+        margin-bottom: 8px;
+      }
+
+      .row {
+        margin-bottom: 6px;
+        font-size: 12px;
+      }
+
+      label {
+        grid-template-columns: 112px 1fr auto;
+      }
+
+      button {
+        padding: 8px 8px;
+      }
+
+      #reasons {
+        max-height: 90px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <section id="hint-panel" class="hint-panel" role="dialog" aria-modal="false" aria-labelledby="hint-title">
+    <div class="hint-head">
+      <div>
+        <div class="hint-kicker">Quick start</div>
+        <div id="hint-title" class="hint-title">How to use this demo</div>
+      </div>
+      <button id="hint-close" class="hint-close" type="button" aria-label="Close hints">×</button>
+    </div>
+    <div class="hint-body">
+      <p>This page is a standalone simulation of the live measurement loop. It shows how uncertainty, baseline, and confirmation evolve as more observations arrive.</p>
+      <ul>
+        <li>Start with <strong>Run Far Replay Demo</strong> to watch a distant point get re-marked from multiple spots.</li>
+        <li>When the baseline is small or the fit is still weak, the prompt should say <strong>move_sideways</strong>.</li>
+        <li>As you add better views, the uncertainty should shrink, the sphere should tighten, and the prompt should become <strong>ready_to_confirm</strong>.</li>
+        <li>Use <strong>confirmRequested</strong> and then <strong>confirmSucceeded</strong> to commit the point once it is ready.</li>
+        <li>Use the sliders and reducer buttons to test specific states manually.</li>
+      </ul>
+      <div>
+        <div class="hint-kicker" style="margin-bottom:6px">Reducer events</div>
+        <ul>
+          <li><strong>observationAdded</strong>: recompute the current draft from the live inputs.</li>
+          <li><strong>removeLastRay</strong>: back up one observation and force the draft to re-evaluate.</li>
+          <li><strong>confirmRequested</strong>: ask the reducer to enter the pending confirm step when the point is ready.</li>
+          <li><strong>confirmSucceeded</strong>: commit the point and mark it confirmed.</li>
+          <li><strong>confirmFailed</strong>: simulate a failed commit and return to coaching.</li>
+          <li><strong>retargetDraft</strong>: start a fresh provisional target, clearing stale readiness.</li>
+          <li><strong>cancelDraft</strong>: discard the draft and return to idle.</li>
+          <li><strong>resetAfterConfirmFailed</strong>: recover from a failed confirm and clear the draft state.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="hint-kicker" style="margin-bottom:6px">Demo scripts</div>
+        <ul>
+          <li><strong>Run Near Demo</strong>: a nearby target that quickly becomes ready and confirms.</li>
+          <li><strong>Run Far Replay Demo</strong>: the main replay path for a far target; baseline grows, uncertainty shrinks, and the prompt changes from coaching to confirmation.</li>
+          <li><strong>Run Noisy Demo</strong>: shows how the state reacts when one observation gets worse before recovering.</li>
+          <li><strong>Stop Script</strong>: cancel the currently running scripted replay immediately.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="hint-kicker" style="margin-bottom:6px">Evaluation reasons</div>
+        <p>The reason tags in the list below are the raw outputs from the pure quality check. They explain why the state is ready, blocked, or still refining.</p>
+        <ul>
+          <li><strong>Hard blockers</strong> like <strong>no_solved_point</strong>, <strong>solver_degenerate</strong>, <strong>stale_observation</strong>, and <strong>insufficient_inliers</strong> mean the draft cannot be confirmed yet.</li>
+          <li><strong>Signal buckets</strong> like <strong>u_0.6</strong>, <strong>b_1.0</strong>, <strong>r_0.8</strong>, and <strong>i_1.0</strong> summarize uncertainty, baseline, residual, and inlier strength.</li>
+          <li><strong>entered_ready</strong> means the score crossed into ready; <strong>exited_ready</strong> means it dropped back out; <strong>steady</strong> means the quality state stayed in place.</li>
+        </ul>
+      </div>
+      <p><strong>Tip:</strong> The demo is most useful when you keep this panel open the first time, then close it once you know the controls.</p>
+    </div>
+  </section>
+
+  <header>
+    <div class="header-copy">
+      <h1>Live Measurement UX + Baseline Coaching Demo</h1>
+      <p class="sub">Standalone Component 5 simulation. Uses deterministic state logic with provisional/refining/ready + confirm lifecycle.</p>
+    </div>
+    <div class="header-actions">
+      <button id="hint-toggle" class="help-button" type="button" aria-controls="hint-panel" aria-expanded="true">Hide hints</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="viz">
+      <div class="scene-ring" aria-hidden="true"></div>
+      <div id="sphere" aria-label="provisional sphere"></div>
+      <div id="uncertainty-chip">uncertainty: --</div>
+    </section>
+
+    <aside>
+      <div class="panel">
+        <div class="title">Current State</div>
+        <div class="row"><span>Status</span><span id="status-pill" class="pill warn">idle</span></div>
+        <div class="row"><span>Prompt</span><span id="prompt-pill" class="pill warn">none</span></div>
+        <div class="row"><span>Can Confirm</span><span id="confirm-pill" class="pill bad">false</span></div>
+        <div class="row"><span>Score</span><span id="score-val" class="mono">0.000</span></div>
+        <div class="bar"><div id="score-bar" class="bar-fill" style="width:0%;background:var(--warn)"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="title">Input Signals</div>
+        <div class="inputs">
+          <label>Uncertainty
+            <input id="uncertainty" type="range" min="0" max="2.5" step="0.01" value="1.1" />
+            <span id="uncertainty-v" class="value">1.10</span>
+          </label>
+          <label>Baseline (m)
+            <input id="baseline" type="range" min="0" max="10" step="0.1" value="1.2" />
+            <span id="baseline-v" class="value">1.2</span>
+          </label>
+          <label>RMS Error
+            <input id="rms" type="range" min="0" max="2" step="0.01" value="0.35" />
+            <span id="rms-v" class="value">0.35</span>
+          </label>
+          <label>Ray Count
+            <input id="rayCount" type="range" min="0" max="20" step="1" value="1" />
+            <span id="rayCount-v" class="value">1</span>
+          </label>
+          <label>Inliers
+            <input id="inliers" type="range" min="0" max="20" step="1" value="1" />
+            <span id="inliers-v" class="value">1</span>
+          </label>
+          <label>Observation Age (ms)
+            <input id="age" type="range" min="0" max="3000" step="10" value="80" />
+            <span id="age-v" class="value">80</span>
+          </label>
+          <label>Pose-Depth Skew (ms)
+            <input id="skew" type="range" min="0" max="1000" step="5" value="20" />
+            <span id="skew-v" class="value">20</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="title">Reducer Events</div>
+        <div class="btn-grid">
+          <button class="primary" id="btn-observe">observationAdded</button>
+          <button id="btn-remove">removeLastRay</button>
+          <button id="btn-confirm">confirmRequested</button>
+          <button id="btn-ok">confirmSucceeded</button>
+          <button id="btn-fail">confirmFailed</button>
+          <button id="btn-retarget">retargetDraft</button>
+          <button id="btn-cancel">cancelDraft</button>
+          <button id="btn-reset">resetAfterConfirmFailed</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="title">Demo Scripts</div>
+        <div class="btn-grid">
+          <button class="secondary" id="btn-near">Run Near Demo</button>
+          <button class="secondary" id="btn-far">Run Far Replay Demo</button>
+          <button class="secondary" id="btn-noisy">Run Noisy Demo</button>
+          <button class="secondary" id="btn-stop">Stop Script</button>
+        </div>
+        <p class="tiny" style="margin-top:10px">The scripted demos mutate the input sliders and dispatch events so you can watch prompt and uncertainty evolve.</p>
+      </div>
+
+      <div class="panel">
+        <div class="title">Evaluation Reasons</div>
+        <ul id="reasons"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const thresholds = {
+      thresholdProfileId: 'default-short-range',
+      thresholdVersion: 1,
+      minInliers: 2,
+      minBaselineM: 2,
+      targetUncertainty: 0.8,
+      maxUncertaintyHard: 2,
+      maxRmsError: 1,
+      maxObservationAgeMs: 500,
+      maxPoseDepthSkewMs: 120,
+      readyEnterScore: 0.75,
+      readyExitScore: 0.65,
+    };
+
+    const inputs = {
+      uncertainty: 1.1,
+      rmsError: 0.35,
+      baselineM: 1.2,
+      rayCount: 1,
+      inlierCount: 1,
+      hasSolvedPoint: true,
+      solverDegenerate: false,
+      observationAgeMs: 80,
+      poseDepthTimeSkewMs: 20,
+    };
+
+    let draft = {
+      status: 'idle',
+      prompt: 'none',
+      canConfirm: false,
+      lastQualityScore: 0,
+      thresholdProfileId: thresholds.thresholdProfileId,
+      thresholdVersion: thresholds.thresholdVersion,
+      uncertainty: undefined,
+    };
+
+    let activeScriptToken = 0;
+
+    const refs = {
+      uncertainty: q('#uncertainty'),
+      baseline: q('#baseline'),
+      rms: q('#rms'),
+      rayCount: q('#rayCount'),
+      inliers: q('#inliers'),
+      age: q('#age'),
+      skew: q('#skew'),
+
+      uncertaintyV: q('#uncertainty-v'),
+      baselineV: q('#baseline-v'),
+      rmsV: q('#rms-v'),
+      rayCountV: q('#rayCount-v'),
+      inliersV: q('#inliers-v'),
+      ageV: q('#age-v'),
+      skewV: q('#skew-v'),
+
+      statusPill: q('#status-pill'),
+      promptPill: q('#prompt-pill'),
+      confirmPill: q('#confirm-pill'),
+      scoreVal: q('#score-val'),
+      scoreBar: q('#score-bar'),
+      reasons: q('#reasons'),
+      sphere: q('#sphere'),
+      chip: q('#uncertainty-chip'),
+
+      btnObserve: q('#btn-observe'),
+      btnRemove: q('#btn-remove'),
+      btnConfirm: q('#btn-confirm'),
+      btnOk: q('#btn-ok'),
+      btnFail: q('#btn-fail'),
+      btnRetarget: q('#btn-retarget'),
+      btnCancel: q('#btn-cancel'),
+      btnReset: q('#btn-reset'),
+      btnNear: q('#btn-near'),
+      btnFar: q('#btn-far'),
+      btnNoisy: q('#btn-noisy'),
+      btnStop: q('#btn-stop'),
+      hintPanel: q('#hint-panel'),
+      hintToggle: q('#hint-toggle'),
+      hintClose: q('#hint-close'),
+    };
+
+    function q(sel) {
+      return document.querySelector(sel);
+    }
+
+    function clamp01(v) {
+      if (!Number.isFinite(v)) return 0;
+      if (v < 0) return 0;
+      if (v > 1) return 1;
+      return v;
+    }
+
+    function bucket01(v) {
+      return (Math.round(clamp01(v) * 10) / 10).toFixed(1);
+    }
+
+    function validateThresholds(t) {
+      const values = [
+        t.thresholdVersion,
+        t.minInliers,
+        t.minBaselineM,
+        t.targetUncertainty,
+        t.maxUncertaintyHard,
+        t.maxRmsError,
+        t.maxObservationAgeMs,
+        t.maxPoseDepthSkewMs,
+        t.readyEnterScore,
+        t.readyExitScore,
+      ];
+      if (!values.every((x) => Number.isFinite(x) && x >= 0)) {
+        throw new Error('Invalid threshold config');
+      }
+      if (t.readyEnterScore <= t.readyExitScore) {
+        throw new Error('readyEnterScore must be greater than readyExitScore');
+      }
+      if (t.maxUncertaintyHard <= t.targetUncertainty) {
+        throw new Error('maxUncertaintyHard must be greater than targetUncertainty');
+      }
+      if (t.minInliers < 1) {
+        throw new Error('minInliers must be >= 1');
+      }
+      if (!t.thresholdProfileId) {
+        throw new Error('thresholdProfileId must be non-empty');
+      }
+    }
+
+    function hasValidInputNumbers(x) {
+      const finiteCore = [x.baselineM, x.rayCount, x.inlierCount, x.observationAgeMs, x.poseDepthTimeSkewMs];
+      const finiteOptional = [x.uncertainty, x.rmsError].filter((v) => v != null);
+      const allFinite = finiteCore.every((v) => Number.isFinite(v)) && finiteOptional.every((v) => Number.isFinite(v));
+      if (!allFinite) return false;
+      return x.baselineM >= 0 && x.rayCount >= 0 && x.inlierCount >= 0 && x.observationAgeMs >= 0 && x.poseDepthTimeSkewMs >= 0;
+    }
+
+    function evaluateMeasurementQuality(x, t, wasReady) {
+      validateThresholds(t);
+
+      const reasons = [];
+      const hard = [];
+
+      if (!hasValidInputNumbers(x)) hard.push('invalid_input');
+      if (!x.hasSolvedPoint) hard.push('no_solved_point');
+      if (x.solverDegenerate) hard.push('solver_degenerate');
+      if (x.observationAgeMs > t.maxObservationAgeMs) hard.push('stale_observation');
+      if (x.poseDepthTimeSkewMs > t.maxPoseDepthSkewMs) hard.push('pose_depth_time_skew');
+      if (x.inlierCount < t.minInliers) hard.push('insufficient_inliers');
+      if (x.uncertainty == null || x.uncertainty > t.maxUncertaintyHard) hard.push('uncertainty_too_high');
+      if (x.rmsError != null && x.rmsError > t.maxRmsError) hard.push('residual_too_high');
+
+      const safeUncertainty = x.uncertainty == null || !Number.isFinite(x.uncertainty) ? t.maxUncertaintyHard : x.uncertainty;
+      const safeRms = x.rmsError == null || !Number.isFinite(x.rmsError) ? null : x.rmsError;
+
+      const u = clamp01(1 - safeUncertainty / t.maxUncertaintyHard);
+      const b = clamp01(x.baselineM / t.minBaselineM);
+      const r = safeRms == null ? 0.5 : clamp01(1 - safeRms / t.maxRmsError);
+      const i = clamp01(x.inlierCount / t.minInliers);
+
+      const score = clamp01(0.45 * u + 0.30 * b + 0.15 * r + 0.10 * i);
+      const hardBlocked = hard.length > 0;
+      const readyByH = wasReady ? score >= t.readyExitScore : score >= t.readyEnterScore;
+      const ready = !hardBlocked && readyByH;
+
+      reasons.push(...hard);
+      reasons.push('u_' + bucket01(u));
+      reasons.push('b_' + bucket01(b));
+      reasons.push('r_' + bucket01(r));
+      reasons.push('i_' + bucket01(i));
+      if (!wasReady && ready) reasons.push('entered_ready');
+      else if (wasReady && !ready) reasons.push('exited_ready');
+      else reasons.push('steady');
+
+      const prompt = decidePromptFromSignals(hard, { u, b, r, i }, ready);
+
+      return { score, ready, hardBlocked, prompt, reasons };
+    }
+
+    function decidePromptFromSignals(hardReasons, s, ready) {
+      if (hardReasons.includes('no_solved_point') || hardReasons.includes('solver_degenerate')) return 'add_more_rays';
+      if (s.b < 0.7 && s.u < 0.6) return 'move_sideways';
+      if (s.r < 0.5) return 'reaim_target';
+      if (s.i < 1) return 'add_more_rays';
+      if (ready) return 'ready_to_confirm';
+      return 'add_more_rays';
+    }
+
+    function decideCoachingPrompt(x, evalOut) {
+      if (evalOut.hardBlocked) {
+        if (evalOut.reasons.includes('no_solved_point') || evalOut.reasons.includes('solver_degenerate')) {
+          return 'add_more_rays';
+        }
+      }
+      return evalOut.prompt;
+    }
+
+    function deriveStatus(currentStatus, x, ready) {
+      if (!x.hasSolvedPoint) return 'idle';
+      if (x.rayCount <= 1 || currentStatus === 'idle') return 'provisional';
+      return ready ? 'ready' : 'refining';
+    }
+
+    function reduceLiveMeasurementDraft(current, x, t, event) {
+      const evt = event || { type: 'observationAdded' };
+      const wasReady = current.status === 'ready';
+      const evaluation = evaluateMeasurementQuality(x, t, wasReady);
+
+      if (evt.type === 'cancelDraft' || evt.type === 'resetAfterConfirmFailed') {
+        return {
+          draft: {
+            status: 'idle',
+            prompt: 'none',
+            canConfirm: false,
+            lastQualityScore: 0,
+            thresholdProfileId: t.thresholdProfileId,
+            thresholdVersion: t.thresholdVersion,
+            uncertainty: undefined,
+          },
+          evaluation,
+        };
+      }
+
+      if (evt.type === 'retargetDraft') {
+        return {
+          draft: {
+            status: 'provisional',
+            prompt: 'add_more_rays',
+            canConfirm: false,
+            lastQualityScore: evaluation.score,
+            thresholdProfileId: t.thresholdProfileId,
+            thresholdVersion: t.thresholdVersion,
+            uncertainty: x.uncertainty == null ? undefined : x.uncertainty,
+          },
+          evaluation,
+        };
+      }
+
+      if (evt.type === 'confirmSucceeded' && current.status === 'confirm_pending') {
+        return {
+          draft: { ...current, status: 'confirmed', canConfirm: false, prompt: 'ready_to_confirm', lastQualityScore: evaluation.score, uncertainty: x.uncertainty == null ? current.uncertainty : x.uncertainty },
+          evaluation,
+        };
+      }
+
+      if (evt.type === 'confirmFailed' && current.status === 'confirm_pending') {
+        return {
+          draft: { ...current, status: 'confirm_failed', canConfirm: false, prompt: 'add_more_rays', lastQualityScore: evaluation.score, uncertainty: x.uncertainty == null ? current.uncertainty : x.uncertainty },
+          evaluation,
+        };
+      }
+
+      if (evt.type === 'confirmRequested' && (current.status === 'ready' || (current.status === 'confirm_failed' && evaluation.ready))) {
+        return {
+          draft: { ...current, status: 'confirm_pending', canConfirm: false, prompt: evaluation.prompt, lastQualityScore: evaluation.score, uncertainty: x.uncertainty == null ? current.uncertainty : x.uncertainty },
+          evaluation,
+        };
+      }
+
+      if (evt.type === 'removeLastRay') {
+        return {
+          draft: {
+            ...current,
+            status: x.rayCount <= 1 ? 'provisional' : 'refining',
+            canConfirm: false,
+            prompt: evaluation.prompt,
+            lastQualityScore: evaluation.score,
+            uncertainty: x.uncertainty == null ? current.uncertainty : x.uncertainty,
+            thresholdProfileId: t.thresholdProfileId,
+            thresholdVersion: t.thresholdVersion,
+          },
+          evaluation,
+        };
+      }
+
+      const nextStatus = deriveStatus(current.status, x, evaluation.ready);
+      const nextPrompt = decideCoachingPrompt(x, evaluation);
+
+      return {
+        draft: {
+          ...current,
+          status: nextStatus,
+          canConfirm: nextStatus === 'ready',
+          prompt: nextPrompt,
+          lastQualityScore: evaluation.score,
+          uncertainty: x.uncertainty == null ? current.uncertainty : x.uncertainty,
+          thresholdProfileId: t.thresholdProfileId,
+          thresholdVersion: t.thresholdVersion,
+        },
+        evaluation,
+      };
+    }
+
+    function getInputsFromUi() {
+      return {
+        uncertainty: parseFloat(refs.uncertainty.value),
+        rmsError: parseFloat(refs.rms.value),
+        baselineM: parseFloat(refs.baseline.value),
+        rayCount: parseInt(refs.rayCount.value, 10),
+        inlierCount: parseInt(refs.inliers.value, 10),
+        hasSolvedPoint: true,
+        solverDegenerate: false,
+        observationAgeMs: parseInt(refs.age.value, 10),
+        poseDepthTimeSkewMs: parseInt(refs.skew.value, 10),
+      };
+    }
+
+    function writeValueLabels() {
+      refs.uncertaintyV.textContent = Number(refs.uncertainty.value).toFixed(2);
+      refs.baselineV.textContent = Number(refs.baseline.value).toFixed(1);
+      refs.rmsV.textContent = Number(refs.rms.value).toFixed(2);
+      refs.rayCountV.textContent = refs.rayCount.value;
+      refs.inliersV.textContent = refs.inliers.value;
+      refs.ageV.textContent = refs.age.value;
+      refs.skewV.textContent = refs.skew.value;
+    }
+
+    function colorClassForStatus(status) {
+      if (status === 'ready' || status === 'confirmed') return 'good';
+      if (status === 'confirm_pending' || status === 'provisional' || status === 'refining') return 'warn';
+      return 'bad';
+    }
+
+    function colorClassForPrompt(prompt) {
+      if (prompt === 'ready_to_confirm') return 'good';
+      if (prompt === 'move_sideways' || prompt === 'reaim_target') return 'warn';
+      return 'bad';
+    }
+
+    function render(evaluation) {
+      refs.statusPill.textContent = draft.status;
+      refs.statusPill.className = 'pill ' + colorClassForStatus(draft.status);
+
+      refs.promptPill.textContent = draft.prompt;
+      refs.promptPill.className = 'pill ' + colorClassForPrompt(draft.prompt);
+
+      refs.confirmPill.textContent = String(draft.canConfirm);
+      refs.confirmPill.className = 'pill ' + (draft.canConfirm ? 'good' : 'bad');
+
+      refs.scoreVal.textContent = draft.lastQualityScore.toFixed(3);
+      refs.scoreBar.style.width = (draft.lastQualityScore * 100).toFixed(1) + '%';
+      refs.scoreBar.style.background = draft.lastQualityScore >= 0.75 ? 'var(--good)' : (draft.lastQualityScore >= 0.45 ? 'var(--warn)' : 'var(--bad)');
+
+      const u = getInputsFromUi().uncertainty;
+      refs.chip.textContent = 'uncertainty: ' + u.toFixed(2) + ' | baseline: ' + Number(refs.baseline.value).toFixed(1) + 'm';
+
+      const size = Math.max(46, Math.min(220, u * 95));
+      refs.sphere.style.width = size.toFixed(0) + 'px';
+      refs.sphere.style.height = size.toFixed(0) + 'px';
+      refs.sphere.style.borderColor = u <= 0.8 ? 'var(--good)' : (u <= 1.4 ? 'var(--warn)' : 'var(--bad)');
+
+      refs.reasons.innerHTML = '';
+      for (const reason of evaluation.reasons) {
+        const li = document.createElement('li');
+        li.textContent = reason;
+        refs.reasons.appendChild(li);
+      }
+    }
+
+    function dispatch(eventType) {
+      Object.assign(inputs, getInputsFromUi());
+      const out = reduceLiveMeasurementDraft(draft, inputs, thresholds, { type: eventType });
+      draft = out.draft;
+      render(out.evaluation);
+    }
+
+    function bindUi() {
+      const sliders = [refs.uncertainty, refs.baseline, refs.rms, refs.rayCount, refs.inliers, refs.age, refs.skew];
+      for (const el of sliders) {
+        el.addEventListener('input', () => {
+          writeValueLabels();
+          dispatch('observationAdded');
+        });
+      }
+
+      refs.btnObserve.addEventListener('click', () => dispatch('observationAdded'));
+      refs.btnRemove.addEventListener('click', () => {
+        refs.rayCount.value = String(Math.max(0, parseInt(refs.rayCount.value, 10) - 1));
+        refs.inliers.value = String(Math.min(parseInt(refs.inliers.value, 10), parseInt(refs.rayCount.value, 10)));
+        writeValueLabels();
+        dispatch('removeLastRay');
+      });
+      refs.btnConfirm.addEventListener('click', () => dispatch('confirmRequested'));
+      refs.btnOk.addEventListener('click', () => dispatch('confirmSucceeded'));
+      refs.btnFail.addEventListener('click', () => dispatch('confirmFailed'));
+      refs.btnRetarget.addEventListener('click', () => dispatch('retargetDraft'));
+      refs.btnCancel.addEventListener('click', () => dispatch('cancelDraft'));
+      refs.btnReset.addEventListener('click', () => dispatch('resetAfterConfirmFailed'));
+
+      refs.btnNear.addEventListener('click', runNearDemo);
+      refs.btnFar.addEventListener('click', runFarDemo);
+      refs.btnNoisy.addEventListener('click', runNoisyDemo);
+      refs.btnStop.addEventListener('click', () => {
+        activeScriptToken++;
+      });
+
+      refs.hintToggle.addEventListener('click', toggleHints);
+      refs.hintClose.addEventListener('click', hideHints);
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') hideHints();
+      });
+    }
+
+    function toggleHints() {
+      const hidden = !refs.hintPanel.hidden;
+      if (hidden) {
+        hideHints();
+      } else {
+        showHints();
+      }
+    }
+
+    function showHints() {
+      refs.hintPanel.hidden = false;
+      refs.hintToggle.textContent = 'Hide hints';
+      refs.hintToggle.setAttribute('aria-expanded', 'true');
+    }
+
+    function hideHints() {
+      refs.hintPanel.hidden = true;
+      refs.hintToggle.textContent = 'Show hints';
+      refs.hintToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function setSignals(sig) {
+      if (sig.uncertainty != null) refs.uncertainty.value = String(sig.uncertainty);
+      if (sig.baselineM != null) refs.baseline.value = String(sig.baselineM);
+      if (sig.rmsError != null) refs.rms.value = String(sig.rmsError);
+      if (sig.rayCount != null) refs.rayCount.value = String(sig.rayCount);
+      if (sig.inlierCount != null) refs.inliers.value = String(sig.inlierCount);
+      if (sig.observationAgeMs != null) refs.age.value = String(sig.observationAgeMs);
+      if (sig.poseDepthTimeSkewMs != null) refs.skew.value = String(sig.poseDepthTimeSkewMs);
+      writeValueLabels();
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function runSteps(steps) {
+      const token = ++activeScriptToken;
+      for (const step of steps) {
+        if (token !== activeScriptToken) return;
+        if (step.signals) setSignals(step.signals);
+        dispatch(step.event || 'observationAdded');
+        await sleep(step.wait || 650);
+      }
+    }
+
+    function runNearDemo() {
+      runSteps([
+        { event: 'retargetDraft', wait: 250 },
+        { signals: { rayCount: 1, inlierCount: 1, baselineM: 1.2, uncertainty: 1.05, rmsError: 0.22 }, event: 'observationAdded' },
+        { signals: { rayCount: 2, inlierCount: 2, baselineM: 2.2, uncertainty: 0.78, rmsError: 0.18 }, event: 'observationAdded' },
+        { signals: { rayCount: 3, inlierCount: 3, baselineM: 2.9, uncertainty: 0.58, rmsError: 0.15 }, event: 'observationAdded' },
+        { event: 'confirmRequested', wait: 500 },
+        { event: 'confirmSucceeded', wait: 300 },
+      ]);
+    }
+
+    function runFarDemo() {
+      runSteps([
+        { event: 'retargetDraft', wait: 250 },
+        { signals: { rayCount: 1, inlierCount: 1, baselineM: 0.3, uncertainty: 1.65, rmsError: 0.38 }, event: 'observationAdded' },
+        { signals: { rayCount: 2, inlierCount: 2, baselineM: 0.8, uncertainty: 1.35, rmsError: 0.31 }, event: 'observationAdded' },
+        { signals: { rayCount: 3, inlierCount: 3, baselineM: 1.5, uncertainty: 1.08, rmsError: 0.25 }, event: 'observationAdded' },
+        { signals: { rayCount: 4, inlierCount: 4, baselineM: 2.3, uncertainty: 0.84, rmsError: 0.20 }, event: 'observationAdded' },
+        { signals: { rayCount: 5, inlierCount: 5, baselineM: 3.1, uncertainty: 0.60, rmsError: 0.16 }, event: 'observationAdded' },
+      ]);
+    }
+
+    function runNoisyDemo() {
+      runSteps([
+        { event: 'retargetDraft', wait: 250 },
+        { signals: { rayCount: 1, inlierCount: 1, baselineM: 1.1, uncertainty: 1.05, rmsError: 0.20 }, event: 'observationAdded' },
+        { signals: { rayCount: 2, inlierCount: 2, baselineM: 2.2, uncertainty: 0.76, rmsError: 0.15 }, event: 'observationAdded' },
+        { signals: { rayCount: 3, inlierCount: 2, baselineM: 2.4, uncertainty: 0.95, rmsError: 1.25 }, event: 'observationAdded' },
+        { signals: { rayCount: 4, inlierCount: 3, baselineM: 2.9, uncertainty: 0.70, rmsError: 0.20 }, event: 'observationAdded' },
+        { signals: { rayCount: 5, inlierCount: 4, baselineM: 3.3, uncertainty: 0.56, rmsError: 0.14 }, event: 'observationAdded' },
+      ]);
+    }
+
+    function init() {
+      bindUi();
+      writeValueLabels();
+      showHints();
+      dispatch('observationAdded');
+    }
+
+    init();
+  </script>
+</body>
+
+</html>
