@@ -267,7 +267,8 @@ function computeNormalizedSignals(
   inputs: QualityInputs,
   thresholds: QualityThresholds
 ): NormalizedSignals {
-  const uncertaintyForRatio = inputs.uncertainty ?? thresholds.maxUncertaintyHard;
+  const uncertaintyForRatio =
+    inputs.uncertainty ?? thresholds.maxUncertaintyHard;
   const u = clamp01(
     1 - safeRatio(uncertaintyForRatio, thresholds.maxUncertaintyHard)
   );
@@ -446,7 +447,9 @@ function buildProvisionalReset(
 }
 
 function isActiveDraftStatus(status: DraftStatus): boolean {
-  return status === 'provisional' || status === 'refining' || status === 'ready';
+  return (
+    status === 'provisional' || status === 'refining' || status === 'ready'
+  );
 }
 
 /**
@@ -455,15 +458,15 @@ function isActiveDraftStatus(status: DraftStatus): boolean {
  * not be abandoned mid-air) and confirmed/idle (nothing to cancel).
  */
 function isCancellableDraftStatus(status: DraftStatus): boolean {
-  return (
-    isActiveDraftStatus(status) || status === 'confirm_failed'
-  );
+  return isActiveDraftStatus(status) || status === 'confirm_failed';
 }
 
 /** Ready + confirm_failed can (re)request confirm; confirm_pending is idempotent. */
 function canRequestConfirm(status: DraftStatus): boolean {
   return (
-    status === 'ready' || status === 'confirm_failed' || status === 'confirm_pending'
+    status === 'ready' ||
+    status === 'confirm_failed' ||
+    status === 'confirm_pending'
   );
 }
 
@@ -471,7 +474,9 @@ const LIFECYCLE_HANDLERS: Partial<
   Record<LiveMeasurementEvent['type'], LifecycleHandler>
 > = {
   cancelDraft: (current, thresholds) =>
-    isCancellableDraftStatus(current.status) ? buildIdleDraft(thresholds) : null,
+    isCancellableDraftStatus(current.status)
+      ? buildIdleDraft(thresholds)
+      : null,
   resetAfterConfirmFailed: (current, thresholds) =>
     current.status === 'confirm_failed' ? buildIdleDraft(thresholds) : null,
   retargetDraft: (current, thresholds) =>
