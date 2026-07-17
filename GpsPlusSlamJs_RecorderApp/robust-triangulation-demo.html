@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Robust Triangulation Demo</title>
+    <title>3D Interactive Robust Triangulation Demo</title>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -27,21 +27,26 @@
         --muted: #64748b;
       }
 
+      html,
       body {
         font-family: Inter, sans-serif;
         background: var(--bg);
         color: var(--text);
-        height: 100dvh;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      body {
         display: grid;
         grid-template-rows: auto auto 1fr;
-        overflow: hidden;
       }
 
       header {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 12px 20px;
+        padding: 10px 20px;
         border-bottom: 1px solid var(--border);
         background: var(--surface);
       }
@@ -51,21 +56,14 @@
         font-weight: 600;
         letter-spacing: 0.02em;
       }
-      header p {
+
+      header .subtitle {
         font-size: 12px;
         color: var(--muted);
       }
-      .hdot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--accent);
-        flex-shrink: 0;
-      }
 
-      /* Tri-state banner */
       #banner {
-        padding: 8px 20px;
+        padding: 6px 20px;
         font-size: 12px;
         font-weight: 500;
         display: flex;
@@ -79,16 +77,19 @@
         background: var(--bg);
         color: var(--muted);
       }
+
       #banner.state-red {
         background: rgb(248 113 113 / 10%);
         color: var(--bad);
         border-bottom-color: rgb(248 113 113 / 20%);
       }
+
       #banner.state-yellow {
         background: rgb(251 191 36 / 10%);
         color: var(--warn);
         border-bottom-color: rgb(251 191 36 / 20%);
       }
+
       #banner.state-green {
         background: rgb(52 211 153 / 10%);
         color: var(--good);
@@ -97,40 +98,111 @@
 
       main {
         display: grid;
-        grid-template-columns: 1fr 280px;
+        grid-template-columns: 1fr 260px;
         overflow: hidden;
+        position: relative;
       }
 
-      #canvas-wrap {
+      /* ─── 3D viewport ───────────────────────────────────────────── */
+      #viewport {
         position: relative;
         overflow: hidden;
-        background: radial-gradient(circle at 50% 50%, #1a2035 0%, #0d0f14 70%);
-        cursor: grab;
-      }
-      #canvas-wrap:active {
-        cursor: grabbing;
+        background: #000;
       }
 
-      canvas {
+      #viewport canvas {
         display: block;
         width: 100%;
         height: 100%;
       }
 
-      #mode-badge {
+      /* Crosshair */
+      #crosshair {
         position: absolute;
-        bottom: 12px;
+        top: 50%;
         left: 50%;
-        transform: translateX(-50%);
-        background: rgb(22 27 36 / 85%);
-        border: 1px solid var(--border);
-        border-radius: 99px;
-        padding: 4px 14px;
-        font-size: 11px;
-        color: var(--muted);
+        transform: translate(-50%, -50%);
         pointer-events: none;
+        z-index: 5;
+        display: none;
       }
 
+      #crosshair::before,
+      #crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgb(255 255 255 / 70%);
+        border-radius: 1px;
+      }
+
+      #crosshair::before {
+        width: 2px;
+        height: 18px;
+        top: -9px;
+        left: -1px;
+      }
+
+      #crosshair::after {
+        height: 2px;
+        width: 18px;
+        left: -9px;
+        top: -1px;
+      }
+
+      /* Click-to-play overlay */
+      #blocker {
+        position: absolute;
+        inset: 0;
+        background: rgb(0 0 0 / 60%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        color: white;
+        z-index: 10;
+        cursor: pointer;
+        backdrop-filter: blur(4px);
+      }
+
+      #blocker h2 {
+        font-size: 22px;
+        margin-bottom: 8px;
+      }
+
+      #blocker p {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      /* Minimap border */
+      #minimap-border {
+        position: absolute;
+        bottom: 16px;
+        right: 16px;
+        width: 220px;
+        height: 220px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        pointer-events: none;
+        z-index: 4;
+        background: rgb(13 15 20 / 40%);
+        overflow: hidden;
+      }
+
+      #minimap-label {
+        position: absolute;
+        top: 4px;
+        left: 8px;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      /* ─── Side panel ────────────────────────────────────────────── */
       aside {
         border-left: 1px solid var(--border);
         background: var(--surface);
@@ -140,552 +212,448 @@
       }
 
       .section {
-        padding: 14px 16px;
+        padding: 12px 14px;
         border-bottom: 1px solid var(--border);
       }
+
       .section-title {
         font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.1em;
         text-transform: uppercase;
         color: var(--muted);
-        margin-bottom: 10px;
+        margin-bottom: 8px;
       }
 
       .metric-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-bottom: 12px;
+        gap: 10px;
+        margin-bottom: 8px;
       }
 
       .metric {
         display: flex;
         flex-direction: column;
-        gap: 3px;
+        gap: 2px;
       }
+
       .metric.full {
         grid-column: span 2;
       }
+
       .metric-label {
-        font-size: 11px;
+        font-size: 10px;
         color: var(--muted);
       }
+
       .metric-value {
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 700;
         font-variant-numeric: tabular-nums;
         letter-spacing: -0.02em;
       }
 
       .controls {
-        padding: 14px 16px;
+        padding: 12px 14px;
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
       }
 
-      label {
+      .hint {
         font-size: 11px;
         color: var(--muted);
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      input[type='range'] {
-        width: 100%;
-        accent-color: var(--accent);
-      }
-      .range-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .range-val {
-        font-size: 11px;
-        color: var(--text);
-        font-variant-numeric: tabular-nums;
-        font-weight: 500;
+        line-height: 1.5;
       }
 
-      .toggle-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        color: var(--text);
-        cursor: pointer;
-      }
-      .toggle-row input {
-        accent-color: var(--bad);
-        width: 14px;
-        height: 14px;
-        cursor: pointer;
-      }
-
-      #determinism-hash {
-        font-family: monospace;
-        font-size: 10px;
-        background: var(--bg);
-        padding: 4px 6px;
-        border-radius: 4px;
-        border: 1px solid var(--border);
-        color: var(--muted);
-        word-break: break-all;
-      }
-
-      .badge {
-        display: inline-block;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-      }
-      .badge.inlier {
-        background: rgb(52 211 153 / 15%);
+      .hint strong.good {
         color: var(--good);
       }
-      .badge.outlier {
-        background: rgb(248 113 113 / 15%);
+
+      .hint strong.bad {
         color: var(--bad);
+      }
+
+      button.danger {
+        background: transparent;
+        color: var(--bad);
+        border: 1px solid var(--border);
+        padding: 7px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      button.danger:hover {
+        background: rgb(248 113 113 / 10%);
+        border-color: var(--bad);
       }
     </style>
   </head>
-
   <body>
     <header>
-      <div class="hdot"></div>
-      <div>
-        <h1>Robust Triangulation Demo (MSAC Fusion)</h1>
-        <p>
-          Scrub ray count, inject outliers, and observe robust fusion of depth
-          priors with triangulation.
-        </p>
-      </div>
+      <h1>Robust Triangulation 3D</h1>
+      <span class="subtitle"
+        >FPS Controller · Interactive Raycasting · MSAC Fusion</span
+      >
     </header>
 
     <div id="banner" class="state-red">
       <span id="banner-icon">🔴</span>
       <span id="banner-text"
-        >Underdetermined — Requires more observations or depth prior</span
+        >Shoot rays at the target to begin triangulation</span
       >
     </div>
 
     <main>
-      <div id="canvas-wrap">
-        <canvas id="c"></canvas>
-        <div id="mode-badge">🖱 Drag to orbit · Scroll to zoom</div>
+      <div id="viewport">
+        <div id="crosshair"></div>
+        <div id="blocker">
+          <h2>▶ Click to Play</h2>
+          <p>WASD to move · Mouse to look · Click to shoot a ray</p>
+        </div>
+        <div id="minimap-border"></div>
+        <span id="minimap-label">TOP-DOWN</span>
       </div>
 
       <aside>
         <div class="section">
-          <div class="section-title">MSAC Metrics</div>
+          <div class="section-title">How to Use</div>
+          <p class="hint">
+            Walk around the
+            <strong class="good">green octahedron</strong> and click to shoot
+            rays at it. The solver estimates the target position from your
+            observations. <br /><br />
+            Shoot the walls or floor to inject
+            <strong class="bad">outliers</strong> — MSAC will reject them
+            automatically.
+          </p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Solver Output</div>
           <div class="metric-grid">
             <div class="metric">
-              <div class="metric-label">Inliers</div>
-              <div class="metric-value" id="inliers" style="color: var(--good)">
-                0
-              </div>
+              <span class="metric-label">Rays</span>
+              <span class="metric-value" id="ray-count">0</span>
             </div>
             <div class="metric">
-              <div class="metric-label">Outliers</div>
-              <div class="metric-value" id="outliers" style="color: var(--bad)">
-                0
-              </div>
+              <span class="metric-label">Inliers / Outliers</span>
+              <span class="metric-value"
+                ><span id="inliers" style="color: var(--good)">0</span>
+                /
+                <span id="outliers" style="color: var(--bad)">0</span></span
+              >
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric full">
+              <span class="metric-label">MSAC Score</span>
+              <span class="metric-value" id="score">—</span>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span class="metric-label">RMS Error</span>
+              <span class="metric-value" id="rms">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Uncertainty</span>
+              <span class="metric-value" id="unc">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Estimated Position</div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span class="metric-label">X</span>
+              <span class="metric-value" id="est-x">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Y</span>
+              <span class="metric-value" id="est-y">—</span>
             </div>
             <div class="metric full">
-              <div class="metric-label">MSAC Score (lower is better)</div>
-              <div class="metric-value" id="score">—</div>
-            </div>
-            <div class="metric">
-              <div class="metric-label">RMS Error</div>
-              <div class="metric-value" id="rms">—</div>
-            </div>
-            <div class="metric">
-              <div class="metric-label">Uncertainty</div>
-              <div class="metric-value" id="unc">—</div>
+              <span class="metric-label">Z</span>
+              <span class="metric-value" id="est-z">—</span>
             </div>
           </div>
         </div>
 
         <div class="controls">
-          <div class="section-title" style="margin: 0">Controls</div>
-
-          <label>
-            Active Observations (<span id="ray-count">0</span>)
-            <div class="range-row">
-              <input
-                type="range"
-                id="scrubber"
-                min="1"
-                max="10"
-                step="1"
-                value="10"
-              />
-            </div>
-          </label>
-
-          <label class="toggle-row" style="margin-top: 8px">
-            <input type="checkbox" id="outlier-toggle" />
-            <span style="color: var(--bad)">Inject Outlier Ray</span>
-          </label>
-
-          <div style="margin-top: 16px">
-            <div class="section-title" style="margin-bottom: 6px">
-              Determinism Hash
-            </div>
-            <div id="determinism-hash">Waiting for solve...</div>
-          </div>
+          <button class="danger" id="clear-btn">✕ Clear All Rays</button>
         </div>
       </aside>
     </main>
 
     <script type="module">
+      // ─── Imports ─────────────────────────────────────────────────────────────
+      // Three.js is a project dependency resolved by Vite from node_modules.
+      import * as THREE from 'three';
+      import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
       import { solveRobustTriangulation } from './src/utils/robust-triangulation.ts';
 
-      // ─── Vector math ────────────────────────────────────────────────────────────
-      const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-      const cross3 = (a, b) => ({
-        x: a.y * b.z - a.z * b.y,
-        y: a.z * b.x - a.x * b.z,
-        z: a.x * b.y - a.y * b.x,
-      });
-      const norm3 = (v) => {
-        const l = Math.sqrt(dot3(v, v));
-        return l < 1e-12 ? v : { x: v.x / l, y: v.y / l, z: v.z / l };
-      };
-      const add3 = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
-      const scale3 = (v, s) => ({ x: v.x * s, y: v.y * s, z: v.z * s });
-
-      // ─── Hash helper ────────────────────────────────────────────────────────────
-      async function sha256(message) {
-        const msgBuffer = new TextEncoder().encode(message);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-      }
-
-      // ─── Camera ─────────────────────────────────────────────────────────────────
-      const cam = { az: -0.5, el: 0.42, dist: 12 };
-
-      function getCameraBasis() {
-        const P = {
-          x: cam.dist * Math.cos(cam.el) * Math.sin(cam.az),
-          y: cam.dist * Math.sin(cam.el),
-          z: cam.dist * Math.cos(cam.el) * Math.cos(cam.az),
-        };
-        const fwd = norm3({ x: -P.x, y: -P.y, z: -P.z });
-        const right = norm3(cross3(fwd, { x: 0, y: 1, z: 0 }));
-        const up = cross3(right, fwd);
-        return { P, fwd, right, up };
-      }
-
-      function project3(wx, wy, wz) {
-        const { P, fwd, right, up } = getCameraBasis();
-        const v = { x: wx - P.x, y: wy - P.y, z: wz - P.z };
-        const vx = dot3(v, right),
-          vy = dot3(v, up),
-          vz = dot3(v, fwd);
-        if (vz < 0.05) return null;
-        const FOV = Math.min(W, H) * 0.7;
-        return {
-          sx: cx + (vx * FOV) / vz,
-          sy: cy - (vy * FOV) / vz,
-          depth: vz,
-        };
-      }
-
-      // ─── Scenario Data ──────────────────────────────────────────────────────────
-      // Simulated sequence of observations capturing a point at (3, 0, -2)
-      // First observation has a depth prior. The rest are triangulation rays.
-      const TARGET = { x: 3, y: 0, z: -2 };
-      const rawTrajectory = [
-        { id: 'obs-1', origin: { x: 0, y: 0, z: 0 }, hasDepth: true },
-        { id: 'obs-2', origin: { x: 1, y: 0, z: 0 } },
-        { id: 'obs-3', origin: { x: 2, y: 0, z: 0 } },
-        { id: 'obs-4', origin: { x: 3, y: 0, z: 0.5 } },
-        { id: 'obs-5', origin: { x: 4, y: 0, z: 1 } },
-        { id: 'obs-6', origin: { x: 5, y: 0, z: 0 } },
-        { id: 'obs-7', origin: { x: 4.5, y: 0, z: -1 } },
-        { id: 'obs-8', origin: { x: 3.5, y: 0, z: -3 } },
-        { id: 'obs-9', origin: { x: 2, y: 0, z: -4 } },
-        { id: 'obs-10', origin: { x: 1, y: 0, z: -3 } },
-      ];
-
-      // Outlier trajectory is injected conditionally
-      const outlierRay = {
-        id: 'obs-outlier',
-        origin: { x: 0, y: 2, z: 0 },
-        // Deliberately pointing away from target
-        dir: { x: -1, y: 0, z: 1 },
-        isOutlier: true,
-      };
-
-      function buildObservations(count, injectOutlier) {
-        const obsList = [];
-        const traj = rawTrajectory.slice(0, count);
-
-        traj.forEach((wp, i) => {
-          // Ideal direction to target
-          const d = norm3({
-            x: TARGET.x - wp.origin.x,
-            y: TARGET.y - wp.origin.y,
-            z: TARGET.z - wp.origin.z,
-          });
-
-          // Add tiny noise to direction for realism (except first ray)
-          if (i > 0) {
-            d.x += (Math.random() - 0.5) * 0.05;
-            d.z += (Math.random() - 0.5) * 0.05;
-          }
-
-          const normD = norm3(d);
-
-          const obs = {
-            id: wp.id,
-            timestamp: Date.now() + i * 1000,
-            rayOrigin: [wp.origin.x, wp.origin.y, wp.origin.z],
-            rayDirection: [normD.x, normD.y, normD.z],
-            rayWeight: 1.0,
-            originalColor: `hsl(${i * 36}, 70%, 60%)`, // Rainbow progression
-          };
-
-          if (wp.hasDepth) {
-            // Simulate a depth reading slightly off from the true target (say 3.5m instead of 3.6m)
-            const depthDist = 3.5;
-            obs.depthPoint = [
-              wp.origin.x + normD.x * depthDist,
-              wp.origin.y + normD.y * depthDist,
-              wp.origin.z + normD.z * depthDist,
-            ];
-            obs.depthWeight = 0.5; // Decayed weight
-          }
-
-          obsList.push(obs);
-        });
-
-        if (injectOutlier) {
-          const d = norm3(outlierRay.dir);
-          obsList.push({
-            id: outlierRay.id,
-            timestamp: Date.now() + count * 1000,
-            rayOrigin: [
-              outlierRay.origin.x,
-              outlierRay.origin.y,
-              outlierRay.origin.z,
-            ],
-            rayDirection: [d.x, d.y, d.z],
-            rayWeight: 1.0,
-            isOutlier: true,
-            originalColor: 'var(--bad)',
-          });
-        }
-
-        return obsList;
-      }
-
-      // ─── State ──────────────────────────────────────────────────────────────────
-      let activeObs = [];
+      // ─── State ──────────────────────────────────────────────────────────────
+      const activeObs = []; // MeasurementRayObservation[]
+      const rayVisuals = []; // THREE.Group[] (line + hit dot)
+      let obsIdCounter = 0;
       let result = null;
-      let orbitDrag = null;
 
-      // ─── Canvas setup ────────────────────────────────────────────────────────────
-      const wrap = document.getElementById('canvas-wrap');
-      const canvas = document.getElementById('c');
-      const ctx = canvas.getContext('2d');
-      let W, H, cx, cy;
+      // Movement flags
+      let moveF = false,
+        moveB = false,
+        moveL = false,
+        moveR = false;
+      let prevTime = performance.now();
+      const velocity = new THREE.Vector3();
+      const direction = new THREE.Vector3();
 
-      function resize() {
-        W = canvas.width = wrap.clientWidth;
-        H = canvas.height = wrap.clientHeight;
-        cx = W / 2;
-        cy = H / 2;
-        draw();
+      // ─── Setup ──────────────────────────────────────────────────────────────
+      const viewport = document.getElementById('viewport');
+      const blocker = document.getElementById('blocker');
+      const crosshair = document.getElementById('crosshair');
+
+      // Renderer
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+      renderer.autoClear = false;
+      viewport.insertBefore(renderer.domElement, viewport.firstChild);
+
+      // Scene
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a2035);
+      scene.fog = new THREE.Fog(0x1a2035, 15, 55);
+
+      // Main camera (FPS)
+      const camera = new THREE.PerspectiveCamera(
+        70,
+        viewport.clientWidth / viewport.clientHeight,
+        0.1,
+        100
+      );
+      camera.position.set(0, 1.6, 8);
+
+      // Minimap camera (top-down orthographic)
+      const mapD = 14;
+      const minimapCam = new THREE.OrthographicCamera(
+        -mapD,
+        mapD,
+        mapD,
+        -mapD,
+        0.1,
+        100
+      );
+      minimapCam.position.set(0, 30, 0);
+      minimapCam.lookAt(0, 0, 0);
+
+      // ─── Lights ─────────────────────────────────────────────────────────────
+      scene.add(new THREE.HemisphereLight(0xeeeeff, 0x555566, 1.0));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+      sun.position.set(8, 12, 6);
+      scene.add(sun);
+
+      // ─── Environment ────────────────────────────────────────────────────────
+      const collidable = []; // objects the raycaster can hit
+
+      // Environment boundaries (the room)
+      // The box uses BackSide so we are inside it. The bottom face acts as our floor.
+
+      // Room walls (inside of a big box)
+      const roomBox = new THREE.Mesh(
+        new THREE.BoxGeometry(60, 12, 60),
+        new THREE.MeshLambertMaterial({ color: 0x222838, side: THREE.BackSide })
+      );
+      roomBox.position.y = 6;
+      roomBox.name = 'wall';
+      scene.add(roomBox);
+      collidable.push(roomBox);
+
+      // Scatter some furniture-like boxes
+      const furnitureGeo = new THREE.BoxGeometry(1, 1, 1);
+      const furnitureMat = new THREE.MeshLambertMaterial({ color: 0x445566 });
+      const rng = mulberry32(12345);
+      for (let i = 0; i < 30; i++) {
+        const sx = 0.5 + rng() * 2;
+        const sy = 0.5 + rng() * 2;
+        const sz = 0.5 + rng() * 2;
+        const m = new THREE.Mesh(furnitureGeo, furnitureMat);
+        m.scale.set(sx, sy, sz);
+        const px = (rng() - 0.5) * 40;
+        const pz = (rng() - 0.5) * 40;
+        // Keep away from origin where the target sits
+        if (Math.abs(px) < 3 && Math.abs(pz) < 3) continue;
+        m.position.set(px, sy / 2, pz);
+        m.rotation.y = rng() * Math.PI;
+        m.name = 'furniture';
+        scene.add(m);
+        collidable.push(m);
       }
-      new ResizeObserver(resize).observe(wrap);
 
-      // ─── Draw Helpers ────────────────────────────────────────────────────────────
-      function drawLine3(
-        ax,
-        ay,
-        az,
-        bx,
-        by,
-        bz,
-        style,
-        lineWidth = 1,
-        dash = []
-      ) {
-        const { P, fwd, right, up } = getCameraBasis();
-        const FOV = Math.min(W, H) * 0.7;
+      // ─── Target (the thing to triangulate) ──────────────────────────────────
+      const TARGET_POS = new THREE.Vector3(0, 1.5, 0);
+      const targetGeo = new THREE.OctahedronGeometry(0.45);
+      const targetMat = new THREE.MeshBasicMaterial({
+        color: 0x34d399,
+        wireframe: true,
+      });
+      const targetMesh = new THREE.Mesh(targetGeo, targetMat);
+      targetMesh.position.copy(TARGET_POS);
+      targetMesh.name = 'target';
+      scene.add(targetMesh);
+      collidable.push(targetMesh);
 
-        const vA = { x: ax - P.x, y: ay - P.y, z: az - P.z };
-        const cA = { x: dot3(vA, right), y: dot3(vA, up), z: dot3(vA, fwd) };
-        const vB = { x: bx - P.x, y: by - P.y, z: bz - P.z };
-        const cB = { x: dot3(vB, right), y: dot3(vB, up), z: dot3(vB, fwd) };
+      // Solid core for visual weight
+      const targetCore = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.25),
+        new THREE.MeshBasicMaterial({
+          color: 0x34d399,
+          transparent: true,
+          opacity: 0.35,
+        })
+      );
+      targetMesh.add(targetCore);
 
-        const NEAR = 0.05;
-        if (cA.z < NEAR && cB.z < NEAR) return;
+      // Point light on target
+      const targetLight = new THREE.PointLight(0x34d399, 2, 6);
+      targetLight.position.copy(TARGET_POS);
+      scene.add(targetLight);
 
-        let pA = cA,
-          pB = cB;
-        if (pA.z < NEAR) {
-          const t = (NEAR - cA.z) / (cB.z - cA.z);
-          pA = {
-            x: cA.x + t * (cB.x - cA.x),
-            y: cA.y + t * (cB.y - cA.y),
-            z: NEAR,
-          };
+      // ─── Estimated-point marker ─────────────────────────────────────────────
+      const estimatedMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      estimatedMesh.visible = false;
+      scene.add(estimatedMesh);
+
+      // ─── Player marker (visible in minimap) ─────────────────────────────────
+      const playerMarker = new THREE.Mesh(
+        new THREE.ConeGeometry(0.4, 0.8, 4),
+        new THREE.MeshBasicMaterial({ color: 0x4f8ef7 })
+      );
+      playerMarker.rotation.x = -Math.PI / 2;
+      scene.add(playerMarker);
+
+      // ─── PointerLock controls ───────────────────────────────────────────────
+      const controls = new PointerLockControls(camera, renderer.domElement);
+      scene.add(controls.object);
+
+      blocker.addEventListener('click', () => controls.lock());
+      controls.addEventListener('lock', () => {
+        blocker.style.display = 'none';
+        crosshair.style.display = 'block';
+      });
+      controls.addEventListener('unlock', () => {
+        blocker.style.display = 'flex';
+        crosshair.style.display = 'none';
+      });
+
+      // Keyboard
+      document.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') moveF = true;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') moveB = true;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveL = true;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') moveR = true;
+      });
+      document.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') moveF = false;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') moveB = false;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveL = false;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') moveR = false;
+      });
+
+      // ─── Shooting ───────────────────────────────────────────────────────────
+      renderer.domElement.addEventListener('click', () => {
+        if (!controls.isLocked) return;
+        shootRay();
+      });
+
+      function shootRay() {
+        // Cast from camera center
+        const rc = new THREE.Raycaster();
+        rc.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+        const hits = rc.intersectObjects(collidable, false);
+
+        const origin = rc.ray.origin.clone();
+        const dir = rc.ray.direction.clone().normalize();
+
+        let hitPoint = null;
+        let hitDist = 25;
+        if (hits.length > 0) {
+          hitPoint = hits[0].point.clone();
+          hitDist = hits[0].distance;
         }
-        if (pB.z < NEAR) {
-          const t = (NEAR - cB.z) / (cA.z - cB.z);
-          pB = {
-            x: cB.x + t * (cA.x - cB.x),
-            y: cB.y + t * (cA.y - cB.y),
-            z: NEAR,
-          };
-        }
 
-        const sA = {
-          sx: cx + (pA.x * FOV) / pA.z,
-          sy: cy - (pA.y * FOV) / pA.z,
+        // Build a proper MeasurementRayObservation
+        const obs = {
+          id: 'ray_' + obsIdCounter++,
+          timestamp: Date.now(),
+          rayOrigin: [origin.x, origin.y, origin.z],
+          rayDirection: [dir.x, dir.y, dir.z],
+          rayWeight: 1.0,
         };
-        const sB = {
-          sx: cx + (pB.x * FOV) / pB.z,
-          sy: cy - (pB.y * FOV) / pB.z,
-        };
-
-        ctx.save();
-        ctx.strokeStyle = style;
-        ctx.lineWidth = lineWidth;
-        ctx.setLineDash(dash);
-        ctx.beginPath();
-        ctx.moveTo(sA.sx, sA.sy);
-        ctx.lineTo(sB.sx, sB.sy);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      function drawGrid() {
-        const N = 10;
-        for (let i = -N; i <= N; i++) {
-          const alpha = i === 0 ? 0.6 : 0.15;
-          const width = i === 0 ? 2 : 1;
-          drawLine3(-N, 0, i, N, 0, i, `rgba(255,255,255,${alpha})`, width);
-          drawLine3(i, 0, -N, i, 0, N, `rgba(255,255,255,${alpha})`, width);
+        if (hitPoint) {
+          obs.depthPoint = [hitPoint.x, hitPoint.y, hitPoint.z];
+          obs.depthWeight = 1.0;
         }
-        drawLine3(0, 0, 0, 0, 4, 0, 'rgba(255,255,255,0.4)', 2);
-      }
+        activeObs.push(obs);
 
-      function drawDot3(wx, wy, wz, r, col, glow = 0) {
-        const p = project3(wx, wy, wz);
-        if (!p) return;
-        ctx.save();
-        if (glow > 0) {
-          ctx.shadowBlur = glow;
-          ctx.shadowColor = col;
-        }
-        ctx.fillStyle = col;
-        ctx.beginPath();
-        ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
-        ctx.fill();
-        if (glow > 0) {
-          ctx.shadowBlur = 0;
-          ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.restore();
-        return p;
-      }
+        // ─── Visual: ray line + hit dot ─────────────────
+        const group = new THREE.Group();
+        group.userData.obsId = obs.id;
 
-      // ─── Main Draw ───────────────────────────────────────────────────────────────
-      function draw() {
-        ctx.clearRect(0, 0, W, H);
-        drawGrid();
+        const endPt = origin.clone().add(dir.clone().multiplyScalar(hitDist));
 
-        // Rays
-        for (const obs of activeObs) {
-          const ox = obs.rayOrigin[0],
-            oy = obs.rayOrigin[1],
-            oz = obs.rayOrigin[2];
-          const dx = obs.rayDirection[0],
-            dy = obs.rayDirection[1],
-            dz = obs.rayDirection[2];
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0x4f8ef7,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+          origin,
+          endPt,
+        ]);
+        group.add(new THREE.Line(lineGeo, lineMat));
 
-          // Coloring: faded if outlier, bright if inlier
-          let col = obs.originalColor;
-          let alpha = 1.0;
+        // Origin dot
+        const originDot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.06, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0x4f8ef7 })
+        );
+        originDot.position.copy(origin);
+        group.add(originDot);
 
-          if (result) {
-            if (result.outlierIds.includes(obs.id)) {
-              col = 'var(--bad)';
-              alpha = 0.5; // fade out rejected rays
-            }
-          } else if (obs.isOutlier) {
-            col = 'var(--bad)'; // Outlier color before solve
-          }
-
-          ctx.save();
-          ctx.globalAlpha = alpha;
-
-          const FAR = 15;
-          drawLine3(
-            ox,
-            oy,
-            oz,
-            ox + dx * FAR,
-            oy + dy * FAR,
-            oz + dz * FAR,
-            col,
-            obs.isOutlier ? 3 : 2
+        // Hit dot (depth prior)
+        if (hitPoint) {
+          const hitDot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.07, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0x34d399 })
           );
-          drawDot3(ox, oy, oz, 4, col);
-
-          // Depth prior point
-          if (obs.depthPoint) {
-            drawDot3(
-              obs.depthPoint[0],
-              obs.depthPoint[1],
-              obs.depthPoint[2],
-              5,
-              '#34d399',
-              5
-            );
-          }
-
-          ctx.restore();
+          hitDot.position.copy(hitPoint);
+          group.add(hitDot);
         }
 
-        // Solved Result Point
-        if (result) {
-          const [px, py, pz] = result.point;
-          let col = '#34d399'; // Green default
-          if (!result.hasSufficientBaseline) col = '#fbbf24'; // Yellow if low baseline
+        scene.add(group);
+        rayVisuals.push(group);
 
-          drawDot3(px, py, pz, 8, col, 20);
-
-          const sp = project3(px, py, pz);
-          if (sp) {
-            ctx.fillStyle = 'rgba(255,255,255,0.9)';
-            ctx.font = '11px Inter,sans-serif';
-            ctx.fillText(`Estimated Point`, sp.sx + 14, sp.sy - 8);
-          }
-        }
+        solveAndUpdate();
       }
 
-      // ─── Logic ───────────────────────────────────────────────────────────────────
-      async function update() {
-        const count = parseInt(document.getElementById('scrubber').value, 10);
-        const injectOutlier = document.getElementById('outlier-toggle').checked;
+      // ─── Solve ──────────────────────────────────────────────────────────────
+      function solveAndUpdate() {
+        if (activeObs.length === 0) {
+          result = null;
+          updateUI();
+          return;
+        }
 
-        activeObs = buildObservations(count, injectOutlier);
-        document.getElementById('ray-count').textContent = activeObs.length;
-
-        // Solve
         result = solveRobustTriangulation(activeObs, {
           seed: 42,
           baseDistanceThreshold: 0.5,
@@ -693,26 +661,44 @@
           iterations: 150,
         });
 
-        updateUI();
-        draw();
-
-        // Update hash to prove determinism
+        // Update estimated point
         if (result) {
-          const stateString = `point:${result.point[0].toFixed(5)},${result.point[1].toFixed(5)},${result.point[2].toFixed(5)}|score:${result.msacScore.toFixed(5)}`;
-          const hash = await sha256(stateString);
-          document.getElementById('determinism-hash').textContent =
-            hash.substring(0, 16) + '...';
+          estimatedMesh.visible = true;
+          estimatedMesh.position.set(
+            result.point[0],
+            result.point[1],
+            result.point[2]
+          );
+          estimatedMesh.material.color.setHex(
+            result.hasSufficientBaseline ? 0x34d399 : 0xfbbf24
+          );
+
+          // Color rays based on inlier/outlier status
+          for (const g of rayVisuals) {
+            const id = g.userData.obsId;
+            const isOutlier = result.outlierIds.includes(id);
+            g.traverse((child) => {
+              if (child.material && child.material.isLineBasicMaterial) {
+                child.material.color.setHex(isOutlier ? 0xf87171 : 0x4f8ef7);
+                child.material.opacity = isOutlier ? 0.25 : 0.8;
+              }
+            });
+          }
         } else {
-          document.getElementById('determinism-hash').textContent = '—';
+          estimatedMesh.visible = false;
         }
+
+        updateUI();
       }
 
-      const fmt = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : '—');
-
+      // ─── UI Update ──────────────────────────────────────────────────────────
       function updateUI() {
         const banner = document.getElementById('banner');
         const bIcon = document.getElementById('banner-icon');
         const bText = document.getElementById('banner-text');
+        const f = (v) => (typeof v === 'number' ? v.toFixed(3) : '—');
+
+        document.getElementById('ray-count').textContent = activeObs.length;
 
         if (!result) {
           document.getElementById('inliers').textContent = '0';
@@ -720,11 +706,12 @@
           document.getElementById('score').textContent = '—';
           document.getElementById('rms').textContent = '—';
           document.getElementById('unc').textContent = '—';
-
+          document.getElementById('est-x').textContent = '—';
+          document.getElementById('est-y').textContent = '—';
+          document.getElementById('est-z').textContent = '—';
           banner.className = 'state-red';
           bIcon.textContent = '🔴';
-          bText.textContent =
-            'Underdetermined — Requires more observations or depth prior';
+          bText.textContent = 'Shoot rays at the target to begin triangulation';
           return;
         }
 
@@ -732,10 +719,12 @@
           result.inlierIds.length;
         document.getElementById('outliers').textContent =
           result.outlierIds.length;
-        document.getElementById('score').textContent = fmt(result.msacScore, 3);
-        document.getElementById('rms').textContent =
-          fmt(result.rmsError, 3) + 'm';
-        document.getElementById('unc').textContent = fmt(result.uncertainty, 3);
+        document.getElementById('score').textContent = f(result.msacScore);
+        document.getElementById('rms').textContent = f(result.rmsError) + ' m';
+        document.getElementById('unc').textContent = f(result.uncertainty);
+        document.getElementById('est-x').textContent = f(result.point[0]);
+        document.getElementById('est-y').textContent = f(result.point[1]);
+        document.getElementById('est-z').textContent = f(result.point[2]);
 
         if (result.hasSufficientBaseline) {
           banner.className = 'state-green';
@@ -759,43 +748,103 @@
         }
       }
 
-      // ─── Interaction ──────────────────────────────────────────────────────────────
-      canvas.addEventListener('mousedown', (e) => {
-        orbitDrag = { az0: cam.az, el0: cam.el, x: e.offsetX, y: e.offsetY };
+      // ─── Clear button ───────────────────────────────────────────────────────
+      document.getElementById('clear-btn').addEventListener('click', () => {
+        activeObs.length = 0;
+        for (const g of rayVisuals) scene.remove(g);
+        rayVisuals.length = 0;
+        result = null;
+        estimatedMesh.visible = false;
+        updateUI();
       });
 
-      window.addEventListener('mousemove', (e) => {
-        if (orbitDrag) {
-          const dx = e.offsetX - orbitDrag.x;
-          const dy = e.offsetY - orbitDrag.y;
-          cam.az = orbitDrag.az0 - dx * 0.007;
-          cam.el = Math.max(-1.2, Math.min(1.2, orbitDrag.el0 + dy * 0.007));
-          draw();
+      // ─── Resize ─────────────────────────────────────────────────────────────
+      function onResize() {
+        const w = viewport.clientWidth;
+        const h = viewport.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+      window.addEventListener('resize', onResize);
+
+      // ─── Deterministic RNG for furniture placement ──────────────────────────
+      function mulberry32(a) {
+        return function () {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // ─── Animate ────────────────────────────────────────────────────────────
+      function animate() {
+        requestAnimationFrame(animate);
+
+        const now = performance.now();
+        const dt = Math.min((now - prevTime) / 1000, 0.1); // clamp dt to avoid huge jumps
+        prevTime = now;
+
+        // Player movement
+        if (controls.isLocked) {
+          velocity.x -= velocity.x * 10 * dt;
+          velocity.z -= velocity.z * 10 * dt;
+
+          direction.z = Number(moveF) - Number(moveB);
+          direction.x = Number(moveR) - Number(moveL);
+          direction.normalize();
+
+          const speed = 20;
+          if (moveF || moveB) velocity.z -= direction.z * speed * dt;
+          if (moveL || moveR) velocity.x -= direction.x * speed * dt;
+
+          controls.moveRight(-velocity.x * dt);
+          controls.moveForward(-velocity.z * dt);
+
+          // Lock Y height
+          camera.position.y = 1.6;
         }
-      });
 
-      window.addEventListener('mouseup', () => {
-        orbitDrag = null;
-      });
+        // Target spin
+        targetMesh.rotation.y += 0.008;
+        targetMesh.rotation.x += 0.004;
 
-      canvas.addEventListener(
-        'wheel',
-        (e) => {
-          e.preventDefault();
-          cam.dist = Math.max(3, Math.min(30, cam.dist + e.deltaY * 0.02));
-          draw();
-        },
-        { passive: false }
-      );
+        // Update player marker for minimap
+        playerMarker.position.set(camera.position.x, 0.5, camera.position.z);
+        // Rotate the cone to face the camera look direction projected on XZ
+        const lookDir = new THREE.Vector3();
+        camera.getWorldDirection(lookDir);
+        playerMarker.rotation.z = Math.atan2(lookDir.x, lookDir.z);
 
-      document.getElementById('scrubber').addEventListener('input', update);
-      document
-        .getElementById('outlier-toggle')
-        .addEventListener('change', update);
+        // ─── Render main view ────────────────────────────
+        // Use logical CSS pixels for setViewport/setScissor; the WebGLRenderer
+        // automatically handles the devicePixelRatio multiplication internally.
+        const logicalW = viewport.clientWidth;
+        const logicalH = viewport.clientHeight;
 
-      // ─── Init ─────────────────────────────────────────────────────────────────────
-      resize();
-      update(); // Initial solve
+        renderer.clear();
+        renderer.setViewport(0, 0, logicalW, logicalH);
+        renderer.setScissorTest(false);
+        renderer.render(scene, camera);
+
+        // ─── Render minimap (bottom-right corner) ────────
+        // Use logical pixels here as well
+        const mapPx = 220;
+        const pad = 16;
+        const mx = logicalW - mapPx - pad;
+        const my = pad; // WebGL y=0 is bottom
+
+        renderer.setViewport(mx, my, mapPx, mapPx);
+        renderer.setScissor(mx, my, mapPx, mapPx);
+        renderer.setScissorTest(true);
+        renderer.clearDepth();
+        renderer.render(scene, minimapCam);
+        renderer.setScissorTest(false);
+      }
+
+      animate();
     </script>
   </body>
 </html>
