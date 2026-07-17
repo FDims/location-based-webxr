@@ -471,7 +471,11 @@ describe('reduceLiveMeasurementDraft', () => {
     );
     expect(draft.status).toBe('provisional');
 
-    draft = reduceLiveMeasurementDraft(draft, LOW_QUALITY_INPUTS, BASE_THRESHOLDS);
+    draft = reduceLiveMeasurementDraft(
+      draft,
+      LOW_QUALITY_INPUTS,
+      BASE_THRESHOLDS
+    );
     expect(draft.status).toBe('refining');
 
     draft = reduceLiveMeasurementDraft(
@@ -489,15 +493,27 @@ describe('reduceLiveMeasurementDraft', () => {
       HIGH_QUALITY_INPUTS,
       BASE_THRESHOLDS
     );
-    draft = reduceLiveMeasurementDraft(draft, HIGH_QUALITY_INPUTS, BASE_THRESHOLDS);
+    draft = reduceLiveMeasurementDraft(
+      draft,
+      HIGH_QUALITY_INPUTS,
+      BASE_THRESHOLDS
+    );
     expect(draft.status).toBe('ready');
 
     // Mid-band score stays ready (hysteresis holds).
-    draft = reduceLiveMeasurementDraft(draft, MID_QUALITY_INPUTS, BASE_THRESHOLDS);
+    draft = reduceLiveMeasurementDraft(
+      draft,
+      MID_QUALITY_INPUTS,
+      BASE_THRESHOLDS
+    );
     expect(draft.status).toBe('ready');
 
     // Low score forces the exit.
-    draft = reduceLiveMeasurementDraft(draft, LOW_QUALITY_INPUTS, BASE_THRESHOLDS);
+    draft = reduceLiveMeasurementDraft(
+      draft,
+      LOW_QUALITY_INPUTS,
+      BASE_THRESHOLDS
+    );
     expect(draft.status).toBe('refining');
   });
 
@@ -510,7 +526,11 @@ describe('reduceLiveMeasurementDraft', () => {
     expect(hardBlockedButHighScoring.canConfirm).toBe(false);
 
     const draft = reduceLiveMeasurementDraft(
-      reduceLiveMeasurementDraft(makeIdleDraft(), HIGH_QUALITY_INPUTS, BASE_THRESHOLDS),
+      reduceLiveMeasurementDraft(
+        makeIdleDraft(),
+        HIGH_QUALITY_INPUTS,
+        BASE_THRESHOLDS
+      ),
       HIGH_QUALITY_INPUTS,
       BASE_THRESHOLDS
     );
@@ -588,7 +608,10 @@ describe('reduceLiveMeasurementDraft', () => {
   });
 
   test('confirm_pending is frozen against plain recompute (no dropped/duplicate submits)', () => {
-    const pending = makeDraft({ status: 'confirm_pending', lastQualityScore: 0.9 });
+    const pending = makeDraft({
+      status: 'confirm_pending',
+      lastQualityScore: 0.9,
+    });
     const afterRecompute = reduceLiveMeasurementDraft(
       pending,
       LOW_QUALITY_INPUTS,
@@ -598,22 +621,24 @@ describe('reduceLiveMeasurementDraft', () => {
     expect(afterRecompute.lastQualityScore).toBe(0.9);
   });
 
-  test.each([
-    'provisional',
-    'refining',
-    'ready',
-    'confirm_failed',
-  ] as const)('cancelDraft from %s resets draft to idle with canConfirm=false', (status) => {
-    const draft = makeDraft({ status, canConfirm: true, lastQualityScore: 0.9 });
-    const cancelled = reduceLiveMeasurementDraft(
-      draft,
-      HIGH_QUALITY_INPUTS,
-      BASE_THRESHOLDS,
-      { type: 'cancelDraft' }
-    );
-    expect(cancelled.status).toBe('idle');
-    expect(cancelled.canConfirm).toBe(false);
-  });
+  test.each(['provisional', 'refining', 'ready', 'confirm_failed'] as const)(
+    'cancelDraft from %s resets draft to idle with canConfirm=false',
+    (status) => {
+      const draft = makeDraft({
+        status,
+        canConfirm: true,
+        lastQualityScore: 0.9,
+      });
+      const cancelled = reduceLiveMeasurementDraft(
+        draft,
+        HIGH_QUALITY_INPUTS,
+        BASE_THRESHOLDS,
+        { type: 'cancelDraft' }
+      );
+      expect(cancelled.status).toBe('idle');
+      expect(cancelled.canConfirm).toBe(false);
+    }
+  );
 
   test('cancelDraft does not affect confirm_pending (in-flight persistence write)', () => {
     const pending = makeDraft({ status: 'confirm_pending' });
@@ -677,7 +702,10 @@ describe('reduceLiveMeasurementDraft', () => {
   });
 
   test('resetAfterConfirmFailed clears error state and returns to idle', () => {
-    const failed = makeDraft({ status: 'confirm_failed', lastQualityScore: 0.4 });
+    const failed = makeDraft({
+      status: 'confirm_failed',
+      lastQualityScore: 0.4,
+    });
     const reset = reduceLiveMeasurementDraft(
       failed,
       HIGH_QUALITY_INPUTS,
@@ -693,10 +721,30 @@ describe('reduceLiveMeasurementDraft', () => {
 
   test('far-target sequence: increasing lateral baseline shrinks uncertainty and prompt moves move_sideways -> ready_to_confirm', () => {
     const sequence: QualityInputs[] = [
-      makeInputs({ baselineM: 0.3, uncertainty: 0.19, rmsError: 0.02, inlierCount: 1 }),
-      makeInputs({ baselineM: 1.0, uncertainty: 0.15, rmsError: 0.02, inlierCount: 2 }),
-      makeInputs({ baselineM: 2.5, uncertainty: 0.09, rmsError: 0.015, inlierCount: 2 }),
-      makeInputs({ baselineM: 5.0, uncertainty: 0.03, rmsError: 0.01, inlierCount: 3 }),
+      makeInputs({
+        baselineM: 0.3,
+        uncertainty: 0.19,
+        rmsError: 0.02,
+        inlierCount: 1,
+      }),
+      makeInputs({
+        baselineM: 1.0,
+        uncertainty: 0.15,
+        rmsError: 0.02,
+        inlierCount: 2,
+      }),
+      makeInputs({
+        baselineM: 2.5,
+        uncertainty: 0.09,
+        rmsError: 0.015,
+        inlierCount: 2,
+      }),
+      makeInputs({
+        baselineM: 5.0,
+        uncertainty: 0.03,
+        rmsError: 0.01,
+        inlierCount: 3,
+      }),
     ];
 
     let draft = makeIdleDraft();
@@ -726,7 +774,11 @@ describe('reduceLiveMeasurementDraft', () => {
     );
     expect(draft.status).toBe('provisional');
 
-    draft = reduceLiveMeasurementDraft(draft, HIGH_QUALITY_INPUTS, BASE_THRESHOLDS);
+    draft = reduceLiveMeasurementDraft(
+      draft,
+      HIGH_QUALITY_INPUTS,
+      BASE_THRESHOLDS
+    );
     expect(draft.status).toBe('ready');
   });
 });
@@ -865,7 +917,9 @@ describe('threshold governance', () => {
       ...BASE_THRESHOLDS,
       minInliers: -1,
     };
-    expect(() => evaluateMeasurementQuality(makeInputs(), invalid, false)).toThrow();
+    expect(() =>
+      evaluateMeasurementQuality(makeInputs(), invalid, false)
+    ).toThrow();
   });
 
   test('replay uses the exact policy bound at capture time, independent of "current" defaults', () => {
@@ -916,7 +970,11 @@ describe('performance and replay budget', () => {
   test('p95 reducer update time stays within a generous CI-safe budget', () => {
     const durations: number[] = [];
     let draft = makeIdleDraft();
-    const samples = [HIGH_QUALITY_INPUTS, MID_QUALITY_INPUTS, LOW_QUALITY_INPUTS];
+    const samples = [
+      HIGH_QUALITY_INPUTS,
+      MID_QUALITY_INPUTS,
+      LOW_QUALITY_INPUTS,
+    ];
 
     for (let idx = 0; idx < 1000; idx++) {
       const inputs = samples[idx % samples.length];
@@ -936,8 +994,7 @@ describe('performance and replay budget', () => {
     let draft = makeIdleDraft();
     const start = performance.now();
     for (let idx = 0; idx < 500; idx++) {
-      const inputs =
-        idx % 2 === 0 ? HIGH_QUALITY_INPUTS : MID_QUALITY_INPUTS;
+      const inputs = idx % 2 === 0 ? HIGH_QUALITY_INPUTS : MID_QUALITY_INPUTS;
       draft = reduceLiveMeasurementDraft(draft, inputs, BASE_THRESHOLDS);
     }
     const totalDuration = performance.now() - start;
