@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Depth Prior Provider Demo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #030712;
+      --surface: rgb(17 24 39 / 70%);
+      --border: rgb(255 255 255 / 10%);
+      --accent: #3b82f6;
+      --accent-glow: rgb(59 130 246 / 40%);
+      --good: #10b981;
+      --good-bg: rgb(16 185 129 / 15%);
+      --warn: #f59e0b;
+      --warn-bg: rgb(245 158 11 / 15%);
+      --bad: #ef4444;
+      --bad-bg: rgb(239 68 68 / 15%);
+      --text: #f9fafb;
+      --muted: #9ca3af;
+    }
+
+    body {
+      font-family: Outfit, sans-serif;
+      background: radial-gradient(circle at 50% -20%, #1e3a8a 0%, var(--bg) 70%);
+      color: var(--text);
+      height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 24px;
+      background: rgb(3 7 18 / 60%);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    header p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .hdot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      overflow: hidden;
+    }
+
+    #canvas-wrap {
+      position: relative;
+      cursor: crosshair;
+      overflow: hidden;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #mode-badge {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgb(3 7 18 / 85%);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 8px 18px;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: var(--text);
+      box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    aside {
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      box-shadow: -8px 0 32px rgb(0 0 0 / 20%);
+    }
+
+    .section {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .metric {
+      margin-bottom: 16px;
+    }
+
+    .metric:last-child {
+      margin-bottom: 0;
+    }
+
+    .metric-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      transition: color 0.3s;
+    }
+
+    .metric-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .metric-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: rgb(255 255 255 / 5%);
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.1s linear, background 0.3s;
+      box-shadow: 0 0 10px currentcolor;
+    }
+
+    .coords {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .coord-box {
+      background: rgb(0 0 0 / 30%);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+
+    .coord-axis {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .coord-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .controls {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    input[type="range"] {
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: rgb(255 255 255 / 10%);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-glow);
+      transition: transform 0.1s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .range-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      background: rgb(0 0 0 / 30%);
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      border-radius: 6px;
+      min-width: 44px;
+      text-align: center;
+    }
+
+    /* Custom Checkbox */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      background: rgb(255 255 255 / 10%);
+      border-radius: 11px;
+      transition: background 0.3s;
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    input[type="checkbox"] {
+      display: none;
+    }
+
+    input[type="checkbox"]:checked + .toggle-switch {
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    input[type="checkbox"]:checked + .toggle-switch::after {
+      transform: translateX(18px);
+    }
+
+    .status-panel {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 10px;
+      background: var(--bad-bg);
+      border: 1px solid var(--bad);
+      display: none;
+      transition: all 0.3s;
+    }
+
+    .status-panel.warn {
+      background: var(--warn-bg);
+      border-color: var(--warn);
+    }
+
+    .status-panel.good {
+      background: var(--good-bg);
+      border-color: var(--good);
+    }
+
+    .status-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-title::before {
+      content: '•';
+      font-size: 18px;
+      line-height: 0;
+    }
+
+    .status-desc {
+      font-size: 12px;
+      color: rgb(255 255 255 / 80%);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="hdot"></div>
+    <div>
+      <h1>Depth Prior Provider Demo</h1>
+      <p>Move mouse over the grid to simulate depth sensor reads.</p>
+    </div>
+  </header>
+
+  <main>
+    <div id="canvas-wrap">
+      <canvas id="c"></canvas>
+      <div id="mode-badge">Move cursor to sample depth · Scroll to adjust camera height</div>
+    </div>
+
+    <aside>
+      <div class="section">
+        <div class="section-title">Output Prior</div>
+        
+        <div class="metric">
+          <div class="metric-label">Confidence Weight</div>
+          <div class="metric-value" id="weight-val">0.000</div>
+          <div class="metric-bar">
+            <div class="metric-bar-fill" id="weight-bar" style="width:0%;background:var(--muted);color:transparent;"></div>
+          </div>
+          <div class="metric-sub" id="weight-sub">Decays quartically beyond knee distance</div>
+        </div>
+
+        <div class="metric" style="margin-top: 24px;">
+          <div class="metric-label">Raw Depth Distance</div>
+          <div class="metric-value" id="depth-val" style="color:var(--accent)">— m</div>
+        </div>
+
+        <div class="metric" style="margin-top: 24px;">
+          <div class="metric-label">Unprojected World Point</div>
+          <div class="coords">
+            <div class="coord-box"><div class="coord-axis">X</div><div class="coord-val" id="px">—</div></div>
+            <div class="coord-box"><div class="coord-axis">Y</div><div class="coord-val" id="py">—</div></div>
+            <div class="coord-box"><div class="coord-axis">Z</div><div class="coord-val" id="pz">—</div></div>
+          </div>
+        </div>
+
+        <div id="status-panel" class="status-panel">
+          <div class="status-title" id="status-title">No Depth</div>
+          <div class="status-desc" id="status-desc">Aimed at sky or out of bounds.</div>
+        </div>
+      </div>
+
+      <div class="section controls">
+        <div class="section-title">Sensor Configuration</div>
+        <label>
+          Reference Range / Knee (m)
+          <div class="range-row">
+            <input type="range" id="ref-range" min="0.5" max="10" step="0.5" value="2.0">
+            <span class="range-val" id="ref-range-disp">2.0</span>
+          </div>
+        </label>
+        <p style="font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: -6px;">
+          Distance where ToF confidence drops to exactly 0.5.
+        </p>
+
+        <label style="margin-top: 8px;">
+          Max Allowed Std. Dev (m)
+          <div class="range-row">
+            <input type="range" id="std-dev" min="0.1" max="2.0" step="0.1" value="0.5">
+            <span class="range-val" id="std-dev-disp">0.5</span>
+          </div>
+        </label>
+        <p style="font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: -6px;">
+          Rejects the prior completely if local depth variation exceeds this value (edge bleeding).
+        </p>
+      </div>
+      
+      <div class="section controls" style="flex: 1;">
+        <div class="section-title">Scene Setup</div>
+        <label class="toggle-row">
+          <span>Spawn Discontinuity Box</span>
+          <div>
+            <input type="checkbox" id="spawn-box">
+            <div class="toggle-switch"></div>
+          </div>
+        </label>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module">
+    import { sampleDepthPrior } from './src/utils/depth-prior-provider.ts';
+
+    // ─── Math ──────────────────────────────────────────────────────────────
+    const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+    const cross3 = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+    const norm3 = v => { const l = Math.sqrt(dot3(v, v)); return l < 1e-12 ? v : { x: v.x / l, y: v.y / l, z: v.z / l }; };
+    const add3 = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+    const sub3 = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+    const scale3 = (v, s) => ({ x: v.x * s, y: v.y * s, z: v.z * s });
+
+    // ─── Scene State ────────────────────────────────────────────────────────
+    let W, H, cx, cy;
+    let mouseX = -1, mouseY = -1;
+    const cam = { height: 1.6 }; // camera is looking straight down -Z
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('canvas-wrap');
+
+    function getCameraBasis() {
+      const P = { x: 0, y: cam.height, z: 0 };
+      const fwd = { x: 0, y: 0, z: -1 };
+      const right = { x: 1, y: 0, z: 0 };
+      const up = { x: 0, y: 1, z: 0 };
+      return { P, fwd, right, up };
+    }
+
+    function project3(wx, wy, wz) {
+      const { P, fwd, right, up } = getCameraBasis();
+      const v = { x: wx - P.x, y: wy - P.y, z: wz - P.z };
+      const vx = dot3(v, right), vy = dot3(v, up), vz = dot3(v, fwd);
+      if (vz < 0.01) return null;
+      const FOV = Math.min(W, H) * 0.7;
+      return { sx: cx + vx * FOV / vz, sy: cy - vy * FOV / vz, depth: vz };
+    }
+
+    // Exact geometric raycasting against the room planes
+    function raycastScene(sx, sy) {
+      const { P, fwd, right, up } = getCameraBasis();
+      const FOV = Math.min(W, H) * 0.7;
+      const d = norm3(add3(add3(scale3(right, (sx - cx) / FOV), scale3(up, -(sy - cy) / FOV)), fwd));
+      
+      let closestHit = null;
+      let minT = Infinity;
+
+      // Discontinuity Box (Box bounds: x from -1.0 to -0.2, y from 0 to 1.0, z from -5 to -4)
+      if (document.getElementById('spawn-box').checked) {
+        const boxMin = { x: -1.0, y: 0, z: -5 };
+        const boxMax = { x: -0.2, y: 1.0, z: -4 };
+        
+        let t1 = (boxMin.x - P.x) / d.x, t2 = (boxMax.x - P.x) / d.x;
+        let tmin = Math.min(t1, t2), tmax = Math.max(t1, t2);
+        
+        t1 = (boxMin.y - P.y) / d.y; t2 = (boxMax.y - P.y) / d.y;
+        tmin = Math.max(tmin, Math.min(t1, t2)); tmax = Math.min(tmax, Math.max(t1, t2));
+        
+        t1 = (boxMin.z - P.z) / d.z; t2 = (boxMax.z - P.z) / d.z;
+        tmin = Math.max(tmin, Math.min(t1, t2)); tmax = Math.min(tmax, Math.max(t1, t2));
+        
+        if (tmax >= Math.max(0, tmin) && tmin < minT) {
+          minT = tmin;
+          closestHit = { x: P.x + tmin * d.x, y: P.y + tmin * d.y, z: P.z + tmin * d.z };
+        }
+      }
+
+      // Floor: Y = 0
+      let t = (0 - P.y) / d.y;
+      if (t > 0 && t < minT) { minT = t; closestHit = { x: P.x + t*d.x, y: 0, z: P.z + t*d.z }; }
+      
+      // Ceiling: Y = 3.2
+      t = (3.2 - P.y) / d.y;
+      if (t > 0 && t < minT) { minT = t; closestHit = { x: P.x + t*d.x, y: 3.2, z: P.z + t*d.z }; }
+      
+      // Left Wall: X = -2.0
+      t = (-2.0 - P.x) / d.x;
+      if (t > 0 && t < minT) { minT = t; closestHit = { x: -2.0, y: P.y + t*d.y, z: P.z + t*d.z }; }
+      
+      // Right Wall: X = 2.0
+      t = (2.0 - P.x) / d.x;
+      if (t > 0 && t < minT) { minT = t; closestHit = { x: 2.0, y: P.y + t*d.y, z: P.z + t*d.z }; }
+      
+      // Back Wall: Z = -15.0
+      t = (-15.0 - P.z) / d.z;
+      if (t > 0 && t < minT) { minT = t; closestHit = { x: P.x + t*d.x, y: P.y + t*d.y, z: -15.0 }; }
+
+      return closestHit;
+    }
+
+    // Build standard WebXR-like camera data
+    function getProjectionMatrix() {
+      const f = Math.min(W, H) * 0.7;
+      const near = 0.1, far = 100.0, nf = 1.0 / (near - far);
+      return [
+        (2 * f) / W, 0,           0,                        0,
+        0,           (2 * f) / H, 0,                        0,
+        0,           0,           (far + near) * nf,       -1,
+        0,           0,           2 * far * near * nf,      0,
+      ];
+    }
+
+    function getCameraQuaternion() {
+      return [0, 0, 0, 1]; // identity: looking down -Z
+    }
+
+    // ─── Depth Prior Logic ──────────────────────────────────────────────────
+    function processDepthPrior() {
+      if (mouseX < 0 || mouseY < 0) return null;
+
+      const { P, fwd } = getCameraBasis();
+      const points = [];
+      
+      // Simulate a 9x9 depth patch from the sensor around the cursor
+      for (let dx = -4; dx <= 4; dx++) {
+        for (let dy = -4; dy <= 4; dy++) {
+          const sx = mouseX + dx * 6; // screen pixels
+          const sy = mouseY + dy * 6;
+          const hit = raycastScene(sx, sy);
+          if (hit) {
+            const depthM = dot3(sub3(hit, P), fwd);
+            if (depthM > 0.1) {
+              points.push({ screenX: sx / W, screenY: sy / H, depthM });
+            }
+          }
+        }
+      }
+
+      if (points.length === 0) return null;
+
+      const sample = {
+        points,
+        projectionMatrix: getProjectionMatrix(),
+        cameraPos: [P.x, P.y, P.z],
+        cameraRot: getCameraQuaternion(),
+      };
+
+      const refRange = parseFloat(document.getElementById('ref-range').value);
+      const maxStdDev = parseFloat(document.getElementById('std-dev').value);
+
+      return sampleDepthPrior(sample, mouseX / W, mouseY / H, {
+        referenceRangeM: refRange,
+        maxScreenDist: 0.1,
+        maxAllowedDepthStdDevM: maxStdDev
+      });
+    }
+
+    // ─── Drawing ────────────────────────────────────────────────────────────
+    function drawRoomIllustration() {
+      const pts = {
+        btl: project3(-2, 3.2, -15), btr: project3(2, 3.2, -15),
+        bbl: project3(-2, 0, -15), bbr: project3(2, 0, -15),
+      };
+
+      if (!pts.btl) return;
+
+      const drawPoly = (p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y, col) => {
+        ctx.fillStyle = col; ctx.beginPath();
+        ctx.moveTo(p1x, p1y); ctx.lineTo(p2x, p2y);
+        ctx.lineTo(p3x, p3y); ctx.lineTo(p4x, p4y);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+      };
+
+      // Ceiling
+      drawPoly(0, 0, W, 0, pts.btr.sx, pts.btr.sy, pts.btl.sx, pts.btl.sy, '#1e293b');
+      // Floor
+      drawPoly(0, H, W, H, pts.bbr.sx, pts.bbr.sy, pts.bbl.sx, pts.bbl.sy, '#0f172a');
+      // Left Wall
+      drawPoly(0, 0, pts.btl.sx, pts.btl.sy, pts.bbl.sx, pts.bbl.sy, 0, H, '#334155');
+      // Right Wall
+      drawPoly(W, 0, pts.btr.sx, pts.btr.sy, pts.bbr.sx, pts.bbr.sy, W, H, '#334155');
+      // Back Wall
+      drawPoly(pts.btl.sx, pts.btl.sy, pts.btr.sx, pts.btr.sy, pts.bbr.sx, pts.bbr.sy, pts.bbl.sx, pts.bbl.sy, '#475569');
+
+      // Grid on floor
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      for (let x = -2; x <= 2; x += 0.5) {
+        const p1 = project3(x, 0, -0.1);
+        const p2 = project3(x, 0, -15);
+        if (p1 && p2) {
+          const dx = p1.sx - p2.sx, dy = p1.sy - p2.sy;
+          const sx_at_bottom = p2.sx + dx * ((H - p2.sy) / dy);
+          ctx.beginPath(); ctx.moveTo(sx_at_bottom, H); ctx.lineTo(p2.sx, p2.sy); ctx.stroke();
+        }
+      }
+      for (let z = -0.5; z >= -15; z -= 1) {
+        const p1 = project3(-2, 0, z);
+        const p2 = project3(2, 0, z);
+        if (p1 && p2) { ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke(); }
+      }
+    }
+
+    function drawSolidBox() {
+      if (!document.getElementById('spawn-box').checked) return;
+      const bMin = { x: -1.0, y: 0, z: -5 };
+      const bMax = { x: -0.2, y: 1.0, z: -4 };
+
+      const faces = [
+        { name: 'front',  pts: [[bMin.x, bMin.y, bMax.z], [bMax.x, bMin.y, bMax.z], [bMax.x, bMax.y, bMax.z], [bMin.x, bMax.y, bMax.z]], c: {x:-0.6, y:0.5, z:-4}, col: '#3b82f6' },
+        { name: 'back',   pts: [[bMax.x, bMin.y, bMin.z], [bMin.x, bMin.y, bMin.z], [bMin.x, bMax.y, bMin.z], [bMax.x, bMax.y, bMin.z]], c: {x:-0.6, y:0.5, z:-5}, col: '#1d4ed8' },
+        { name: 'top',    pts: [[bMin.x, bMax.y, bMax.z], [bMax.x, bMax.y, bMax.z], [bMax.x, bMax.y, bMin.z], [bMin.x, bMax.y, bMin.z]], c: {x:-0.6, y:1.0, z:-4.5}, col: '#60a5fa' },
+        { name: 'bottom', pts: [[bMin.x, bMin.y, bMin.z], [bMax.x, bMin.y, bMin.z], [bMax.x, bMin.y, bMax.z], [bMin.x, bMin.y, bMax.z]], c: {x:-0.6, y:0, z:-4.5}, col: '#1e3a8a' },
+        { name: 'left',   pts: [[bMin.x, bMin.y, bMin.z], [bMin.x, bMin.y, bMax.z], [bMin.x, bMax.y, bMax.z], [bMin.x, bMax.y, bMin.z]], c: {x:-1.0, y:0.5, z:-4.5}, col: '#2563eb' },
+        { name: 'right',  pts: [[bMax.x, bMin.y, bMax.z], [bMax.x, bMin.y, bMin.z], [bMax.x, bMax.y, bMin.z], [bMax.x, bMax.y, bMax.z]], c: {x:-0.2, y:0.5, z:-4.5}, col: '#2563eb' }
+      ];
+
+      const { P } = getCameraBasis();
+      
+      faces.forEach(f => { f.dist = (f.c.x - P.x)**2 + (f.c.y - P.y)**2 + (f.c.z - P.z)**2; });
+      faces.sort((a, b) => b.dist - a.dist);
+
+      faces.forEach(f => {
+        const v1 = sub3({x:f.pts[1][0], y:f.pts[1][1], z:f.pts[1][2]}, {x:f.pts[0][0], y:f.pts[0][1], z:f.pts[0][2]});
+        const v2 = sub3({x:f.pts[2][0], y:f.pts[2][1], z:f.pts[2][2]}, {x:f.pts[1][0], y:f.pts[1][1], z:f.pts[1][2]});
+        const normal = cross3(v1, v2);
+        const toCam = sub3(P, f.c);
+        if (dot3(normal, toCam) < 0) return;
+
+        const pA = project3(...f.pts[0]), pB = project3(...f.pts[1]), pC = project3(...f.pts[2]), pD = project3(...f.pts[3]);
+        if (pA && pB && pC && pD) {
+          ctx.fillStyle = f.col;
+          ctx.beginPath();
+          ctx.moveTo(pA.sx, pA.sy); ctx.lineTo(pB.sx, pB.sy); ctx.lineTo(pC.sx, pC.sy); ctx.lineTo(pD.sx, pD.sy);
+          ctx.closePath();
+          ctx.fill();
+          
+          ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+          ctx.lineWidth = 1; ctx.lineJoin = 'round'; ctx.stroke();
+        }
+      });
+    }
+
+    function drawCrosshair() {
+      if (mouseX < 0 || mouseY < 0) return;
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(mouseX - 12, mouseY); ctx.lineTo(mouseX - 4, mouseY);
+      ctx.moveTo(mouseX + 12, mouseY); ctx.lineTo(mouseX + 4, mouseY);
+      ctx.moveTo(mouseX, mouseY - 12); ctx.lineTo(mouseX, mouseY - 4);
+      ctx.moveTo(mouseX, mouseY + 12); ctx.lineTo(mouseX, mouseY + 4);
+      ctx.stroke();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      
+      drawRoomIllustration();
+      drawSolidBox();
+      
+      const prior = processDepthPrior();
+      updateUI(prior);
+
+      if (prior) {
+        const p = project3(prior.point[0], prior.point[1], prior.point[2]);
+        if (p) {
+          ctx.save();
+          const color = prior.weight > 0.8 ? 'var(--good)' : prior.weight > 0.3 ? 'var(--warn)' : 'var(--bad)';
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = color;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(p.sx, p.sy, 4 + 6 * prior.weight, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      drawCrosshair();
+    }
+
+    // ─── UI Update ──────────────────────────────────────────────────────────
+    function updateUI(prior) {
+      const panel = document.getElementById('status-panel');
+      const title = document.getElementById('status-title');
+      const desc = document.getElementById('status-desc');
+      const weightBar = document.getElementById('weight-bar');
+      const weightVal = document.getElementById('weight-val');
+      
+      if (!prior) {
+        document.getElementById('px').textContent = '—';
+        document.getElementById('py').textContent = '—';
+        document.getElementById('pz').textContent = '—';
+        document.getElementById('depth-val').textContent = '— m';
+        weightVal.textContent = '0.000';
+        weightBar.style.width = '0%';
+        weightBar.style.background = 'var(--muted)';
+        weightBar.style.color = 'transparent';
+        weightVal.style.color = 'var(--muted)';
+        
+        panel.style.display = 'block';
+        
+        const hit = raycastScene(mouseX, mouseY);
+        if (hit) {
+          panel.className = 'status-panel warn';
+          title.textContent = 'Prior Rejected';
+          title.style.color = 'var(--warn)';
+          desc.textContent = 'High depth variance in neighborhood (Edge Bleeding detected). Weight dropped to 0.';
+        } else {
+          panel.className = 'status-panel bad';
+          title.textContent = 'No Depth Available';
+          title.style.color = 'var(--bad)';
+          desc.textContent = 'Aimed at sky or outside sensor bounds.';
+        }
+        return;
+      }
+
+      panel.style.display = 'none';
+      
+      document.getElementById('px').textContent = prior.point[0].toFixed(3);
+      document.getElementById('py').textContent = prior.point[1].toFixed(3);
+      document.getElementById('pz').textContent = prior.point[2].toFixed(3);
+      document.getElementById('depth-val').textContent = prior.depthM.toFixed(3) + ' m';
+      
+      weightVal.textContent = prior.weight.toFixed(3);
+      weightBar.style.width = `${Math.max(0, Math.min(100, prior.weight * 100))}%`;
+      
+      let color = 'var(--good)';
+      if (prior.weight <= 0.3) color = 'var(--bad)';
+      else if (prior.weight <= 0.8) color = 'var(--warn)';
+      
+      weightVal.style.color = color;
+      weightBar.style.background = color;
+      weightBar.style.color = color; // For the shadow
+    }
+
+    // ─── Setup ──────────────────────────────────────────────────────────────
+    function resize() {
+      W = canvas.width = wrap.clientWidth;
+      H = canvas.height = wrap.clientHeight;
+      cx = W / 2; cy = H / 2;
+      draw();
+    }
+    new ResizeObserver(resize).observe(wrap);
+
+    canvas.addEventListener('mousemove', e => {
+      mouseX = e.offsetX;
+      mouseY = e.offsetY;
+      draw();
+    });
+    canvas.addEventListener('mouseleave', () => {
+      mouseX = -1;
+      mouseY = -1;
+      draw();
+    });
+
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      cam.height = Math.max(0.2, Math.min(10, cam.height + e.deltaY * 0.01));
+      draw();
+    }, { passive: false });
+
+    document.getElementById('ref-range').addEventListener('input', e => {
+      document.getElementById('ref-range-disp').textContent = parseFloat(e.target.value).toFixed(1);
+      draw();
+    });
+
+    document.getElementById('std-dev').addEventListener('input', e => {
+      document.getElementById('std-dev-disp').textContent = parseFloat(e.target.value).toFixed(1);
+      draw();
+    });
+
+    document.getElementById('spawn-box').addEventListener('change', draw);
+
+    resize();
+  </script>
+</body>
+</html>
