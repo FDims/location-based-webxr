@@ -158,6 +158,23 @@ describe('evaluateMeasurementQuality', () => {
     );
     expect(result.prompt).toBe('move_sideways');
   });
+
+  test('shows move_sideways for a far target before it is ready', () => {
+    const result = evaluateMeasurementQuality(
+      makeInputs({
+        baselineM: 0.5,
+        uncertainty: 1.1,
+        rayCount: 2,
+        inlierCount: 2,
+        rmsError: 0.24,
+      }),
+      makeThresholds(),
+      false
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.prompt).toBe('move_sideways');
+  });
 });
 
 describe('reduceLiveMeasurementDraft', () => {
@@ -168,6 +185,87 @@ describe('reduceLiveMeasurementDraft', () => {
       makeThresholds()
     );
     expect(next.status).toBe('provisional');
+  });
+
+  test('synthetic observation sequence tightens from provisional to confirmed', () => {
+    const thresholds = makeThresholds();
+
+    const first = reduceLiveMeasurementDraft(
+      makeDraft({ status: 'idle' }),
+      makeInputs({
+        rayCount: 1,
+        inlierCount: 1,
+        baselineM: 0.4,
+        uncertainty: 1.35,
+        rmsError: 0.25,
+      }),
+      thresholds
+    );
+
+    expect(first.status).toBe('provisional');
+    expect(first.prompt).toBe('move_sideways');
+
+    const second = reduceLiveMeasurementDraft(
+      first,
+      makeInputs({
+        rayCount: 2,
+        inlierCount: 2,
+        baselineM: 0.6,
+        uncertainty: 1.05,
+        rmsError: 0.23,
+      }),
+      thresholds
+    );
+
+    expect(second.status).toBe('refining');
+    expect(second.prompt).toBe('move_sideways');
+
+    const third = reduceLiveMeasurementDraft(
+      second,
+      makeInputs({
+        rayCount: 3,
+        inlierCount: 3,
+        baselineM: 2.4,
+        uncertainty: 0.62,
+        rmsError: 0.16,
+      }),
+      thresholds
+    );
+
+    expect(third.status).toBe('ready');
+    expect(third.canConfirm).toBe(true);
+    expect(third.prompt).toBe('ready_to_confirm');
+
+    const pending = reduceLiveMeasurementDraft(
+      third,
+      makeInputs({
+        rayCount: 3,
+        inlierCount: 3,
+        baselineM: 2.4,
+        uncertainty: 0.58,
+        rmsError: 0.14,
+      }),
+      thresholds,
+      { type: 'confirmRequested' }
+    );
+
+    expect(pending.status).toBe('confirm_pending');
+
+    const confirmed = reduceLiveMeasurementDraft(
+      pending,
+      makeInputs({
+        rayCount: 3,
+        inlierCount: 3,
+        baselineM: 2.4,
+        uncertainty: 0.58,
+        rmsError: 0.14,
+      }),
+      thresholds,
+      { type: 'confirmSucceeded' }
+    );
+
+    expect(confirmed.status).toBe('confirmed');
+    expect(confirmed.canConfirm).toBe(false);
   });
 
   test('improving sequence reaches ready', () => {

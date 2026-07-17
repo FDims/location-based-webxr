@@ -181,21 +181,8 @@ export function decideCoachingPrompt(
       return 'add_more_rays';
     }
   }
-
-  const u = clamp01(
-    1 -
-      (inputs.uncertainty == null || !Number.isFinite(inputs.uncertainty)
-        ? 1
-        : inputs.uncertainty / Math.max(1e-9, inputs.uncertainty + 1))
-  );
-
-  if (inputs.baselineM <= 0.7 && u < 0.6) {
-    return 'move_sideways';
-  }
-
   return evaluation.prompt;
 }
-
 export function reduceLiveMeasurementDraft(
   current: LiveMeasurementDraft,
   inputs: QualityInputs,
