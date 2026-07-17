@@ -33,7 +33,10 @@ import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeRay(id: string, origin: Vector3 = [0, 0, 0]): MeasurementRayRecord {
+function makeRay(
+  id: string,
+  origin: Vector3 = [0, 0, 0]
+): MeasurementRayRecord {
   return {
     id,
     timestamp: Date.now(),
@@ -247,11 +250,9 @@ describe('selectProvisionalMeasurement', () => {
     // With two rays, the solver should find a point.
     // The exact result depends on the solver, but it should not be null.
     expect(result).not.toBeNull();
-    if (result) {
-      expect(result.point).toBeDefined();
-      expect(result.uncertainty).toBeDefined();
-      expect(typeof result.hasSufficientBaseline).toBe('boolean');
-    }
+    expect(result!.point).toBeDefined();
+    expect(result!.uncertainty).toBeDefined();
+    expect(typeof result!.hasSufficientBaseline).toBe('boolean');
   });
 
   it('returns null for single ray without depth', () => {
@@ -277,8 +278,6 @@ describe('selectProvisionalMeasurement', () => {
     };
     const result = selectProvisionalMeasurement(state);
     expect(result).not.toBeNull();
-    if (result) {
-      expect(result.hasSufficientBaseline).toBe(false);
-    }
+    expect(result!.hasSufficientBaseline).toBe(false);
   });
 });

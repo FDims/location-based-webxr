@@ -25,7 +25,6 @@ const LINE_COLOR = 0xffffff;
 const DOT_RADIUS = 0.05;
 const LINE_WIDTH = 2;
 const PROVISIONAL_DOT_COLOR = 0xffff00; // Yellow — provisional
-const PROVISIONAL_DOT_OPACITY = 0.6;
 
 // ---------------------------------------------------------------------------
 // Coordinate conversion
@@ -38,7 +37,7 @@ const PROVISIONAL_DOT_OPACITY = 0.6;
  * Returns [0, 0, 0] if the alignment matrix is null/undefined
  * (fallback for when no SLAM session is active).
  */
-export function arLocalToGpsWorld(
+function arLocalToGpsWorld(
   arPosition: Vector3,
   alignmentMatrix: Matrix4 | null | undefined
 ): Vector3 {
@@ -67,22 +66,11 @@ interface ThreeVector3 {
 interface ThreeMesh {
   position: ThreeVector3;
   visible: boolean;
-  material: { opacity?: number; transparent?: boolean; color?: { set(c: number): void } };
-}
-
-interface ThreeLine {
-  geometry: {
-    setFromPoints(points: ThreeVector3[]): void;
-    attributes?: { position?: { needsUpdate: boolean } };
+  material: {
+    opacity?: number;
+    transparent?: boolean;
+    color?: { set(c: number): void };
   };
-  visible: boolean;
-}
-
-interface ThreeGroup {
-  add(child: unknown): void;
-  children: unknown[];
-  visible: boolean;
-  userData: Record<string, unknown>;
 }
 
 /**
@@ -91,7 +79,7 @@ interface ThreeGroup {
  * wiring module) using this descriptor's parameters, keeping this module
  * free of hard Three.js constructor imports.
  */
-export interface MeasurementPointVisualDescriptor {
+interface MeasurementPointVisualDescriptor {
   arDotColor: number;
   gpsDotColor: number;
   lineColor: number;
@@ -99,7 +87,9 @@ export interface MeasurementPointVisualDescriptor {
   lineWidth: number;
 }
 
-/** Returns the visual parameters for a confirmed measurement point. */
+/** Returns the visual parameters for a confirmed measurement point.
+ * @public
+ */
 export function getConfirmedVisualParams(): MeasurementPointVisualDescriptor {
   return {
     arDotColor: AR_DOT_COLOR,
@@ -110,7 +100,9 @@ export function getConfirmedVisualParams(): MeasurementPointVisualDescriptor {
   };
 }
 
-/** Returns the visual parameters for a provisional (pre-confirm) point. */
+/** Returns the visual parameters for a provisional (pre-confirm) point.
+ * @public
+ */
 export function getProvisionalVisualParams(): MeasurementPointVisualDescriptor {
   return {
     arDotColor: PROVISIONAL_DOT_COLOR,
@@ -128,6 +120,7 @@ export function getProvisionalVisualParams(): MeasurementPointVisualDescriptor {
 /**
  * Update the AR-local dot position in a measurement point group.
  * The group is expected to have userData.arDot referencing the mesh.
+ * @public
  */
 export function updateArDotPosition(
   arDot: ThreeMesh,
@@ -139,6 +132,7 @@ export function updateArDotPosition(
 /**
  * Recompute and update the GPS-world dot position from
  * arPosition × alignmentMatrix. This is what makes the gap react live.
+ * @public
  */
 export function updateGpsDotPosition(
   gpsDot: ThreeMesh,
@@ -152,9 +146,12 @@ export function updateGpsDotPosition(
 /**
  * Update the line connecting the AR and GPS dots.
  * Reads positions from the two dot meshes.
+ * @public
  */
 export function updateConnectionLinePositions(
-  lineGeometry: { setFromPoints(points: { x: number; y: number; z: number }[]): void },
+  lineGeometry: {
+    setFromPoints(points: { x: number; y: number; z: number }[]): void;
+  },
   arPosition: Vector3,
   gpsPosition: Vector3
 ): void {
@@ -167,11 +164,14 @@ export function updateConnectionLinePositions(
 /**
  * Full update of a measurement point's visualization.
  * Called every frame for each confirmed point.
+ * @public
  */
 export function updateMeasurementPointVisual(
   arDot: ThreeMesh,
   gpsDot: ThreeMesh,
-  lineGeometry: { setFromPoints(points: { x: number; y: number; z: number }[]): void },
+  lineGeometry: {
+    setFromPoints(points: { x: number; y: number; z: number }[]): void;
+  },
   entity: MeasurementPointEntity,
   alignmentMatrix: Matrix4 | null | undefined
 ): void {
