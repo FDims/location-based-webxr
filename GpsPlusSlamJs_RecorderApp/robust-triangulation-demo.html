@@ -291,6 +291,38 @@
         background: rgb(248 113 113 / 10%);
         border-color: var(--bad);
       }
+
+      button.success {
+        background: transparent;
+        color: var(--good);
+        border: 1px solid var(--border);
+        padding: 7px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button.success:hover {
+        background: rgb(52 211 153 / 10%);
+        border-color: var(--good);
+      }
+
+      button.primary {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--border);
+        padding: 7px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button.primary:hover {
+        background: rgb(79 142 247 / 10%);
+        border-color: var(--accent);
+      }
     </style>
   </head>
   <body>
@@ -386,6 +418,8 @@
         </div>
 
         <div class="controls">
+          <button class="success" id="confirm-btn">✓ Confirm Point</button>
+          <button class="primary" id="reload-btn">⟳ Reload (from local storage)</button>
           <button class="danger" id="clear-btn">✕ Clear All Rays</button>
         </div>
       </aside>
@@ -403,6 +437,9 @@
       const rayVisuals = []; // THREE.Group[] (line + hit dot)
       let obsIdCounter = 0;
       let result = null;
+
+      let confirmedPoints = [];
+      const confirmedVisuals = []; // THREE.Group[] for confirmed dual-dots
 
       // Movement flags
       let moveF = false,
@@ -758,6 +795,72 @@
         updateUI();
       });
 
+      // ─── Persistence Demo (Confirm / Reload) ────────────────────────────────
+      
+      function rebuildConfirmedVisuals() {
+        for (const g of confirmedVisuals) scene.remove(g);
+        confirmedVisuals.length = 0;
+
+        for (const pt of confirmedPoints) {
+          const group = new THREE.Group();
+          group.userData.arPosition = new THREE.Vector3().fromArray(pt.arPosition);
+
+          // AR dot (Green)
+          const arDot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.1, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0x00ff88 })
+          );
+          arDot.position.copy(group.userData.arPosition);
+          group.add(arDot);
+
+          // GPS dot (Orange)
+          const gpsDot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.1, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xff8800 })
+          );
+          group.add(gpsDot);
+
+          // Connecting Line
+          const lineGeo = new THREE.BufferGeometry().setFromPoints([
+            arDot.position,
+            gpsDot.position
+          ]);
+          const line = new THREE.Line(
+            lineGeo,
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 })
+          );
+          group.add(line);
+
+          group.userData.gpsDot = gpsDot;
+          group.userData.line = line;
+
+          scene.add(group);
+          confirmedVisuals.push(group);
+        }
+      }
+
+      document.getElementById('confirm-btn').addEventListener('click', () => {
+        if (!result) return;
+        const entity = {
+          id: 'mp-' + Date.now(),
+          arPosition: [...result.point]
+        };
+        confirmedPoints.push(entity);
+        localStorage.setItem('robust_demo_pts', JSON.stringify(confirmedPoints));
+        
+        // Clear active UI to prep for next
+        document.getElementById('clear-btn').click();
+        rebuildConfirmedVisuals();
+      });
+
+      document.getElementById('reload-btn').addEventListener('click', () => {
+        const stored = localStorage.getItem('robust_demo_pts');
+        if (stored) {
+          confirmedPoints = JSON.parse(stored);
+          rebuildConfirmedVisuals();
+        }
+      });
+
       // ─── Resize ─────────────────────────────────────────────────────────────
       function onResize() {
         const w = viewport.clientWidth;
@@ -817,6 +920,24 @@
         const lookDir = new THREE.Vector3();
         camera.getWorldDirection(lookDir);
         playerMarker.rotation.z = Math.atan2(lookDir.x, lookDir.z);
+
+        // ─── Simulated Drifting Alignment Matrix ─────────
+        // We simulate the AR↔GPS alignment matrix drifting slowly over time.
+        // In the real app, this is continuously updated by the MSAC fusion loop.
+        const driftT = now / 3000; // Drift over time
+        const dx = Math.sin(driftT) * 1.5;
+        const dz = Math.cos(driftT * 0.7) * 1.5;
+        const simulatedAlignmentMatrix = new THREE.Matrix4().makeTranslation(dx, 0, dz);
+
+        // Update confirmed points live visualization
+        for (const g of confirmedVisuals) {
+          const arPos = g.userData.arPosition;
+          // Apply alignment matrix to AR position to get current GPS position
+          const gpsPos = arPos.clone().applyMatrix4(simulatedAlignmentMatrix);
+          
+          g.userData.gpsDot.position.copy(gpsPos);
+          g.userData.line.geometry.setFromPoints([arPos, gpsPos]);
+        }
 
         // ─── Render main view ────────────────────────────
         // Use logical CSS pixels for setViewport/setScissor; the WebGLRenderer
