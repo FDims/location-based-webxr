@@ -60,9 +60,7 @@ const measurementPointsSlice = createSlice({
       state,
       action: PayloadAction<MeasurementPointEntity>
     ) {
-      state.confirmed.push(
-        action.payload as (typeof state.confirmed)[number]
-      );
+      state.confirmed.push(action.payload as (typeof state.confirmed)[number]);
       // Clear pending rays — the marking flow for this point is complete.
       state.pendingRays = [];
     },

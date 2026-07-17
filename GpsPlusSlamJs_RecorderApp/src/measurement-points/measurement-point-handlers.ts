@@ -148,13 +148,11 @@ function arLocalToGpsWorld(
 // Factory
 // ---------------------------------------------------------------------------
 
+/** @public */
 export function createMeasurementPointHandlers(
   deps: MeasurementPointHandlersDeps
 ): MeasurementPointHandlers {
-  function handleShootRay(
-    aimedScreenX: number,
-    aimedScreenY: number
-  ): void {
+  function handleShootRay(aimedScreenX: number, aimedScreenY: number): void {
     const arPose = getCurrentArPose();
     if (!arPose) {
       deps.showError('Cannot shoot ray — AR tracking not available');
@@ -169,11 +167,7 @@ export function createMeasurementPointHandlers(
     // Sample depth prior at the aimed pixel
     const state = deps.getStore().getState();
     const depthSample = state.recording.latestDepthSample ?? null;
-    const depthObs = sampleDepthPrior(
-      depthSample,
-      aimedScreenX,
-      aimedScreenY
-    );
+    const depthObs = sampleDepthPrior(depthSample, aimedScreenX, aimedScreenY);
 
     const rayRecord: MeasurementRayRecord = {
       id: generateRayId(),
@@ -195,9 +189,7 @@ export function createMeasurementPointHandlers(
 
   async function handleConfirmPoint(scenarioId: string): Promise<void> {
     const state = deps.getStore().getState();
-    const provisional = selectProvisionalMeasurement(
-      state.measurementPoints
-    );
+    const provisional = selectProvisionalMeasurement(state.measurementPoints);
 
     if (!provisional) {
       deps.showError('Cannot confirm — no valid solution');
