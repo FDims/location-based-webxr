@@ -134,26 +134,26 @@ describe('isMeasurementPointEntity', () => {
   });
 
   it('rejects observation without arPose', () => {
-    const badRay = { ...makeRayRecord() };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (badRay as any).arPose;
-    const entity = makeEntity({ observations: [badRay] });
+    const { arPose: _arPose, ...badRay } = makeRayRecord();
+    const entity = makeEntity({
+      observations: [badRay as unknown as MeasurementRayRecord],
+    });
     expect(isMeasurementPointEntity(entity)).toBe(false);
   });
 
   it('rejects observation without rayOrigin', () => {
-    const badRay = { ...makeRayRecord() };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (badRay as any).rayOrigin;
-    const entity = makeEntity({ observations: [badRay] });
+    const { rayOrigin: _rayOrigin, ...badRay } = makeRayRecord();
+    const entity = makeEntity({
+      observations: [badRay as unknown as MeasurementRayRecord],
+    });
     expect(isMeasurementPointEntity(entity)).toBe(false);
   });
 
   it('rejects observation without rayDirection', () => {
-    const badRay = { ...makeRayRecord() };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (badRay as any).rayDirection;
-    const entity = makeEntity({ observations: [badRay] });
+    const { rayDirection: _rayDirection, ...badRay } = makeRayRecord();
+    const entity = makeEntity({
+      observations: [badRay as unknown as MeasurementRayRecord],
+    });
     expect(isMeasurementPointEntity(entity)).toBe(false);
   });
 });
@@ -171,9 +171,7 @@ describe('JSON round-trip', () => {
     const recovered = parsed as MeasurementPointEntity;
     expect(recovered.id).toBe(original.id);
     expect(recovered.arPosition).toEqual(original.arPosition);
-    expect(recovered.gpsPositionSnapshot).toEqual(
-      original.gpsPositionSnapshot
-    );
+    expect(recovered.gpsPositionSnapshot).toEqual(original.gpsPositionSnapshot);
     expect(recovered.observations).toHaveLength(1);
     expect(recovered.inlierIds).toEqual(['ray-1']);
     expect(recovered.outlierIds).toEqual([]);

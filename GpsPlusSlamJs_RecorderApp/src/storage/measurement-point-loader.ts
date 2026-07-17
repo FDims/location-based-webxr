@@ -114,6 +114,26 @@ function isValidRayRecord(obs: unknown): obs is MeasurementRayRecord {
   );
 }
 
+function hasValidEntityScalars(v: Record<string, unknown>): boolean {
+  return (
+    v.schemaVersion === 1 &&
+    typeof v.id === 'string' &&
+    typeof v.createdAt === 'number' &&
+    typeof v.updatedAt === 'number' &&
+    typeof v.scenarioId === 'string' &&
+    typeof v.uncertainty === 'number' &&
+    typeof v.rmsError === 'number'
+  );
+}
+
+function hasValidEntityArrays(v: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(v.inlierIds) &&
+    Array.isArray(v.outlierIds) &&
+    Array.isArray(v.observations)
+  );
+}
+
 /**
  * Type guard: validates parsed JSON matches MeasurementPointEntity shape.
  * Prevents runtime crashes from malformed or legacy JSON files.
@@ -125,18 +145,9 @@ export function isMeasurementPointEntity(
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
 
-  if (v.schemaVersion !== 1) return false;
-  if (typeof v.id !== 'string') return false;
-  if (typeof v.createdAt !== 'number') return false;
-  if (typeof v.updatedAt !== 'number') return false;
-  if (typeof v.scenarioId !== 'string') return false;
-  if (!isVector3(v.arPosition)) return false;
-  if (!isVector3(v.gpsPositionSnapshot)) return false;
-  if (typeof v.uncertainty !== 'number') return false;
-  if (typeof v.rmsError !== 'number') return false;
-  if (!Array.isArray(v.inlierIds)) return false;
-  if (!Array.isArray(v.outlierIds)) return false;
-  if (!Array.isArray(v.observations)) return false;
+  if (!hasValidEntityScalars(v) || !hasValidEntityArrays(v)) return false;
+  if (!isVector3(v.arPosition) || !isVector3(v.gpsPositionSnapshot))
+    return false;
 
   return (v.observations as unknown[]).every(isValidRayRecord);
 }
@@ -184,6 +195,7 @@ async function writeJsonToOpfs(
 /**
  * Load all measurement points from the scenario's measurementPoints/ directory.
  * Returns [] if the directory does not exist yet.
+ * @public
  */
 export async function loadAllMeasurementPoints(
   scenarioHandle: FileSystemDirectoryHandle
@@ -222,6 +234,7 @@ export async function loadAllMeasurementPoints(
  * Persist a confirmed measurement point to the measurementPoints/ directory.
  * Creates the directory if it doesn't exist.
  * Uses the shared OPFS "abort writable on failure" pattern.
+ * @public
  */
 export async function writeMeasurementPoint(
   scenarioHandle: FileSystemDirectoryHandle,
@@ -239,6 +252,7 @@ export async function writeMeasurementPoint(
 
 /**
  * Delete a measurement point file from the measurementPoints/ directory.
+ * @public
  */
 export async function deleteMeasurementPointFile(
   scenarioHandle: FileSystemDirectoryHandle,

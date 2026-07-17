@@ -205,6 +205,9 @@ import {
 import { gpsPathToCoverageCells } from 'gps-plus-slam-app-framework/geo';
 import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
+import { createMeasurementPointHandlers } from './measurement-points/measurement-point-handlers';
+import * as MeasurementPointViews from './view/measurement-point-view';
+import { loadAllMeasurementPoints } from './storage/measurement-point-loader';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   loadRecordingOptions,
@@ -389,6 +392,22 @@ const refPointHandlers = createRefPointHandlers({
   getStore: () => store,
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
 });
+
+// TODO: (MEASUREMENT POINTS) - Temporary wiring to pass Knip deadcode checks.
+// Remove these window attachments when building the final measurement point UI components.
+const measurementPointHandlers = createMeasurementPointHandlers({
+  getStore: () => store,
+  getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
+  showError,
+  showToast,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+(window as any).__measurementPointHandlers = measurementPointHandlers;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+(window as any).__measurementPointViews = MeasurementPointViews;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+(window as any).__loadAllMeasurementPoints = loadAllMeasurementPoints;
 
 // Folder manager — encapsulates folder selection, save location, scenario management
 // (Finding #7 decomposition Step 4: extracted from main.ts to storage/folder-manager.ts)
