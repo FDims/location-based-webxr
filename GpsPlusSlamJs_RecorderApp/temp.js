@@ -1,474 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Measurement UX Demo</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    :root {
-      --bg: #0d0f14;
-      --surface: #161b24;
-      --border: #252d3d;
-      --accent: #4f8ef7;
-      --good: #34d399;
-      --warn: #fbbf24;
-      --bad: #f87171;
-      --text: #e2e8f0;
-      --muted: #64748b;
-    }
-
-    body {
-      font-family: Inter, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100dvh;
-      display: grid;
-      grid-template-rows: auto 1fr;
-      overflow: hidden;
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    header h1 {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: .02em;
-    }
-
-    header p {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .hdot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      flex-shrink: 0;
-    }
-
-    main {
-      display: grid;
-      grid-template-columns: 1fr 280px;
-      overflow: hidden;
-    }
-
-    #canvas-wrap {
-      position: relative;
-      overflow: hidden;
-      background: radial-gradient(circle at 50% 50%, #1a2035 0%, #0d0f14 70%);
-    }
-
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
-    #canvas-wrap.orbit-mode {
-      cursor: grab;
-    }
-
-    #canvas-wrap.orbit-mode:active {
-      cursor: grabbing;
-    }
-
-    #mode-badge {
-      position: absolute;
-      bottom: 12px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgb(22 27 36 / 85%);
-      border: 1px solid var(--border);
-      border-radius: 99px;
-      padding: 4px 14px;
-      font-size: 11px;
-      color: var(--muted);
-      pointer-events: none;
-      transition: opacity .3s;
-    }
-
-    aside {
-      border-left: 1px solid var(--border);
-      background: var(--surface);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .section {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .section-title {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 10px;
-    }
-
-    .metric {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      margin-bottom: 10px;
-    }
-
-    .metric:last-child {
-      margin-bottom: 0;
-    }
-
-    .metric-label {
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .metric-value {
-      font-size: 18px;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -.02em;
-    }
-
-    .metric-bar {
-      height: 3px;
-      border-radius: 2px;
-      background: var(--border);
-      margin-top: 3px;
-      overflow: hidden;
-    }
-
-    .metric-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width .3s ease, background .3s ease;
-    }
-
-    .coords {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 6px;
-    }
-
-    .coord-box {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 8px;
-    }
-
-    .coord-axis {
-      font-size: 9px;
-      font-weight: 600;
-      color: var(--muted);
-    }
-
-    .coord-val {
-      font-size: 13px;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .ray-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .ray-item {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 7px 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      transition: border-color .15s;
-    }
-
-    .ray-item:hover {
-      border-color: var(--accent);
-    }
-
-    .ray-swatch {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .ray-info {
-      flex: 1;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-
-    .ray-info strong {
-      color: var(--text);
-      font-weight: 500;
-    }
-
-    .ray-del {
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 14px;
-      line-height: 1;
-      padding: 2px 4px;
-      border-radius: 3px;
-      transition: color .15s, background .15s;
-    }
-
-    .ray-del:hover {
-      color: var(--bad);
-      background: rgb(248 113 113 / 10%);
-    }
-
-    .empty-state {
-      color: var(--muted);
-      font-size: 12px;
-      text-align: center;
-      margin-top: 20px;
-      line-height: 1.7;
-    }
-
-    .controls {
-      padding: 14px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .btn {
-      width: 100%;
-      padding: 8px 12px;
-      border-radius: 7px;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--text);
-      font-family: inherit;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-    }
-
-    .btn:hover:not(:disabled) {
-      border-color: var(--accent);
-      background: rgb(79 142 247 / 8%);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn.active {
-      background: rgb(79 142 247 / 18%);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .btn.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-
-    .btn.primary:hover:not(:disabled) {
-      background: #3a78e8;
-    }
-
-    label {
-      font-size: 11px;
-      color: var(--muted);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    input[type="range"] {
-      width: 100%;
-      accent-color: var(--accent);
-    }
-
-    .range-row {
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .range-val {
-      font-size: 11px;
-      color: var(--text);
-      font-variant-numeric: tabular-nums;
-    }
-
-    #status {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 11px;
-      padding: 3px 9px;
-      border-radius: 99px;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      margin-left: auto;
-    }
-
-    #sdot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--muted);
-    }
-
-    #tooltip {
-      position: fixed;
-      background: rgb(22 27 36 / 95%);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 10px;
-      font-size: 11px;
-      color: var(--muted);
-      pointer-events: none;
-      display: none;
-      z-index: 100;
-    }
-  </style>
-</head>
-
-<body>
-
-  <header>
-    <div class="hdot"></div>
-    <div>
-      <h1>Live Measurement UX & Coaching Demo</h1>
-      <p>Drag to orbit · scroll to zoom · click on the canvas to shoot a ray</p>
-    </div>
-    <div id="status">
-      <div id="sdot"></div>
-      <span id="status-text">IDLE</span>
-    </div>
-  </header>
-
-  <main>
-    <div id="canvas-wrap" class="orbit-mode">
-      <canvas id="c"></canvas>
-      <div id="mode-badge">🖱 Drag to orbit · Scroll to zoom · Click to shoot ray</div>
-    </div>
-
-    <aside>
-      <div class="section">
-        <div class="section-title">Draft Status</div>
-        <div class="metric">
-          <div class="metric-value" id="draft-status" style="color:var(--accent); text-transform: uppercase;">IDLE</div>
-        </div>
-        <div class="metric" style="margin-top: 10px;">
-          <div class="metric-label">Coaching Prompt</div>
-          <div class="metric-value" id="coaching-prompt" style="color:var(--warn); font-size: 14px;">NONE</div>
-        </div>
-        <div class="metric" style="margin-top: 10px;">
-          <div class="metric-label">Quality Score</div>
-          <div class="metric-value" id="quality-score">0.00</div>
-          <div class="metric-bar">
-            <div class="metric-bar-fill" id="score-bar" style="width:0%;background:var(--accent)"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Solved Point (metres)</div>
-        <div class="coords">
-          <div class="coord-box">
-            <div class="coord-axis">X</div>
-            <div class="coord-val" id="px">—</div>
-          </div>
-          <div class="coord-box">
-            <div class="coord-axis">Y</div>
-            <div class="coord-val" id="py">—</div>
-          </div>
-          <div class="coord-box">
-            <div class="coord-axis">Z</div>
-            <div class="coord-val" id="pz">—</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Metrics</div>
-        <div class="metric">
-          <div class="metric-label">RMS Error (ray distance)</div>
-          <div class="metric-value" id="rms" style="color:var(--good)">—</div>
-          <div class="metric-bar">
-            <div class="metric-bar-fill" id="rms-bar" style="width:0%;background:var(--good)"></div>
-          </div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Uncertainty (baseline quality)</div>
-          <div class="metric-value" id="unc" style="color:var(--good)">—</div>
-          <div class="metric-bar">
-            <div class="metric-bar-fill" id="unc-bar" style="width:0%;background:var(--good)"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="controls">
-        <button class="btn" id="btn-play-sequence" onclick="playReplaySequence()" style="margin-bottom: 8px; background: #a78bfa; border-color: #a78bfa; color: white; font-weight: bold;">▶ Play Automated Replay</button>
-        <button class="btn primary" id="btn-confirm" onclick="dispatchAction('confirmRequested')" disabled>Confirm Point</button>
-        <button class="btn" onclick="dispatchAction('retargetDraft')">Retarget</button>
-        <button class="btn" onclick="dispatchAction('cancelDraft')">Cancel Draft</button>
-        <button class="btn" onclick="undoLast()">Undo last ray</button>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <input type="checkbox" id="depth-prior-toggle" checked>
-          Enable Depth Prior Integration
-        </label>
-        <label>
-          Ray weight
-          <div class="range-row">
-            <input type="range" id="weight" min="0.1" max="3" step="0.1" value="1.0">
-            <span class="range-val" id="weight-val">1.0</span>
-          </div>
-        </label>
-      </div>
-
-      <div class="section-title" style="padding:10px 16px 0">
-        Rays <span id="ray-count" style="color:var(--muted);font-size:10px">(0)</span>
-      </div>
-      <div class="ray-list" id="ray-list">
-        <div class="empty-state">Orbit to aim · <strong style="color:var(--text)">Click</strong> to shoot<br>a ray from
-          the camera.</div>
-      </div>
-    </aside>
-  </main>
-
-  <div id="tooltip"></div>
-
-  <script type="module">
     import { solveClosestPointOfApproach } from './src/utils/ray-triangulation-core.ts';
     import { sampleDepthPrior } from './src/utils/depth-prior-provider.ts';
     import { reduceLiveMeasurementDraft, computeLateralBaselineM } from './src/utils/live-measurement-quality.ts';
@@ -702,8 +232,8 @@
       for (let i = -N; i <= N; i++) {
         const alpha = i === 0 ? 0.6 : 0.15;
         const width = i === 0 ? 2 : 1;
-        drawLine3(-N, 0, i, N, 0, i, `rgba(255,255,255,${alpha})`, width);
-        drawLine3(i, 0, -N, i, 0, N, `rgba(255,255,255,${alpha})`, width);
+        drawLine3(-N, 0, i, N, 0, i, \`rgba(255,255,255,\${alpha})\`, width);
+        drawLine3(i, 0, -N, i, 0, N, \`rgba(255,255,255,\${alpha})\`, width);
       }
       drawLine3(0, 0, 0, 0, 4, 0, 'rgba(255,255,255,0.4)', 2);
 
@@ -788,7 +318,7 @@
         const sp = project3(px, py, pz);
         if (sp) {
           ctx.fillStyle = 'rgba(226,232,240,0.8)'; ctx.font = '10px Inter,sans-serif';
-          ctx.fillText(`P(${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)})`, sp.sx + 11, sp.sy - 6);
+          ctx.fillText(\`P(\${px.toFixed(2)}, \${py.toFixed(2)}, \${pz.toFixed(2)})\`, sp.sx + 11, sp.sy - 6);
         }
       }
     }
@@ -921,7 +451,7 @@
       document.getElementById('coaching-prompt').style.color = promptCol;
       
       document.getElementById('quality-score').textContent = draftState.lastQualityScore.toFixed(2);
-      document.getElementById('score-bar').style.width = `${draftState.lastQualityScore * 100}%`;
+      document.getElementById('score-bar').style.width = \`\${draftState.lastQualityScore * 100}%\`;
       
       const btnConfirm = document.getElementById('btn-confirm');
       btnConfirm.disabled = !draftState.canConfirm;
@@ -947,9 +477,9 @@
         const rCol = R.rmsError < 0.05 ? 'var(--good)' : R.rmsError < 0.5 ? 'var(--warn)' : 'var(--bad)';
         const uCol = R.uncertainty < 1 ? 'var(--good)' : R.uncertainty < 2 ? 'var(--warn)' : 'var(--bad)';
         document.getElementById('rms').textContent = fmt(R.rmsError, 3) + ' m'; document.getElementById('rms').style.color = rCol;
-        document.getElementById('rms-bar').style.cssText = `width:${Math.min(100, R.rmsError * 100)}%;background:${rCol}`;
+        document.getElementById('rms-bar').style.cssText = \`width:\${Math.min(100, R.rmsError * 100)}%;background:\${rCol}\`;
         document.getElementById('unc').textContent = fmt(R.uncertainty, 2); document.getElementById('unc').style.color = uCol;
-        document.getElementById('unc-bar').style.cssText = `width:${Math.min(100, R.uncertainty * 20)}%;background:${uCol}`;
+        document.getElementById('unc-bar').style.cssText = \`width:\${Math.min(100, R.uncertainty * 20)}%;background:\${uCol}\`;
         
         const dot = document.getElementById('sdot'), txt = document.getElementById('status-text');
         
@@ -968,26 +498,26 @@
 
     function updateRayList() {
       const list = document.getElementById('ray-list');
-      document.getElementById('ray-count').textContent = `(${rays.length})`;
+      document.getElementById('ray-count').textContent = \`(\${rays.length})\`;
       if (!rays.length) {
         list.innerHTML = '<div class="empty-state">Click-drag on the canvas<br>to place rays.</div>';
         return;
       }
-      list.innerHTML = rays.map((r, i) => `
+      list.innerHTML = rays.map((r, i) => \`
     <div class="ray-item">
-      <div class="ray-swatch" style="background:${r.colour}"></div>
+      <div class="ray-swatch" style="background:\${r.colour}"></div>
       <div class="ray-info">
-        <strong>Ray ${i + 1}</strong><br>
-        o=(${fmt(r.origin.x)},${fmt(r.origin.y)},${fmt(r.origin.z)})<br>
-        d=(${fmt(r.dir.x, 2)},${fmt(r.dir.y, 2)},${fmt(r.dir.z, 2)})
+        <strong>Ray \${i + 1}</strong><br>
+        o=(\${fmt(r.origin.x)},\${fmt(r.origin.y)},\${fmt(r.origin.z)})<br>
+        d=(\${fmt(r.dir.x, 2)},\${fmt(r.dir.y, 2)},\${fmt(r.dir.z, 2)})
         <br>
-        <span style="color:${r.priorObs ? (r.priorObs.weight > 0 ? 'var(--good)' : 'var(--bad)') : 'var(--text)'}">
-          ${r.priorObs ? (r.priorObs.weight > 0 ? `Prior active (w=${r.priorObs.weight.toFixed(2)})` : `Edge rejected (w=0.0)`) : `w=${r.weight.toFixed(1)}`}
+        <span style="color:\${r.priorObs ? (r.priorObs.weight > 0 ? 'var(--good)' : 'var(--bad)') : 'var(--text)'}">
+          \${r.priorObs ? (r.priorObs.weight > 0 ? \`Prior active (w=\${r.priorObs.weight.toFixed(2)})\` : \`Edge rejected (w=0.0)\`) : \`w=\${r.weight.toFixed(1)}\`}
         </span>
       </div>
-      <div class="ray-del" onclick="deleteRay(${i})">×</div>
+      <div class="ray-del" onclick="deleteRay(\${i})">×</div>
     </div>
-  `).join('');
+  \`).join('');
     }
     window.deleteRay = i => { rays.splice(i, 1); solve('removeLastRay'); };
 
@@ -1055,6 +585,4 @@
     // ─── Init ─────────────────────────────────────────────────────────────────────
     resize();
     updateSidebar();
-  </script>
-</body>
-</html>
+  
