@@ -13,7 +13,7 @@ import { createDepthUnprojector } from 'gps-plus-slam-app-framework/ar/depth-unp
 /** Canonical center-screen coordinate for crosshair shoots. */
 export const CROSSHAIR_SCREEN = [0.5, 0.5] as const;
 
-export type OutOfBoundsPolicy = 'reject' | 'clamp';
+type OutOfBoundsPolicy = 'reject' | 'clamp';
 
 export interface AimingCoordinateOptions {
   /**
@@ -53,8 +53,7 @@ export function createTapRay(
   screenX: number,
   screenY: number
 ): MeasurementRay | null {
-  if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return null;
-  if (screenX < 0 || screenX > 1 || screenY < 0 || screenY > 1) return null;
+  if (!isValidScreenCoordinate(screenX, screenY)) return null;
 
   const matrix = normalizeProjectionMatrix(projectionMatrix);
   if (!matrix) return null;
@@ -147,4 +146,9 @@ function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
   return value;
+}
+
+function isValidScreenCoordinate(screenX: number, screenY: number): boolean {
+  if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return false;
+  return screenX >= 0 && screenX <= 1 && screenY >= 0 && screenY <= 1;
 }
