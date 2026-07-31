@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Interactive Robust Triangulation Demo</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0d0f14;
+        --surface: #161b24;
+        --border: #252d3d;
+        --accent: #4f8ef7;
+        --good: #34d399;
+        --warn: #fbbf24;
+        --bad: #f87171;
+        --text: #e2e8f0;
+        --muted: #64748b;
+      }
+
+      html,
+      body {
+        font-family: Inter, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      header h1 {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      header .subtitle {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      #banner {
+        padding: 6px 20px;
+        font-size: 12px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-bottom: 1px solid var(--border);
+        transition:
+          background 0.3s,
+          color 0.3s;
+        background: var(--bg);
+        color: var(--muted);
+      }
+
+      #banner.state-red {
+        background: rgb(248 113 113 / 10%);
+        color: var(--bad);
+        border-bottom-color: rgb(248 113 113 / 20%);
+      }
+
+      #banner.state-yellow {
+        background: rgb(251 191 36 / 10%);
+        color: var(--warn);
+        border-bottom-color: rgb(251 191 36 / 20%);
+      }
+
+      #banner.state-green {
+        background: rgb(52 211 153 / 10%);
+        color: var(--good);
+        border-bottom-color: rgb(52 211 153 / 20%);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 1fr 260px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* ─── 3D viewport ───────────────────────────────────────────── */
+      #viewport {
+        position: relative;
+        overflow: hidden;
+        background: #000;
+      }
+
+      #viewport canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Crosshair */
+      #crosshair {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 5;
+        display: none;
+      }
+
+      #crosshair::before,
+      #crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgb(255 255 255 / 70%);
+        border-radius: 1px;
+      }
+
+      #crosshair::before {
+        width: 2px;
+        height: 18px;
+        top: -9px;
+        left: -1px;
+      }
+
+      #crosshair::after {
+        height: 2px;
+        width: 18px;
+        left: -9px;
+        top: -1px;
+      }
+
+      /* Click-to-play overlay */
+      #blocker {
+        position: absolute;
+        inset: 0;
+        background: rgb(0 0 0 / 60%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        color: white;
+        z-index: 10;
+        cursor: pointer;
+        backdrop-filter: blur(4px);
+      }
+
+      #blocker h2 {
+        font-size: 22px;
+        margin-bottom: 8px;
+      }
+
+      #blocker p {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      /* Minimap border */
+      #minimap-border {
+        position: absolute;
+        bottom: 16px;
+        right: 16px;
+        width: 220px;
+        height: 220px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        pointer-events: none;
+        z-index: 4;
+        background: rgb(13 15 20 / 40%);
+        overflow: hidden;
+      }
+
+      #minimap-label {
+        position: absolute;
+        top: 4px;
+        left: 8px;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      /* ─── Side panel ────────────────────────────────────────────── */
+      aside {
+        border-left: 1px solid var(--border);
+        background: var(--surface);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .section {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .section-title {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .metric {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .metric.full {
+        grid-column: span 2;
+      }
+
+      .metric-label {
+        font-size: 10px;
+        color: var(--muted);
+      }
+
+      .metric-value {
+        font-size: 16px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+      }
+
+      .controls {
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .hint strong.good {
+        color: var(--good);
+      }
+
+      .hint strong.bad {
+        color: var(--bad);
+      }
+
+      button.danger {
+        background: transparent;
+        color: var(--bad);
+        border: 1px solid var(--border);
+        padding: 7px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      button.danger:hover {
+        background: rgb(248 113 113 / 10%);
+        border-color: var(--bad);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Robust Triangulation 3D</h1>
+      <span class="subtitle"
+        >FPS Controller · Interactive Raycasting · MSAC Fusion</span
+      >
+    </header>
+
+    <div id="banner" class="state-red">
+      <span id="banner-icon">🔴</span>
+      <span id="banner-text"
+        >Shoot rays at the target to begin triangulation</span
+      >
+    </div>
+
+    <main>
+      <div id="viewport">
+        <div id="crosshair"></div>
+        <div id="blocker">
+          <h2>▶ Click to Play</h2>
+          <p>WASD to move · Mouse to look · Click to shoot a ray</p>
+        </div>
+        <div id="minimap-border"></div>
+        <span id="minimap-label">TOP-DOWN</span>
+      </div>
+
+      <aside>
+        <div class="section">
+          <div class="section-title">How to Use</div>
+          <p class="hint">
+            Walk around the
+            <strong class="good">green octahedron</strong> and click to shoot
+            rays at it. The solver estimates the target position from your
+            observations. <br /><br />
+            Shoot the walls or floor to inject
+            <strong class="bad">outliers</strong> — MSAC will reject them
+            automatically.
+          </p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Solver Output</div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span class="metric-label">Rays</span>
+              <span class="metric-value" id="ray-count">0</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Inliers / Outliers</span>
+              <span class="metric-value"
+                ><span id="inliers" style="color: var(--good)">0</span>
+                /
+                <span id="outliers" style="color: var(--bad)">0</span></span
+              >
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric full">
+              <span class="metric-label">MSAC Score</span>
+              <span class="metric-value" id="score">—</span>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span class="metric-label">RMS Error</span>
+              <span class="metric-value" id="rms">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Uncertainty</span>
+              <span class="metric-value" id="unc">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Estimated Position</div>
+          <div class="metric-grid">
+            <div class="metric">
+              <span class="metric-label">X</span>
+              <span class="metric-value" id="est-x">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Y</span>
+              <span class="metric-value" id="est-y">—</span>
+            </div>
+            <div class="metric full">
+              <span class="metric-label">Z</span>
+              <span class="metric-value" id="est-z">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="danger" id="clear-btn">✕ Clear All Rays</button>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module">
+      // ─── Imports ─────────────────────────────────────────────────────────────
+      // Three.js is a project dependency resolved by Vite from node_modules.
+      import * as THREE from 'three';
+      import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+      import { solveRobustTriangulation } from './src/utils/robust-triangulation.ts';
+
+      // ─── State ──────────────────────────────────────────────────────────────
+      const activeObs = []; // MeasurementRayObservation[]
+      const rayVisuals = []; // THREE.Group[] (line + hit dot)
+      let obsIdCounter = 0;
+      let result = null;
+
+      // Movement flags
+      let moveF = false,
+        moveB = false,
+        moveL = false,
+        moveR = false;
+      let prevTime = performance.now();
+      const velocity = new THREE.Vector3();
+      const direction = new THREE.Vector3();
+
+      // ─── Setup ──────────────────────────────────────────────────────────────
+      const viewport = document.getElementById('viewport');
+      const blocker = document.getElementById('blocker');
+      const crosshair = document.getElementById('crosshair');
+
+      // Renderer
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+      renderer.autoClear = false;
+      viewport.insertBefore(renderer.domElement, viewport.firstChild);
+
+      // Scene
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a2035);
+      scene.fog = new THREE.Fog(0x1a2035, 15, 55);
+
+      // Main camera (FPS)
+      const camera = new THREE.PerspectiveCamera(
+        70,
+        viewport.clientWidth / viewport.clientHeight,
+        0.1,
+        100
+      );
+      camera.position.set(0, 1.6, 8);
+
+      // Minimap camera (top-down orthographic)
+      const mapD = 14;
+      const minimapCam = new THREE.OrthographicCamera(
+        -mapD,
+        mapD,
+        mapD,
+        -mapD,
+        0.1,
+        100
+      );
+      minimapCam.position.set(0, 30, 0);
+      minimapCam.lookAt(0, 0, 0);
+
+      // ─── Lights ─────────────────────────────────────────────────────────────
+      scene.add(new THREE.HemisphereLight(0xeeeeff, 0x555566, 1.0));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+      sun.position.set(8, 12, 6);
+      scene.add(sun);
+
+      // ─── Environment ────────────────────────────────────────────────────────
+      const collidable = []; // objects the raycaster can hit
+
+      // Environment boundaries (the room)
+      // The box uses BackSide so we are inside it. The bottom face acts as our floor.
+
+      // Room walls (inside of a big box)
+      const roomBox = new THREE.Mesh(
+        new THREE.BoxGeometry(60, 12, 60),
+        new THREE.MeshLambertMaterial({ color: 0x222838, side: THREE.BackSide })
+      );
+      roomBox.position.y = 6;
+      roomBox.name = 'wall';
+      scene.add(roomBox);
+      collidable.push(roomBox);
+
+      // Scatter some furniture-like boxes
+      const furnitureGeo = new THREE.BoxGeometry(1, 1, 1);
+      const furnitureMat = new THREE.MeshLambertMaterial({ color: 0x445566 });
+      const rng = mulberry32(12345);
+      for (let i = 0; i < 30; i++) {
+        const sx = 0.5 + rng() * 2;
+        const sy = 0.5 + rng() * 2;
+        const sz = 0.5 + rng() * 2;
+        const m = new THREE.Mesh(furnitureGeo, furnitureMat);
+        m.scale.set(sx, sy, sz);
+        const px = (rng() - 0.5) * 40;
+        const pz = (rng() - 0.5) * 40;
+        // Keep away from origin where the target sits
+        if (Math.abs(px) < 3 && Math.abs(pz) < 3) continue;
+        m.position.set(px, sy / 2, pz);
+        m.rotation.y = rng() * Math.PI;
+        m.name = 'furniture';
+        scene.add(m);
+        collidable.push(m);
+      }
+
+      // ─── Target (the thing to triangulate) ──────────────────────────────────
+      const TARGET_POS = new THREE.Vector3(0, 1.5, 0);
+      const targetGeo = new THREE.OctahedronGeometry(0.45);
+      const targetMat = new THREE.MeshBasicMaterial({
+        color: 0x34d399,
+        wireframe: true,
+      });
+      const targetMesh = new THREE.Mesh(targetGeo, targetMat);
+      targetMesh.position.copy(TARGET_POS);
+      targetMesh.name = 'target';
+      scene.add(targetMesh);
+      collidable.push(targetMesh);
+
+      // Solid core for visual weight
+      const targetCore = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.25),
+        new THREE.MeshBasicMaterial({
+          color: 0x34d399,
+          transparent: true,
+          opacity: 0.35,
+        })
+      );
+      targetMesh.add(targetCore);
+
+      // Point light on target
+      const targetLight = new THREE.PointLight(0x34d399, 2, 6);
+      targetLight.position.copy(TARGET_POS);
+      scene.add(targetLight);
+
+      // ─── Estimated-point marker ─────────────────────────────────────────────
+      const estimatedMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      estimatedMesh.visible = false;
+      scene.add(estimatedMesh);
+
+      // ─── Player marker (visible in minimap) ─────────────────────────────────
+      const playerMarker = new THREE.Mesh(
+        new THREE.ConeGeometry(0.4, 0.8, 4),
+        new THREE.MeshBasicMaterial({ color: 0x4f8ef7 })
+      );
+      playerMarker.rotation.x = -Math.PI / 2;
+      scene.add(playerMarker);
+
+      // ─── PointerLock controls ───────────────────────────────────────────────
+      const controls = new PointerLockControls(camera, renderer.domElement);
+      scene.add(controls.object);
+
+      blocker.addEventListener('click', () => controls.lock());
+      controls.addEventListener('lock', () => {
+        blocker.style.display = 'none';
+        crosshair.style.display = 'block';
+      });
+      controls.addEventListener('unlock', () => {
+        blocker.style.display = 'flex';
+        crosshair.style.display = 'none';
+      });
+
+      // Keyboard
+      document.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') moveF = true;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') moveB = true;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveL = true;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') moveR = true;
+      });
+      document.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') moveF = false;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') moveB = false;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveL = false;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') moveR = false;
+      });
+
+      // ─── Shooting ───────────────────────────────────────────────────────────
+      renderer.domElement.addEventListener('click', () => {
+        if (!controls.isLocked) return;
+        shootRay();
+      });
+
+      function shootRay() {
+        // Cast from camera center
+        const rc = new THREE.Raycaster();
+        rc.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+        const hits = rc.intersectObjects(collidable, false);
+
+        const origin = rc.ray.origin.clone();
+        const dir = rc.ray.direction.clone().normalize();
+
+        let hitPoint = null;
+        let hitDist = 25;
+        if (hits.length > 0) {
+          hitPoint = hits[0].point.clone();
+          hitDist = hits[0].distance;
+        }
+
+        // Build a proper MeasurementRayObservation
+        const obs = {
+          id: 'ray_' + obsIdCounter++,
+          timestamp: Date.now(),
+          rayOrigin: [origin.x, origin.y, origin.z],
+          rayDirection: [dir.x, dir.y, dir.z],
+          rayWeight: 1.0,
+        };
+        if (hitPoint) {
+          obs.depthPoint = [hitPoint.x, hitPoint.y, hitPoint.z];
+          obs.depthWeight = 1.0;
+        }
+        activeObs.push(obs);
+
+        // ─── Visual: ray line + hit dot ─────────────────
+        const group = new THREE.Group();
+        group.userData.obsId = obs.id;
+
+        const endPt = origin.clone().add(dir.clone().multiplyScalar(hitDist));
+
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0x4f8ef7,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+          origin,
+          endPt,
+        ]);
+        group.add(new THREE.Line(lineGeo, lineMat));
+
+        // Origin dot
+        const originDot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.06, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0x4f8ef7 })
+        );
+        originDot.position.copy(origin);
+        group.add(originDot);
+
+        // Hit dot (depth prior)
+        if (hitPoint) {
+          const hitDot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.07, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0x34d399 })
+          );
+          hitDot.position.copy(hitPoint);
+          group.add(hitDot);
+        }
+
+        scene.add(group);
+        rayVisuals.push(group);
+
+        solveAndUpdate();
+      }
+
+      // ─── Solve ──────────────────────────────────────────────────────────────
+      function solveAndUpdate() {
+        if (activeObs.length === 0) {
+          result = null;
+          updateUI();
+          return;
+        }
+
+        result = solveRobustTriangulation(activeObs, {
+          seed: 42,
+          baseDistanceThreshold: 0.5,
+          angularThresholdRadians: 0.01,
+          iterations: 150,
+        });
+
+        // Update estimated point
+        if (result) {
+          estimatedMesh.visible = true;
+          estimatedMesh.position.set(
+            result.point[0],
+            result.point[1],
+            result.point[2]
+          );
+          estimatedMesh.material.color.setHex(
+            result.hasSufficientBaseline ? 0x34d399 : 0xfbbf24
+          );
+
+          // Color rays based on inlier/outlier status
+          for (const g of rayVisuals) {
+            const id = g.userData.obsId;
+            const isOutlier = result.outlierIds.includes(id);
+            g.traverse((child) => {
+              if (child.material && child.material.isLineBasicMaterial) {
+                child.material.color.setHex(isOutlier ? 0xf87171 : 0x4f8ef7);
+                child.material.opacity = isOutlier ? 0.25 : 0.8;
+              }
+            });
+          }
+        } else {
+          estimatedMesh.visible = false;
+        }
+
+        updateUI();
+      }
+
+      // ─── UI Update ──────────────────────────────────────────────────────────
+      function updateUI() {
+        const banner = document.getElementById('banner');
+        const bIcon = document.getElementById('banner-icon');
+        const bText = document.getElementById('banner-text');
+        const f = (v) => (typeof v === 'number' ? v.toFixed(3) : '—');
+
+        document.getElementById('ray-count').textContent = activeObs.length;
+
+        if (!result) {
+          document.getElementById('inliers').textContent = '0';
+          document.getElementById('outliers').textContent = '0';
+          document.getElementById('score').textContent = '—';
+          document.getElementById('rms').textContent = '—';
+          document.getElementById('unc').textContent = '—';
+          document.getElementById('est-x').textContent = '—';
+          document.getElementById('est-y').textContent = '—';
+          document.getElementById('est-z').textContent = '—';
+          banner.className = 'state-red';
+          bIcon.textContent = '🔴';
+          bText.textContent = 'Shoot rays at the target to begin triangulation';
+          return;
+        }
+
+        document.getElementById('inliers').textContent =
+          result.inlierIds.length;
+        document.getElementById('outliers').textContent =
+          result.outlierIds.length;
+        document.getElementById('score').textContent = f(result.msacScore);
+        document.getElementById('rms').textContent = f(result.rmsError) + ' m';
+        document.getElementById('unc').textContent = f(result.uncertainty);
+        document.getElementById('est-x').textContent = f(result.point[0]);
+        document.getElementById('est-y').textContent = f(result.point[1]);
+        document.getElementById('est-z').textContent = f(result.point[2]);
+
+        if (result.hasSufficientBaseline) {
+          banner.className = 'state-green';
+          bIcon.textContent = '🟢';
+          bText.textContent =
+            'Robust Solution — Good geometric baseline established';
+        } else if (
+          result.inlierIds.some(
+            (id) => activeObs.find((o) => o.id === id)?.depthPoint
+          )
+        ) {
+          banner.className = 'state-yellow';
+          bIcon.textContent = '🟡';
+          bText.textContent =
+            'Warning — Insufficient baseline; relying on depth priors';
+        } else {
+          banner.className = 'state-red';
+          bIcon.textContent = '🔴';
+          bText.textContent =
+            'Danger — Insufficient baseline and no depth priors';
+        }
+      }
+
+      // ─── Clear button ───────────────────────────────────────────────────────
+      document.getElementById('clear-btn').addEventListener('click', () => {
+        activeObs.length = 0;
+        for (const g of rayVisuals) scene.remove(g);
+        rayVisuals.length = 0;
+        result = null;
+        estimatedMesh.visible = false;
+        updateUI();
+      });
+
+      // ─── Resize ─────────────────────────────────────────────────────────────
+      function onResize() {
+        const w = viewport.clientWidth;
+        const h = viewport.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+      window.addEventListener('resize', onResize);
+
+      // ─── Deterministic RNG for furniture placement ──────────────────────────
+      function mulberry32(a) {
+        return function () {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // ─── Animate ────────────────────────────────────────────────────────────
+      function animate() {
+        requestAnimationFrame(animate);
+
+        const now = performance.now();
+        const dt = Math.min((now - prevTime) / 1000, 0.1); // clamp dt to avoid huge jumps
+        prevTime = now;
+
+        // Player movement
+        if (controls.isLocked) {
+          velocity.x -= velocity.x * 10 * dt;
+          velocity.z -= velocity.z * 10 * dt;
+
+          direction.z = Number(moveF) - Number(moveB);
+          direction.x = Number(moveR) - Number(moveL);
+          direction.normalize();
+
+          const speed = 20;
+          if (moveF || moveB) velocity.z -= direction.z * speed * dt;
+          if (moveL || moveR) velocity.x -= direction.x * speed * dt;
+
+          controls.moveRight(-velocity.x * dt);
+          controls.moveForward(-velocity.z * dt);
+
+          // Lock Y height
+          camera.position.y = 1.6;
+        }
+
+        // Target spin
+        targetMesh.rotation.y += 0.008;
+        targetMesh.rotation.x += 0.004;
+
+        // Update player marker for minimap
+        playerMarker.position.set(camera.position.x, 0.5, camera.position.z);
+        // Rotate the cone to face the camera look direction projected on XZ
+        const lookDir = new THREE.Vector3();
+        camera.getWorldDirection(lookDir);
+        playerMarker.rotation.z = Math.atan2(lookDir.x, lookDir.z);
+
+        // ─── Render main view ────────────────────────────
+        // Use logical CSS pixels for setViewport/setScissor; the WebGLRenderer
+        // automatically handles the devicePixelRatio multiplication internally.
+        const logicalW = viewport.clientWidth;
+        const logicalH = viewport.clientHeight;
+
+        renderer.clear();
+        renderer.setViewport(0, 0, logicalW, logicalH);
+        renderer.setScissorTest(false);
+        renderer.render(scene, camera);
+
+        // ─── Render minimap (bottom-right corner) ────────
+        // Use logical pixels here as well
+        const mapPx = 220;
+        const pad = 16;
+        const mx = logicalW - mapPx - pad;
+        const my = pad; // WebGL y=0 is bottom
+
+        renderer.setViewport(mx, my, mapPx, mapPx);
+        renderer.setScissor(mx, my, mapPx, mapPx);
+        renderer.setScissorTest(true);
+        renderer.clearDepth();
+        renderer.render(scene, minimapCam);
+        renderer.setScissorTest(false);
+      }
+
+      animate();
+    </script>
+  </body>
+</html>
