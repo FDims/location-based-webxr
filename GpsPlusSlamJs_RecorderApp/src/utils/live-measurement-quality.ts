@@ -23,7 +23,7 @@ export type CoachingPrompt =
   | 'reaim_target'
   | 'ready_to_confirm';
 
-export type DraftStatus =
+type DraftStatus =
   | 'idle'
   | 'provisional'
   | 'refining'

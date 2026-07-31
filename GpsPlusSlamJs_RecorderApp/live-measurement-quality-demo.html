@@ -285,14 +285,14 @@
       transition: border-color .15s, background .15s, opacity .15s;
     }
 
-    .btn:hover:not(:disabled) {
-      border-color: var(--accent);
-      background: rgb(79 142 247 / 8%);
-    }
-
     .btn:disabled {
       opacity: .35;
       cursor: not-allowed;
+    }
+
+    .btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: rgb(79 142 247 / 8%);
     }
 
     .btn.primary {
@@ -436,7 +436,7 @@
         </div>
         <div class="metric">
           <div class="metric-label">Reasons (diagnostics)</div>
-          <div id="reasons" style="font-size:10px;color:var(--muted);line-height:1.6;word-break:break-word">—</div>
+          <div id="reasons" style="font-size:10px;color:var(--muted);line-height:1.6;overflow-wrap:break-word">—</div>
         </div>
       </div>
 
