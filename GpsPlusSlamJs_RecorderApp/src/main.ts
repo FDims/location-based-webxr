@@ -207,7 +207,7 @@ import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
 import { createMeasurementPointHandlers } from './measurement-points/measurement-point-handlers';
 import * as MeasurementPointViews from './view/measurement-point-view';
-import { loadAllMeasurementPoints } from './storage/measurement-point-loader';
+import { createMeasurementUI, type MeasurementUIInstance } from './ui/measurement-ui';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   loadRecordingOptions,
@@ -393,21 +393,23 @@ const refPointHandlers = createRefPointHandlers({
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
 });
 
-// TODO: (MEASUREMENT POINTS) - Temporary wiring to pass Knip deadcode checks.
-// Remove these window attachments when building the final measurement point UI components.
+// Measurement Point handlers — wired with replay guard (FIX 2)
 const measurementPointHandlers = createMeasurementPointHandlers({
   getStore: () => store,
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
   showError,
   showToast,
+  isReplayMode: () => replayHandlers.getIsReplayMode(),
 });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
 (window as any).__measurementPointHandlers = measurementPointHandlers;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
 (window as any).__measurementPointViews = MeasurementPointViews;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-(window as any).__loadAllMeasurementPoints = loadAllMeasurementPoints;
+
+// Measurement UI — created lazily when the AR session starts (Phase 4).
+// Disposed on session end / store swap.
+let measurementUI: MeasurementUIInstance | null = null;
 
 // Folder manager — encapsulates folder selection, save location, scenario management
 // (Finding #7 decomposition Step 4: extracted from main.ts to storage/folder-manager.ts)
@@ -820,6 +822,9 @@ export function resetMainState(): void {
   destroyConfirmDialog();
   folderManager.reset();
   replayHandlers.reset();
+  // Phase 4: Dispose measurement UI on session cleanup
+  measurementUI?.dispose();
+  measurementUI = null;
   setFolderSelected(false);
   setSaveLocationSelected(false);
 }
@@ -1765,6 +1770,19 @@ async function handleEnterAR(): Promise<void> {
 
     // Issue 7 Phase 2: Push AR screen state for back-button navigation
     pushScreenState('ar');
+
+    // Phase 4: Mount measurement point UI into the #app dom-overlay.
+    // Created lazily alongside other AR UI; disposed on session cleanup.
+    if (appContainer) {
+      measurementUI?.dispose();
+      measurementUI = createMeasurementUI({
+        container: appContainer,
+        arCanvas: appContainer,
+        handlers: measurementPointHandlers,
+        store,
+        getScenarioId: () => folderManager.getCurrentScenarioName(),
+      });
+    }
   } catch (err) {
     log.error('AR init failed:', err);
     // Field Test Readiness Issue #4: Provide specific error messages

@@ -21,13 +21,29 @@ import {
   selectProvisionalMeasurement,
   selectPendingRays,
   selectConfirmedMeasurementPoints,
+  DEFAULT_QUALITY_THRESHOLDS,
   type MeasurementPointsState,
 } from './measurement-points-slice';
 import type {
   MeasurementRayRecord,
   MeasurementPointEntity,
 } from '../storage/measurement-point-loader';
+import type { CombinedRootState } from './recorder-store';
 import type { Vector3 } from 'gps-plus-slam-app-framework/core';
+
+/** Wrap MeasurementPointsState as a CombinedRootState for selector calls (FIX 4). */
+function asRootState(mpState: MeasurementPointsState): CombinedRootState {
+  return { measurementPoints: mpState } as unknown as CombinedRootState;
+}
+
+const INITIAL_DRAFT = {
+  status: 'idle' as const,
+  prompt: 'none' as const,
+  canConfirm: false,
+  lastQualityScore: 0,
+  thresholdProfileId: DEFAULT_QUALITY_THRESHOLDS.thresholdProfileId,
+  thresholdVersion: DEFAULT_QUALITY_THRESHOLDS.thresholdVersion,
+};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -70,6 +86,7 @@ function makeEntity(id: string): MeasurementPointEntity {
 const initialState: MeasurementPointsState = {
   pendingRays: [],
   confirmed: [],
+  draft: INITIAL_DRAFT,
 };
 
 // ---------------------------------------------------------------------------
@@ -121,6 +138,7 @@ describe('measurementPointsReducer', () => {
       const withRays: MeasurementPointsState = {
         pendingRays: [makeRay('ray-1'), makeRay('ray-2')],
         confirmed: [],
+        draft: INITIAL_DRAFT,
       };
       const entity = makeEntity('mp-1');
       const state = measurementPointsReducer(
@@ -138,6 +156,7 @@ describe('measurementPointsReducer', () => {
       const withConfirmed: MeasurementPointsState = {
         pendingRays: [],
         confirmed: [makeEntity('mp-1'), makeEntity('mp-2')],
+        draft: INITIAL_DRAFT,
       };
       const state = measurementPointsReducer(
         withConfirmed,
@@ -151,6 +170,7 @@ describe('measurementPointsReducer', () => {
       const withConfirmed: MeasurementPointsState = {
         pendingRays: [],
         confirmed: [makeEntity('mp-1')],
+        draft: INITIAL_DRAFT,
       };
       const state = measurementPointsReducer(
         withConfirmed,
@@ -165,6 +185,7 @@ describe('measurementPointsReducer', () => {
       const withRays: MeasurementPointsState = {
         pendingRays: [makeRay('ray-1'), makeRay('ray-2')],
         confirmed: [],
+        draft: INITIAL_DRAFT,
       };
       const state = measurementPointsReducer(withRays, undoMeasurementRay());
       expect(state.pendingRays).toHaveLength(1);
@@ -185,6 +206,7 @@ describe('measurementPointsReducer', () => {
       const withData: MeasurementPointsState = {
         pendingRays: [makeRay('ray-1')],
         confirmed: [makeEntity('mp-1')],
+        draft: INITIAL_DRAFT,
       };
       const state = measurementPointsReducer(
         withData,
@@ -202,8 +224,9 @@ describe('measurementPointsReducer', () => {
 
 describe('selectPendingRays', () => {
   it('returns stable empty sentinel for empty state', () => {
-    const result1 = selectPendingRays(initialState);
-    const result2 = selectPendingRays(initialState);
+    const root = asRootState(initialState);
+    const result1 = selectPendingRays(root);
+    const result2 = selectPendingRays(root);
     expect(result1).toBe(result2); // Same reference
     expect(result1).toHaveLength(0);
   });
@@ -212,16 +235,18 @@ describe('selectPendingRays', () => {
     const state: MeasurementPointsState = {
       pendingRays: [makeRay('ray-1')],
       confirmed: [],
+      draft: INITIAL_DRAFT,
     };
-    const result = selectPendingRays(state);
+    const result = selectPendingRays(asRootState(state));
     expect(result).toHaveLength(1);
   });
 });
 
 describe('selectConfirmedMeasurementPoints', () => {
   it('returns stable empty sentinel for empty state', () => {
-    const result1 = selectConfirmedMeasurementPoints(initialState);
-    const result2 = selectConfirmedMeasurementPoints(initialState);
+    const root = asRootState(initialState);
+    const result1 = selectConfirmedMeasurementPoints(root);
+    const result2 = selectConfirmedMeasurementPoints(root);
     expect(result1).toBe(result2);
     expect(result1).toHaveLength(0);
   });
@@ -229,7 +254,7 @@ describe('selectConfirmedMeasurementPoints', () => {
 
 describe('selectProvisionalMeasurement', () => {
   it('returns null for empty pending rays', () => {
-    const result = selectProvisionalMeasurement(initialState);
+    const result = selectProvisionalMeasurement(asRootState(initialState));
     expect(result).toBeNull();
   });
 
@@ -245,8 +270,9 @@ describe('selectProvisionalMeasurement', () => {
         },
       ],
       confirmed: [],
+      draft: INITIAL_DRAFT,
     };
-    const result = selectProvisionalMeasurement(state);
+    const result = selectProvisionalMeasurement(asRootState(state));
     // With two rays, the solver should find a point.
     // The exact result depends on the solver, but it should not be null.
     expect(result).not.toBeNull();
@@ -259,8 +285,9 @@ describe('selectProvisionalMeasurement', () => {
     const state: MeasurementPointsState = {
       pendingRays: [makeRay('ray-1')],
       confirmed: [],
+      draft: INITIAL_DRAFT,
     };
-    const result = selectProvisionalMeasurement(state);
+    const result = selectProvisionalMeasurement(asRootState(state));
     // Single ray without depth → solver returns null
     expect(result).toBeNull();
   });
@@ -275,8 +302,9 @@ describe('selectProvisionalMeasurement', () => {
         },
       ],
       confirmed: [],
+      draft: INITIAL_DRAFT,
     };
-    const result = selectProvisionalMeasurement(state);
+    const result = selectProvisionalMeasurement(asRootState(state));
     expect(result).not.toBeNull();
     expect(result!.hasSufficientBaseline).toBe(false);
   });

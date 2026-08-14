@@ -9,6 +9,9 @@
  * position is NEVER read from the stored gpsPositionSnapshot — it is
  * always recomputed live so the gap reacts as the alignment matrix updates.
  *
+ * FIX 3: GPS dot is hidden when gpsPositionSnapshot === null AND no live
+ *         alignment matrix is available (no ghost dot at world origin).
+ *
  * All functions have cyclomatic complexity ≤ 10.
  */
 
@@ -34,14 +37,14 @@ const PROVISIONAL_DOT_COLOR = 0xffff00; // Yellow — provisional
  * Convert an AR-local position to GPS-world coordinates
  * using the current alignment matrix (column-major 4×4).
  *
- * Returns [0, 0, 0] if the alignment matrix is null/undefined
- * (fallback for when no SLAM session is active).
+ * Returns null if the alignment matrix is null/undefined
+ * (no SLAM session is active).
  */
 function arLocalToGpsWorld(
   arPosition: Vector3,
   alignmentMatrix: Matrix4 | null | undefined
-): Vector3 {
-  if (!alignmentMatrix) return [0, 0, 0];
+): Vector3 | null {
+  if (!alignmentMatrix) return null;
   const m = alignmentMatrix;
   const [x, y, z] = arPosition;
   return [
@@ -132,6 +135,9 @@ export function updateArDotPosition(
 /**
  * Recompute and update the GPS-world dot position from
  * arPosition × alignmentMatrix. This is what makes the gap react live.
+ *
+ * FIX 3: When no alignment matrix is available, the GPS dot is hidden
+ * instead of rendering at [0,0,0]. Only the AR-local dot shows.
  * @public
  */
 export function updateGpsDotPosition(
@@ -140,7 +146,13 @@ export function updateGpsDotPosition(
   alignmentMatrix: Matrix4 | null | undefined
 ): void {
   const gpsPos = arLocalToGpsWorld(arPosition, alignmentMatrix);
-  gpsDot.position.set(gpsPos[0], gpsPos[1], gpsPos[2]);
+  if (gpsPos) {
+    gpsDot.position.set(gpsPos[0], gpsPos[1], gpsPos[2]);
+    gpsDot.visible = true;
+  } else {
+    // No alignment matrix — hide GPS dot to prevent ghost at origin
+    gpsDot.visible = false;
+  }
 }
 
 /**
@@ -153,8 +165,9 @@ export function updateConnectionLinePositions(
     setFromPoints(points: { x: number; y: number; z: number }[]): void;
   },
   arPosition: Vector3,
-  gpsPosition: Vector3
+  gpsPosition: Vector3 | null
 ): void {
+  if (!gpsPosition) return; // No GPS position — no connection line
   lineGeometry.setFromPoints([
     { x: arPosition[0], y: arPosition[1], z: arPosition[2] },
     { x: gpsPosition[0], y: gpsPosition[1], z: gpsPosition[2] },
@@ -179,4 +192,39 @@ export function updateMeasurementPointVisual(
   updateGpsDotPosition(gpsDot, entity.arPosition, alignmentMatrix);
   const gpsPos = arLocalToGpsWorld(entity.arPosition, alignmentMatrix);
   updateConnectionLinePositions(lineGeometry, entity.arPosition, gpsPos);
+}
+
+// ---------------------------------------------------------------------------
+// Provisional sphere helpers (Phase 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Update a provisional (pre-confirm) sphere's position and appearance.
+ * Opacity and size scale inversely with uncertainty — a tighter estimate
+ * produces a more solid, larger sphere.
+ * @public
+ */
+export function updateProvisionalSphere(
+  mesh: ThreeMesh,
+  provisionalPoint: { x: number; y: number; z: number } | undefined,
+  uncertainty: number | undefined,
+  maxUncertaintyHard: number
+): void {
+  if (!provisionalPoint) {
+    mesh.visible = false;
+    return;
+  }
+
+  mesh.visible = true;
+  mesh.position.set(provisionalPoint.x, provisionalPoint.y, provisionalPoint.z);
+
+  // Scale opacity by confidence (inverse uncertainty)
+  const unc = uncertainty ?? maxUncertaintyHard;
+  const confidence = 1 - Math.min(1, unc / maxUncertaintyHard);
+  if (mesh.material.transparent !== undefined) {
+    mesh.material.transparent = true;
+  }
+  if (mesh.material.opacity !== undefined) {
+    mesh.material.opacity = 0.3 + 0.7 * confidence;
+  }
 }
