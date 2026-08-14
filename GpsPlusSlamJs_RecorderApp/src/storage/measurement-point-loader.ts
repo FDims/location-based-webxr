@@ -64,8 +64,9 @@ export interface MeasurementPointEntity {
    * Snapshot of GPS-world position at confirm time (via alignment matrix).
    * Used for cross-session recovery only.
    * The LIVE visualization recomputes from arPosition × currentAlignmentMatrix.
+   * Null when no alignment matrix was available at confirm time.
    */
-  readonly gpsPositionSnapshot: Vector3;
+  readonly gpsPositionSnapshot: Vector3 | null;
 
   readonly uncertainty: number;
   readonly rmsError: number;
@@ -146,7 +147,9 @@ export function isMeasurementPointEntity(
   const v = value as Record<string, unknown>;
 
   if (!hasValidEntityScalars(v) || !hasValidEntityArrays(v)) return false;
-  if (!isVector3(v.arPosition) || !isVector3(v.gpsPositionSnapshot))
+  if (!isVector3(v.arPosition)) return false;
+  // gpsPositionSnapshot is nullable (null when no alignment matrix at confirm time)
+  if (v.gpsPositionSnapshot !== null && !isVector3(v.gpsPositionSnapshot))
     return false;
 
   return (v.observations as unknown[]).every(isValidRayRecord);
