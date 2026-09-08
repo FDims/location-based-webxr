@@ -57,7 +57,7 @@ export const DEFAULT_QUALITY_THRESHOLDS: QualityThresholds = {
   thresholdProfileId: 'default-v1',
   thresholdVersion: 1,
   minInliers: 2,
-  minBaselineM: 5,
+  minBaselineM: 0.5,
   targetUncertainty: 0.05,
   maxUncertaintyHard: 0.2,
   maxRmsError: 0.1,

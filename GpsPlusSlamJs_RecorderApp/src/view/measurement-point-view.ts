@@ -28,6 +28,8 @@ const LINE_COLOR = 0xffffff;
 const DOT_RADIUS = 0.05;
 const LINE_WIDTH = 2;
 const PROVISIONAL_DOT_COLOR = 0xffff00; // Yellow — provisional
+const RAY_LINE_COLOR = 0x00ccff; // Cyan — observation ray
+const RAY_LINE_LENGTH = 10; // How far to draw the ray into the scene (meters)
 
 // ---------------------------------------------------------------------------
 // Coordinate conversion
@@ -227,4 +229,45 @@ export function updateProvisionalSphere(
   if (mesh.material.opacity !== undefined) {
     mesh.material.opacity = 0.3 + 0.7 * confidence;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pending-ray line visualization (Task 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Visual parameters for observation ray lines.
+ * @public
+ */
+export function getRayVisualParams(): {
+  color: number;
+  lineLength: number;
+  lineWidth: number;
+} {
+  return {
+    color: RAY_LINE_COLOR,
+    lineLength: RAY_LINE_LENGTH,
+    lineWidth: 1,
+  };
+}
+
+/**
+ * Build the two 3D endpoints for a ray line to be drawn in the AR scene.
+ * Returns an array of two `{x, y, z}` objects: [origin, endPoint].
+ * @public
+ */
+export function buildRayLinePoints(
+  rayOrigin: Vector3,
+  rayDirection: Vector3,
+  length?: number
+): [{ x: number; y: number; z: number }, { x: number; y: number; z: number }] {
+  const l = length ?? RAY_LINE_LENGTH;
+  return [
+    { x: rayOrigin[0], y: rayOrigin[1], z: rayOrigin[2] },
+    {
+      x: rayOrigin[0] + rayDirection[0] * l,
+      y: rayOrigin[1] + rayDirection[1] * l,
+      z: rayOrigin[2] + rayDirection[2] * l,
+    },
+  ];
 }
