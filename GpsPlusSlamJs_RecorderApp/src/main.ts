@@ -212,9 +212,11 @@ import {
   type MeasurementUIInstance,
 } from './ui/measurement-ui';
 import {
+  DEFAULT_QUALITY_THRESHOLDS,
   selectMeasurementDraft,
   selectProvisionalMeasurement,
 } from './state/measurement-points-slice';
+import type { MeasurementRayRecord } from './storage/measurement-point-loader';
 import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
@@ -436,9 +438,16 @@ async function integratedMarkRefPoint(options?: {
   const draft = selectMeasurementDraft(state);
   const provisional = selectProvisionalMeasurement(state);
 
-  // If there is a ready measurement with a solved point, use it
-  if (draft.canConfirm && provisional?.point) {
+  // A solved point can be saved even when quality is below the recommended
+  // threshold; the UI labels this action "Save anyway" and shows the warning.
+  if (provisional?.point && state.measurementPoints.pendingRays.length >= 2) {
     const overridePosition: Vector3 = provisional.point;
+    if (!draft.canConfirm) {
+      log.warn(
+        'Integrated mark: saving a low-quality triangulated measurement',
+        draft.lastQualityScore
+      );
+    }
     log.info(
       `Integrated mark: using triangulated point [${overridePosition.map((v: number) => v.toFixed(2)).join(', ')}]`
     );
@@ -882,7 +891,7 @@ export function resetMainState(): void {
       (measurementProvisionalSphere.material as THREE.Material).dispose();
     measurementProvisionalSphere = null;
   }
-  for (const [id, line] of measurementRayLines) {
+  for (const line of measurementRayLines.values()) {
     line.parent?.remove(line);
     if (line.geometry) line.geometry.dispose();
     if (line.material) (line.material as THREE.Material).dispose();
@@ -1220,8 +1229,14 @@ async function main(): Promise<void> {
     onOpenFolder: () => folderManager.handleOpenFolder(),
     onChooseSaveLocation: () => folderManager.handleChooseSaveLocation(),
     onEnterAR: handleEnterAR,
-    onStartRecording: () => recordingSessionHandlers.handleStartRecording(),
-    onStopRecording: () => recordingSessionHandlers.handleStopRecording(),
+    onStartRecording: () => {
+      measurementUI?.show();
+      return recordingSessionHandlers.handleStartRecording();
+    },
+    onStopRecording: async () => {
+      measurementUI?.hide();
+      await recordingSessionHandlers.handleStopRecording();
+    },
     onMarkRefPoint: () => integratedMarkRefPoint(),
     onMarkNewRefPoint: () => integratedMarkRefPoint({ forceNew: true }),
     onToggleMap: handleToggleMap,
@@ -1813,15 +1828,14 @@ async function handleEnterAR(): Promise<void> {
 
       // -- Measurement Visualization (Task 3) --
       if (arWorldGroup) {
-        const state = storeRef.current.getState();
-        const draft = selectMeasurementDraft(state);
+        const state = storeRef.get().getState();
         const pendingRays = state.measurementPoints.pendingRays;
         const provisional = selectProvisionalMeasurement(state);
 
         // 1. Ray Lines
         // Remove stale rays
         for (const [id, line] of measurementRayLines) {
-          if (!pendingRays.some((r) => r.id === id)) {
+          if (!pendingRays.some((r: MeasurementRayRecord) => r.id === id)) {
             arWorldGroup.remove(line);
             measurementRayLines.delete(id);
           }
@@ -1872,7 +1886,7 @@ async function handleEnterAR(): Promise<void> {
               }
             : undefined,
           provisional?.uncertainty,
-          state.measurementPoints.thresholdProfile.maxUncertaintyHard
+          DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard
         );
       }
     });
