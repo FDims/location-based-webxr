@@ -199,10 +199,15 @@ export function createMeasurementPointHandlers(
 
     const projectionMatrix = depthSample?.projectionMatrix;
     if (projectionMatrix) {
+      // Keep the projection, pose, and depth point in the same capture frame.
+      // Using the independently sampled current pose here can shift the ray
+      // when the latest depth frame is slightly older than the tap.
+      const rayPosition = depthSample.cameraPos ?? position;
+      const rayRotation = depthSample.cameraRot ?? rotation;
       // Full ray construction via unprojection — handles tap-aim correctly
       const aimedResult = createAimedRay(
-        position,
-        rotation,
+        rayPosition,
+        rayRotation,
         projectionMatrix,
         aimedScreenX,
         aimedScreenY,
