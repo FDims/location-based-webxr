@@ -18,7 +18,10 @@ import {
   selectMeasurementDraft,
   selectPendingRays,
 } from '../state/measurement-points-slice';
-import type { CoachingPrompt, LiveMeasurementDraft } from '../utils/live-measurement-quality';
+import type {
+  CoachingPrompt,
+  LiveMeasurementDraft,
+} from '../utils/live-measurement-quality';
 import type { RecorderStore } from '../state/recorder-store';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 
@@ -59,14 +62,14 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
 
 const PANEL_STYLES = `
   position: fixed;
-  bottom: 80px;
+  top: 80px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  z-index: 1000;
+  z-index: 50;
   pointer-events: none;
 `;
 
@@ -101,7 +104,7 @@ const CROSSHAIR_STYLES = `
   transform: translate(-50%, -50%);
   width: 40px;
   height: 40px;
-  z-index: 999;
+  z-index: 50;
   pointer-events: none;
 `;
 
@@ -129,6 +132,13 @@ export interface MeasurementUIOptions {
   store: RecorderStore;
   /** Current scenario ID for confirm. */
   getScenarioId: () => string;
+  /**
+   * Optional integrated confirm callback.
+   * When provided, the Confirm button calls this instead of the
+   * standalone handleConfirmPoint — allowing the caller to wire
+   * in the ref-point creation + measurement persistence flow.
+   */
+  onConfirmIntegrated?: () => Promise<void>;
 }
 
 export interface MeasurementUIInstance {
@@ -236,7 +246,11 @@ export function createMeasurementUI(
 
   // ── Button handlers ──
   confirmBtn.addEventListener('click', () => {
-    void handlers.handleConfirmPoint(getScenarioId());
+    if (options.onConfirmIntegrated) {
+      void options.onConfirmIntegrated();
+    } else {
+      void handlers.handleConfirmPoint(getScenarioId());
+    }
   });
 
   undoBtn.addEventListener('click', () => {

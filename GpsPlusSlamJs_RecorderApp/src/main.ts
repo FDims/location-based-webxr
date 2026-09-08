@@ -207,7 +207,15 @@ import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
 import { createMeasurementPointHandlers } from './measurement-points/measurement-point-handlers';
 import * as MeasurementPointViews from './view/measurement-point-view';
-import { createMeasurementUI, type MeasurementUIInstance } from './ui/measurement-ui';
+import {
+  createMeasurementUI,
+  type MeasurementUIInstance,
+} from './ui/measurement-ui';
+import {
+  selectMeasurementDraft,
+  selectProvisionalMeasurement,
+} from './state/measurement-points-slice';
+import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   loadRecordingOptions,
@@ -410,6 +418,46 @@ const measurementPointHandlers = createMeasurementPointHandlers({
 // Measurement UI — created lazily when the AR session starts (Phase 4).
 // Disposed on session end / store swap.
 let measurementUI: MeasurementUIInstance | null = null;
+let measurementProvisionalSphere: THREE.Mesh | null = null;
+const measurementRayLines = new Map<string, THREE.LineSegments>();
+
+/**
+ * Integrated "Mark Ref Point" flow.
+ *
+ * If the measurement system has an active, confirmable triangulated draft,
+ * the ref point is created at the triangulated 3D position and the measurement
+ * is also persisted. Otherwise, falls back to the original behavior
+ * (ref point at the camera's current position).
+ */
+async function integratedMarkRefPoint(options?: {
+  forceNew?: boolean;
+}): Promise<void> {
+  const state = store.getState();
+  const draft = selectMeasurementDraft(state);
+  const provisional = selectProvisionalMeasurement(state);
+
+  // If there is a ready measurement with a solved point, use it
+  if (draft.canConfirm && provisional?.point) {
+    const overridePosition: Vector3 = provisional.point;
+    log.info(
+      `Integrated mark: using triangulated point [${overridePosition.map((v: number) => v.toFixed(2)).join(', ')}]`
+    );
+
+    // 1. Create the ref point at the triangulated position
+    await refPointHandlers.handleMarkRefPoint({
+      ...options,
+      overrideArPosition: overridePosition,
+    });
+
+    // 2. Persist the measurement data (rays, uncertainty, etc.)
+    await measurementPointHandlers.handleConfirmPoint(
+      folderManager.getCurrentScenarioName()
+    );
+  } else {
+    // No active measurement — original behavior (ref point at camera)
+    await refPointHandlers.handleMarkRefPoint(options);
+  }
+}
 
 // Folder manager — encapsulates folder selection, save location, scenario management
 // (Finding #7 decomposition Step 4: extracted from main.ts to storage/folder-manager.ts)
@@ -822,9 +870,24 @@ export function resetMainState(): void {
   destroyConfirmDialog();
   folderManager.reset();
   replayHandlers.reset();
-  // Phase 4: Dispose measurement UI on session cleanup
+  // Phase 4: Dispose measurement UI and 3D visualization on session cleanup
   measurementUI?.dispose();
   measurementUI = null;
+
+  if (measurementProvisionalSphere) {
+    measurementProvisionalSphere.parent?.remove(measurementProvisionalSphere);
+    if (measurementProvisionalSphere.geometry)
+      measurementProvisionalSphere.geometry.dispose();
+    if (measurementProvisionalSphere.material)
+      (measurementProvisionalSphere.material as THREE.Material).dispose();
+    measurementProvisionalSphere = null;
+  }
+  for (const [id, line] of measurementRayLines) {
+    line.parent?.remove(line);
+    if (line.geometry) line.geometry.dispose();
+    if (line.material) (line.material as THREE.Material).dispose();
+  }
+  measurementRayLines.clear();
   setFolderSelected(false);
   setSaveLocationSelected(false);
 }
@@ -1159,9 +1222,8 @@ async function main(): Promise<void> {
     onEnterAR: handleEnterAR,
     onStartRecording: () => recordingSessionHandlers.handleStartRecording(),
     onStopRecording: () => recordingSessionHandlers.handleStopRecording(),
-    onMarkRefPoint: () => refPointHandlers.handleMarkRefPoint(),
-    onMarkNewRefPoint: () =>
-      refPointHandlers.handleMarkRefPoint({ forceNew: true }),
+    onMarkRefPoint: () => integratedMarkRefPoint(),
+    onMarkNewRefPoint: () => integratedMarkRefPoint({ forceNew: true }),
     onToggleMap: handleToggleMap,
     onMapZoomIn: handleMapZoomIn,
     onMapZoomOut: handleMapZoomOut,
@@ -1748,6 +1810,71 @@ async function handleEnterAR(): Promise<void> {
         // CSS3D overlay is composited through). See the 2026-06-29 plan.
         mapOverlay.updatePosition(dt, camera ?? undefined);
       }
+
+      // -- Measurement Visualization (Task 3) --
+      if (arWorldGroup) {
+        const state = storeRef.current.getState();
+        const draft = selectMeasurementDraft(state);
+        const pendingRays = state.measurementPoints.pendingRays;
+        const provisional = selectProvisionalMeasurement(state);
+
+        // 1. Ray Lines
+        // Remove stale rays
+        for (const [id, line] of measurementRayLines) {
+          if (!pendingRays.some((r) => r.id === id)) {
+            arWorldGroup.remove(line);
+            measurementRayLines.delete(id);
+          }
+        }
+        // Add or update active rays
+        for (const ray of pendingRays) {
+          let line = measurementRayLines.get(ray.id);
+          if (!line) {
+            const geom = new THREE.BufferGeometry();
+            const params = MeasurementPointViews.getRayVisualParams();
+            const mat = new THREE.LineBasicMaterial({
+              color: params.color,
+              linewidth: params.lineWidth,
+            });
+            line = new THREE.LineSegments(geom, mat);
+            arWorldGroup.add(line);
+            measurementRayLines.set(ray.id, line);
+          }
+          const pts = MeasurementPointViews.buildRayLinePoints(
+            ray.rayOrigin,
+            ray.rayDirection
+          );
+          line.geometry.setFromPoints([
+            new THREE.Vector3(pts[0].x, pts[0].y, pts[0].z),
+            new THREE.Vector3(pts[1].x, pts[1].y, pts[1].z),
+          ]);
+        }
+
+        // 2. Provisional Sphere
+        if (!measurementProvisionalSphere) {
+          const params = MeasurementPointViews.getProvisionalVisualParams();
+          const geom = new THREE.SphereGeometry(params.dotRadius, 16, 16);
+          const mat = new THREE.MeshBasicMaterial({
+            color: params.arDotColor,
+            transparent: true,
+            opacity: 0.5,
+          });
+          measurementProvisionalSphere = new THREE.Mesh(geom, mat);
+          arWorldGroup.add(measurementProvisionalSphere);
+        }
+        MeasurementPointViews.updateProvisionalSphere(
+          measurementProvisionalSphere,
+          provisional?.point
+            ? {
+                x: provisional.point[0],
+                y: provisional.point[1],
+                z: provisional.point[2],
+              }
+            : undefined,
+          provisional?.uncertainty,
+          state.measurementPoints.thresholdProfile.maxUncertaintyHard
+        );
+      }
     });
 
     // Issue #2 fix: Update status to match AR_READY state per Application State Machine
@@ -1781,6 +1908,7 @@ async function handleEnterAR(): Promise<void> {
         handlers: measurementPointHandlers,
         store,
         getScenarioId: () => folderManager.getCurrentScenarioName(),
+        onConfirmIntegrated: () => integratedMarkRefPoint(),
       });
     }
   } catch (err) {
