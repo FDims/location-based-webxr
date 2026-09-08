@@ -28,7 +28,7 @@ const LINE_COLOR = 0xffffff;
 const DOT_RADIUS = 0.05;
 const LINE_WIDTH = 2;
 const PROVISIONAL_DOT_COLOR = 0xffff00; // Yellow — provisional
-const RAY_LINE_COLOR = 0x00ccff; // Cyan — observation ray
+const RAY_LINE_COLOR = 0xff2020; // Bright red — observation ray
 const RAY_LINE_LENGTH = 10; // How far to draw the ray into the scene (meters)
 
 // ---------------------------------------------------------------------------
@@ -71,11 +71,17 @@ interface ThreeVector3 {
 interface ThreeMesh {
   position: ThreeVector3;
   visible: boolean;
-  material: {
-    opacity?: number;
-    transparent?: boolean;
-    color?: { set(c: number): void };
-  };
+  material:
+    | {
+        opacity?: number;
+        transparent?: boolean;
+        color?: { set(c: number): void };
+      }
+    | {
+        opacity?: number;
+        transparent?: boolean;
+        color?: { set(c: number): void };
+      }[];
 }
 
 /**
@@ -223,11 +229,14 @@ export function updateProvisionalSphere(
   // Scale opacity by confidence (inverse uncertainty)
   const unc = uncertainty ?? maxUncertaintyHard;
   const confidence = 1 - Math.min(1, unc / maxUncertaintyHard);
-  if (mesh.material.transparent !== undefined) {
-    mesh.material.transparent = true;
+  const material = Array.isArray(mesh.material)
+    ? mesh.material[0]
+    : mesh.material;
+  if (material?.transparent !== undefined) {
+    material.transparent = true;
   }
-  if (mesh.material.opacity !== undefined) {
-    mesh.material.opacity = 0.3 + 0.7 * confidence;
+  if (material?.opacity !== undefined) {
+    material.opacity = 0.3 + 0.7 * confidence;
   }
 }
 

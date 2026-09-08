@@ -23,9 +23,6 @@ import type {
   LiveMeasurementDraft,
 } from '../utils/live-measurement-quality';
 import type { RecorderStore } from '../state/recorder-store';
-import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
-
-const log = createLogger('MeasurementUI');
 
 // ---------------------------------------------------------------------------
 // Coaching text map
@@ -62,9 +59,10 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
 
 const PANEL_STYLES = `
   position: fixed;
-  top: 80px;
+  top: clamp(180px, 30vh, 320px);
   left: 50%;
   transform: translateX(-50%);
+  width: min(92vw, 520px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -80,7 +78,8 @@ const COACHING_STYLES = `
   font-size: 14px;
   padding: 8px 16px;
   border-radius: 20px;
-  white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 `;
@@ -183,6 +182,12 @@ export function createMeasurementUI(
   const uncertaintyLabel = createEl('div', { id: 'measurement-uncertainty' });
   uncertaintyLabel.setAttribute('style', UNCERTAINTY_STYLES);
 
+  const rayCountLabel = createEl('div', { id: 'measurement-ray-count' });
+  rayCountLabel.setAttribute(
+    'style',
+    'color: #fff; font: 600 13px system-ui, sans-serif;'
+  );
+
   const buttonRow = createEl('div');
   buttonRow.setAttribute(
     'style',
@@ -213,6 +218,7 @@ export function createMeasurementUI(
   buttonRow.appendChild(confirmBtn);
 
   panel.appendChild(coachingBanner);
+  panel.appendChild(rayCountLabel);
   panel.appendChild(uncertaintyLabel);
   panel.appendChild(buttonRow);
 
@@ -220,29 +226,22 @@ export function createMeasurementUI(
   container.appendChild(panel);
 
   // ── Tap handler (shoot ray) ──
-  function handleTap(event: MouseEvent | TouchEvent): void {
-    const rect = arCanvas.getBoundingClientRect();
-    let clientX: number;
-    let clientY: number;
-
-    if (event instanceof TouchEvent) {
-      if (event.touches.length === 0) return;
-      clientX = event.touches[0].clientX;
-      clientY = event.touches[0].clientY;
-    } else {
-      clientX = event.clientX;
-      clientY = event.clientY;
+  function handleTap(event: PointerEvent): void {
+    const target = event.target;
+    if (target instanceof Element && target.closest('#measurement-panel')) {
+      return;
     }
 
+    const rect = arCanvas.getBoundingClientRect();
+
     // Normalize to [0, 1] in the canvas coordinate space
-    const normX = (clientX - rect.left) / rect.width;
-    const normY = (clientY - rect.top) / rect.height;
+    const normX = (event.clientX - rect.left) / rect.width;
+    const normY = (event.clientY - rect.top) / rect.height;
 
     handlers.handleShootRay(normX, normY);
   }
 
-  arCanvas.addEventListener('click', handleTap);
-  arCanvas.addEventListener('touchstart', handleTap, { passive: true });
+  arCanvas.addEventListener('pointerdown', handleTap);
 
   // ── Button handlers ──
   confirmBtn.addEventListener('click', () => {
@@ -261,10 +260,21 @@ export function createMeasurementUI(
   let lastDraft: LiveMeasurementDraft | null = null;
   let lastRayCount = 0;
 
+  function updateUncertainty(draft: LiveMeasurementDraft): void {
+    if (draft.uncertainty !== undefined && draft.status !== 'idle') {
+      uncertaintyLabel.textContent = `± ${(draft.uncertainty * 100).toFixed(1)} cm`;
+      uncertaintyLabel.style.display = 'block';
+    } else {
+      uncertaintyLabel.style.display = 'none';
+    }
+  }
+
   function updateUI(): void {
     const state = store.getState();
     const draft = selectMeasurementDraft(state);
     const rays = selectPendingRays(state);
+    const hasProvisionalPoint =
+      draft.provisionalPointAr !== undefined && rays.length >= 2;
 
     // Skip redundant DOM updates
     if (draft === lastDraft && rays.length === lastRayCount) return;
@@ -276,20 +286,17 @@ export function createMeasurementUI(
     coachingBanner.textContent = text;
     coachingBanner.style.display = text ? 'block' : 'none';
 
-    // Uncertainty readout
-    if (draft.uncertainty !== undefined && draft.status !== 'idle') {
-      uncertaintyLabel.textContent = `± ${(draft.uncertainty * 100).toFixed(1)} cm`;
-      uncertaintyLabel.style.display = 'block';
-    } else {
-      uncertaintyLabel.style.display = 'none';
-    }
+    updateUncertainty(draft);
 
     // Confirm button state
-    confirmBtn.disabled = !draft.canConfirm;
-    confirmBtn.style.opacity = draft.canConfirm ? '1' : '0.4';
+    confirmBtn.disabled = !hasProvisionalPoint;
+    confirmBtn.textContent = draft.canConfirm ? '✓ Confirm' : '⚠ Save anyway';
+    confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '0.4';
 
-    // Undo button visibility
-    undoBtn.style.display = rays.length > 0 ? 'inline-block' : 'none';
+    rayCountLabel.textContent = `${rays.length} observation ray${rays.length === 1 ? '' : 's'}`;
+    undoBtn.disabled = rays.length === 0 || draft.status === 'confirm_pending';
+    undoBtn.style.opacity = undoBtn.disabled ? '0.4' : '1';
+    undoBtn.style.display = draft.status === 'idle' ? 'none' : 'inline-block';
 
     // Panel visibility: show when draft is active
     panel.style.display = draft.status === 'idle' ? 'none' : 'flex';
@@ -300,23 +307,18 @@ export function createMeasurementUI(
   updateUI();
 
   // ── Public API ──
-  let visible = true;
-
   return {
     show() {
-      visible = true;
       crosshair.style.display = 'block';
       updateUI();
     },
     hide() {
-      visible = false;
       crosshair.style.display = 'none';
       panel.style.display = 'none';
     },
     dispose() {
       unsubscribe();
-      arCanvas.removeEventListener('click', handleTap);
-      arCanvas.removeEventListener('touchstart', handleTap);
+      arCanvas.removeEventListener('pointerdown', handleTap);
       crosshair.remove();
       panel.remove();
     },
