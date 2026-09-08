@@ -217,6 +217,7 @@ import {
   selectProvisionalMeasurement,
 } from './state/measurement-points-slice';
 import type { MeasurementRayRecord } from './storage/measurement-point-loader';
+import { WEBXR_TO_NUE } from 'gps-plus-slam-app-framework/ar/webxr-nue-basis';
 import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
@@ -421,6 +422,7 @@ const measurementPointHandlers = createMeasurementPointHandlers({
 // Disposed on session end / store swap.
 let measurementUI: MeasurementUIInstance | null = null;
 let measurementProvisionalSphere: THREE.Mesh | null = null;
+let measurementBasisGroup: THREE.Group | null = null;
 const measurementRayLines = new Map<string, THREE.LineSegments>();
 
 /**
@@ -452,13 +454,8 @@ async function integratedMarkRefPoint(options?: {
       `Integrated mark: using triangulated point [${overridePosition.map((v: number) => v.toFixed(2)).join(', ')}]`
     );
 
-    // 1. Create the ref point at the triangulated position
-    await refPointHandlers.handleMarkRefPoint({
-      ...options,
-      overrideArPosition: overridePosition,
-    });
-
-    // 2. Persist the measurement data (rays, uncertainty, etc.)
+    // Persist the measurement directly. The legacy reference-point workflow
+    // has its own naming picker and must not block measurement saving.
     await measurementPointHandlers.handleConfirmPoint(
       folderManager.getCurrentScenarioName()
     );
@@ -891,6 +888,8 @@ export function resetMainState(): void {
       (measurementProvisionalSphere.material as THREE.Material).dispose();
     measurementProvisionalSphere = null;
   }
+  measurementBasisGroup?.parent?.remove(measurementBasisGroup);
+  measurementBasisGroup = null;
   for (const line of measurementRayLines.values()) {
     line.parent?.remove(line);
     if (line.geometry) line.geometry.dispose();
@@ -1229,12 +1228,24 @@ async function main(): Promise<void> {
     onOpenFolder: () => folderManager.handleOpenFolder(),
     onChooseSaveLocation: () => folderManager.handleChooseSaveLocation(),
     onEnterAR: handleEnterAR,
-    onStartRecording: () => {
-      measurementUI?.show();
-      return recordingSessionHandlers.handleStartRecording();
+    onStartRecording: async () => {
+      await recordingSessionHandlers.handleStartRecording();
+      // Starting a recording swaps the Redux store. Rebind the measurement HUD
+      // to that new store instead of leaving it subscribed to AR_READY state.
+      measurementUI?.dispose();
+      measurementUI = createMeasurementUI({
+        container: document.getElementById('app') as HTMLElement,
+        arCanvas: document.getElementById('app') as HTMLElement,
+        handlers: measurementPointHandlers,
+        store,
+        getScenarioId: () => folderManager.getCurrentScenarioName(),
+        onConfirmIntegrated: () => integratedMarkRefPoint(),
+      });
+      measurementUI.show();
     },
     onStopRecording: async () => {
-      measurementUI?.hide();
+      measurementUI?.dispose();
+      measurementUI = null;
       await recordingSessionHandlers.handleStopRecording();
     },
     onMarkRefPoint: () => integratedMarkRefPoint(),
@@ -1828,6 +1839,14 @@ async function handleEnterAR(): Promise<void> {
 
       // -- Measurement Visualization (Task 3) --
       if (arWorldGroup) {
+        if (!measurementBasisGroup) {
+          measurementBasisGroup = new THREE.Group();
+          measurementBasisGroup.name = 'measurement-webxr-basis';
+          measurementBasisGroup.matrixAutoUpdate = false;
+          measurementBasisGroup.matrix.copy(WEBXR_TO_NUE);
+          arWorldGroup.add(measurementBasisGroup);
+        }
+        const measurementParent = measurementBasisGroup;
         const state = storeRef.get().getState();
         const pendingRays = state.measurementPoints.pendingRays;
         const provisional = selectProvisionalMeasurement(state);
@@ -1836,7 +1855,7 @@ async function handleEnterAR(): Promise<void> {
         // Remove stale rays
         for (const [id, line] of measurementRayLines) {
           if (!pendingRays.some((r: MeasurementRayRecord) => r.id === id)) {
-            arWorldGroup.remove(line);
+            measurementParent.remove(line);
             measurementRayLines.delete(id);
           }
         }
@@ -1849,9 +1868,12 @@ async function handleEnterAR(): Promise<void> {
             const mat = new THREE.LineBasicMaterial({
               color: params.color,
               linewidth: params.lineWidth,
+              depthTest: false,
+              depthWrite: false,
             });
             line = new THREE.LineSegments(geom, mat);
-            arWorldGroup.add(line);
+            line.renderOrder = 1001;
+            measurementParent.add(line);
             measurementRayLines.set(ray.id, line);
           }
           const pts = MeasurementPointViews.buildRayLinePoints(
@@ -1874,7 +1896,7 @@ async function handleEnterAR(): Promise<void> {
             opacity: 0.5,
           });
           measurementProvisionalSphere = new THREE.Mesh(geom, mat);
-          arWorldGroup.add(measurementProvisionalSphere);
+          measurementParent.add(measurementProvisionalSphere);
         }
         MeasurementPointViews.updateProvisionalSphere(
           measurementProvisionalSphere,
@@ -1924,6 +1946,7 @@ async function handleEnterAR(): Promise<void> {
         getScenarioId: () => folderManager.getCurrentScenarioName(),
         onConfirmIntegrated: () => integratedMarkRefPoint(),
       });
+      measurementUI.hide();
     }
   } catch (err) {
     log.error('AR init failed:', err);

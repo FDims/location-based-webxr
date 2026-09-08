@@ -27,7 +27,7 @@ const GPS_DOT_COLOR = 0xff8800; // Orange — GPS-world
 const LINE_COLOR = 0xffffff;
 const DOT_RADIUS = 0.05;
 const LINE_WIDTH = 2;
-const PROVISIONAL_DOT_COLOR = 0xffff00; // Yellow — provisional
+const PROVISIONAL_DOT_COLOR = 0x39ff14; // Bright green — provisional
 const RAY_LINE_COLOR = 0xff2020; // Bright red — observation ray
 const RAY_LINE_LENGTH = 10; // How far to draw the ray into the scene (meters)
 
@@ -71,6 +71,7 @@ interface ThreeVector3 {
 interface ThreeMesh {
   position: ThreeVector3;
   visible: boolean;
+  renderOrder?: number;
   material:
     | {
         opacity?: number;
@@ -224,6 +225,7 @@ export function updateProvisionalSphere(
   }
 
   mesh.visible = true;
+  mesh.renderOrder = 1000;
   mesh.position.set(provisionalPoint.x, provisionalPoint.y, provisionalPoint.z);
 
   // Scale opacity by confidence (inverse uncertainty)
@@ -256,7 +258,7 @@ export function getRayVisualParams(): {
   return {
     color: RAY_LINE_COLOR,
     lineLength: RAY_LINE_LENGTH,
-    lineWidth: 1,
+    lineWidth: 3,
   };
 }
 

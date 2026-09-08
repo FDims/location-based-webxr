@@ -150,13 +150,14 @@ function buildQualityInputs(
 
   const baselineM = computeLateralBaselineM(rayOrigins, meanDir);
 
-  // Observation age: computed from the action payload timestamp, NOT Date.now(),
-  // so it replays identically.
-  const oldestTimestamp =
+  // Measure freshness from the newest observation. Older rays remain useful
+  // for fusion; using the oldest ray made every long draft stale while the
+  // user was still actively capturing.
+  const newestTimestamp =
     pendingRays.length > 0
-      ? Math.min(...pendingRays.map((r) => r.timestamp))
+      ? Math.max(...pendingRays.map((r) => r.timestamp))
       : currentTimestamp;
-  const observationAgeMs = currentTimestamp - oldestTimestamp;
+  const observationAgeMs = currentTimestamp - newestTimestamp;
 
   return {
     uncertainty: solverResult?.uncertainty ?? null,

@@ -17,6 +17,7 @@ import type { MeasurementPointHandlers } from '../measurement-points/measurement
 import {
   selectMeasurementDraft,
   selectPendingRays,
+  DEFAULT_QUALITY_THRESHOLDS,
 } from '../state/measurement-points-slice';
 import type {
   CoachingPrompt,
@@ -59,7 +60,7 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
 
 const PANEL_STYLES = `
   position: fixed;
-  top: clamp(180px, 30vh, 320px);
+  top: calc(50% + 48px);
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 520px);
@@ -101,10 +102,11 @@ const CROSSHAIR_STYLES = `
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 40px;
-  height: 40px;
+  width: 66px;
+  height: 66px;
   z-index: 50;
   pointer-events: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.95));
 `;
 
 const UNCERTAINTY_STYLES = `
@@ -162,13 +164,10 @@ export function createMeasurementUI(
   const crosshair = createEl('div', { id: 'measurement-crosshair' });
   crosshair.setAttribute('style', CROSSHAIR_STYLES);
   crosshair.innerHTML = `
-    <svg viewBox="0 0 40 40" width="40" height="40">
-      <circle cx="20" cy="20" r="12" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5"/>
-      <circle cx="20" cy="20" r="2" fill="rgba(255,255,255,0.9)"/>
-      <line x1="20" y1="4" x2="20" y2="12" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-      <line x1="20" y1="28" x2="20" y2="36" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-      <line x1="4" y1="20" x2="12" y2="20" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-      <line x1="28" y1="20" x2="36" y2="20" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+    <svg viewBox="0 0 66 66" width="66" height="66" aria-hidden="true">
+      <circle cx="33" cy="33" r="30" fill="none" stroke="#00e5ff" stroke-width="2"/>
+      <line x1="3" y1="33" x2="63" y2="33" stroke="#00e5ff" stroke-width="2"/>
+      <line x1="33" y1="3" x2="33" y2="63" stroke="#00e5ff" stroke-width="2"/>
     </svg>
   `;
 
@@ -261,7 +260,11 @@ export function createMeasurementUI(
   let lastRayCount = 0;
 
   function updateUncertainty(draft: LiveMeasurementDraft): void {
-    if (draft.uncertainty !== undefined && draft.status !== 'idle') {
+    if (
+      draft.uncertainty !== undefined &&
+      draft.status !== 'idle' &&
+      draft.status !== 'confirmed'
+    ) {
       uncertaintyLabel.textContent = `± ${(draft.uncertainty * 100).toFixed(1)} cm`;
       uncertaintyLabel.style.display = 'block';
     } else {
@@ -275,6 +278,9 @@ export function createMeasurementUI(
     const rays = selectPendingRays(state);
     const hasProvisionalPoint =
       draft.provisionalPointAr !== undefined && rays.length >= 2;
+    const hardQualityPass =
+      draft.uncertainty !== undefined &&
+      draft.uncertainty <= DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard;
 
     // Skip redundant DOM updates
     if (draft === lastDraft && rays.length === lastRayCount) return;
@@ -290,7 +296,7 @@ export function createMeasurementUI(
 
     // Confirm button state
     confirmBtn.disabled = !hasProvisionalPoint;
-    confirmBtn.textContent = draft.canConfirm ? '✓ Confirm' : '⚠ Save anyway';
+    confirmBtn.textContent = hardQualityPass ? '✓ Confirm' : '⚠ Save anyway';
     confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '0.4';
 
     rayCountLabel.textContent = `${rays.length} observation ray${rays.length === 1 ? '' : 's'}`;
@@ -298,8 +304,9 @@ export function createMeasurementUI(
     undoBtn.style.opacity = undoBtn.disabled ? '0.4' : '1';
     undoBtn.style.display = draft.status === 'idle' ? 'none' : 'inline-block';
 
-    // Panel visibility: show when draft is active
-    panel.style.display = draft.status === 'idle' ? 'none' : 'flex';
+    // A successful save ends the active draft; keep the recorder controls clear.
+    panel.style.display =
+      draft.status === 'idle' || draft.status === 'confirmed' ? 'none' : 'flex';
   }
 
   const unsubscribe = store.subscribe(updateUI);
