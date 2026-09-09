@@ -75,6 +75,8 @@ export interface MeasurementPointEntity {
   readonly inlierIds: string[];
   /** IDs of observations classified as outliers by the robust solver */
   readonly outlierIds: string[];
+  /** Whether the point passed the quality gate or used an explicit override. */
+  readonly confirmationMode?: 'quality' | 'override';
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +150,13 @@ export function isMeasurementPointEntity(
 
   if (!hasValidEntityScalars(v) || !hasValidEntityArrays(v)) return false;
   if (!isVector3(v.arPosition)) return false;
+  if (
+    v.confirmationMode !== undefined &&
+    v.confirmationMode !== 'quality' &&
+    v.confirmationMode !== 'override'
+  ) {
+    return false;
+  }
   // gpsPositionSnapshot is nullable (null when no alignment matrix at confirm time)
   if (v.gpsPositionSnapshot !== null && !isVector3(v.gpsPositionSnapshot))
     return false;

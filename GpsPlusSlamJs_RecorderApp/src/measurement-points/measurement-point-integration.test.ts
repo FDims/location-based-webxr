@@ -6,7 +6,7 @@
  * Also tests draft state transitions, replay guard, and hydration dedup.
  */
 
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import {
   addMeasurementRay,
   confirmMeasurementSuccess,
@@ -20,7 +20,10 @@ import {
   measurementPointsReducer,
   type MeasurementPointsState,
 } from '../state/measurement-points-slice';
-import type { MeasurementRayRecord, MeasurementPointEntity } from '../storage/measurement-point-loader';
+import type {
+  MeasurementRayRecord,
+  MeasurementPointEntity,
+} from '../storage/measurement-point-loader';
 import type { CombinedRootState } from '../state/recorder-store';
 
 // ---------------------------------------------------------------------------
@@ -93,7 +96,7 @@ describe('Measurement Point Integration', () => {
   // ── Ray accumulation + provisional solution ──────────────────────────
 
   test('dispatching N rays produces a provisional triangulation result', () => {
-    let state = measurementPointsReducer(undefined, { type: '@@INIT' });
+    const state = measurementPointsReducer(undefined, { type: '@@INIT' });
 
     // Add 3 rays with lateral separation
     for (let i = 0; i < 3; i++) {
@@ -257,10 +260,7 @@ describe('Measurement Point Integration', () => {
     expect(provisional).not.toBeNull();
 
     const allRayIds = state.pendingRays.map((r) => r.id);
-    const allRefIds = [
-      ...provisional!.inlierIds,
-      ...provisional!.outlierIds,
-    ];
+    const allRefIds = [...provisional!.inlierIds, ...provisional!.outlierIds];
 
     // Every referenced ID should be in the pending rays
     for (const refId of allRefIds) {
@@ -273,5 +273,32 @@ describe('Measurement Point Integration', () => {
       const isOutlier = provisional!.outlierIds.includes(rayId);
       expect(isInlier || isOutlier).toBe(true);
     }
+  });
+
+  test('replaying the persisted measurement lifecycle is deterministic', () => {
+    const entity = {
+      ...makeEntity('mp-replay'),
+      confirmationMode: 'quality' as const,
+    };
+    const actions = [
+      addMeasurementRay(makeRay(0)),
+      addMeasurementRay(makeRay(1)),
+      addMeasurementRay(makeRay(2)),
+      requestConfirmMeasurement(),
+      confirmMeasurementSuccess(entity),
+    ];
+
+    function replay(): MeasurementPointsState {
+      return actions.reduce(
+        (state, action) => measurementPointsReducer(state, action),
+        measurementPointsReducer(undefined, { type: '@@INIT' })
+      );
+    }
+
+    const first = replay();
+    const second = replay();
+    expect(first).toEqual(second);
+    expect(first.confirmed).toEqual([entity]);
+    expect(first.pendingRays).toHaveLength(0);
   });
 });

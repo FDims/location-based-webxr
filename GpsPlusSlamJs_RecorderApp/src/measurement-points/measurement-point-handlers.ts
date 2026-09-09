@@ -84,7 +84,10 @@ export interface MeasurementPointHandlers {
    * Confirm the current pending measurement: solve the final point,
    * persist to OPFS, and dispatch confirmMeasurementSuccess.
    */
-  handleConfirmPoint(scenarioId: string): Promise<void>;
+  handleConfirmPoint(
+    scenarioId: string,
+    confirmationMode?: 'quality' | 'override'
+  ): Promise<void>;
 
   /**
    * Delete a confirmed measurement point from the store and OPFS.
@@ -256,7 +259,10 @@ export function createMeasurementPointHandlers(
     );
   }
 
-  async function handleConfirmPoint(scenarioId: string): Promise<void> {
+  async function handleConfirmPoint(
+    scenarioId: string,
+    confirmationMode: 'quality' | 'override' = 'quality'
+  ): Promise<void> {
     const state = deps.getStore().getState();
     // FIX 4: pass full state, not sub-state
     const provisional = selectProvisionalMeasurement(state);
@@ -286,6 +292,7 @@ export function createMeasurementPointHandlers(
       rmsError: provisional.rmsError,
       inlierIds: provisional.inlierIds,
       outlierIds: provisional.outlierIds,
+      confirmationMode,
     };
 
     // Persist to OPFS

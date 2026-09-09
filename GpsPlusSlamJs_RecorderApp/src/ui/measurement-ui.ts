@@ -17,7 +17,6 @@ import type { MeasurementPointHandlers } from '../measurement-points/measurement
 import {
   selectMeasurementDraft,
   selectPendingRays,
-  DEFAULT_QUALITY_THRESHOLDS,
 } from '../state/measurement-points-slice';
 import type {
   CoachingPrompt,
@@ -139,7 +138,9 @@ export interface MeasurementUIOptions {
    * standalone handleConfirmPoint — allowing the caller to wire
    * in the ref-point creation + measurement persistence flow.
    */
-  onConfirmIntegrated?: () => Promise<void>;
+  onConfirmIntegrated?: (
+    confirmationMode: 'quality' | 'override'
+  ) => Promise<void>;
 }
 
 export interface MeasurementUIInstance {
@@ -213,6 +214,18 @@ export function createMeasurementUI(
     `${BUTTON_BASE_STYLES} background: rgba(255,255,255,0.15); color: #fff;`
   );
 
+  let aimingMode: 'crosshair' | 'tap' = 'crosshair';
+  const aimModeBtn = createEl(
+    'button',
+    { id: 'measurement-aim-mode-btn' },
+    'Aim: Crosshair'
+  );
+  aimModeBtn.setAttribute(
+    'style',
+    `${BUTTON_BASE_STYLES} background: rgba(0, 229, 255, 0.22); color: #fff;`
+  );
+
+  buttonRow.appendChild(aimModeBtn);
   buttonRow.appendChild(undoBtn);
   buttonRow.appendChild(confirmBtn);
 
@@ -231,9 +244,12 @@ export function createMeasurementUI(
       return;
     }
 
-    const rect = arCanvas.getBoundingClientRect();
+    if (aimingMode === 'crosshair') {
+      handlers.handleShootRay(0.5, 0.5);
+      return;
+    }
 
-    // Normalize to [0, 1] in the canvas coordinate space
+    const rect = arCanvas.getBoundingClientRect();
     const normX = (event.clientX - rect.left) / rect.width;
     const normY = (event.clientY - rect.top) / rect.height;
 
@@ -242,12 +258,21 @@ export function createMeasurementUI(
 
   arCanvas.addEventListener('pointerdown', handleTap);
 
+  aimModeBtn.addEventListener('click', () => {
+    aimingMode = aimingMode === 'crosshair' ? 'tap' : 'crosshair';
+    aimModeBtn.textContent =
+      aimingMode === 'crosshair' ? 'Aim: Crosshair' : 'Aim: Tap';
+  });
+
   // ── Button handlers ──
   confirmBtn.addEventListener('click', () => {
+    const confirmationMode = selectMeasurementDraft(store.getState()).canConfirm
+      ? 'quality'
+      : 'override';
     if (options.onConfirmIntegrated) {
-      void options.onConfirmIntegrated();
+      void options.onConfirmIntegrated(confirmationMode);
     } else {
-      void handlers.handleConfirmPoint(getScenarioId());
+      void handlers.handleConfirmPoint(getScenarioId(), confirmationMode);
     }
   });
 
@@ -277,10 +302,7 @@ export function createMeasurementUI(
     const draft = selectMeasurementDraft(state);
     const rays = selectPendingRays(state);
     const hasProvisionalPoint =
-      draft.provisionalPointAr !== undefined && rays.length >= 2;
-    const hardQualityPass =
-      draft.uncertainty !== undefined &&
-      draft.uncertainty <= DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard;
+      draft.provisionalPointAr !== undefined && rays.length >= 1;
 
     // Skip redundant DOM updates
     if (draft === lastDraft && rays.length === lastRayCount) return;
@@ -296,7 +318,7 @@ export function createMeasurementUI(
 
     // Confirm button state
     confirmBtn.disabled = !hasProvisionalPoint;
-    confirmBtn.textContent = hardQualityPass ? '✓ Confirm' : '⚠ Save anyway';
+    confirmBtn.textContent = draft.canConfirm ? '✓ Confirm' : '⚠ Save anyway';
     confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '0.4';
 
     rayCountLabel.textContent = `${rays.length} observation ray${rays.length === 1 ? '' : 's'}`;
