@@ -15,6 +15,7 @@ import {
   createTapRay,
   CROSSHAIR_SCREEN,
   normalizeAimingCoordinates,
+  normalizePointerCoordinates,
 } from './aiming-ray-capture';
 
 const ORIGIN: Vector3 = [0, 0, 0] as Vector3;
@@ -150,6 +151,22 @@ describe('normalizeAimingCoordinates', () => {
     expect(
       normalizeAimingCoordinates(0.25, 0.75, { outOfBoundsPolicy: 'clamp' })
     ).toEqual({ screenX: 0.25, screenY: 0.75 });
+  });
+});
+
+describe('normalizePointerCoordinates', () => {
+  const viewport = { left: 100, top: 50, width: 400, height: 200 };
+
+  it('maps client coordinates within the camera viewport', () => {
+    expect(normalizePointerCoordinates(300, 150, viewport)).toEqual({
+      screenX: 0.5,
+      screenY: 0.5,
+    });
+  });
+
+  it('rejects letterboxed margins outside the camera viewport', () => {
+    expect(normalizePointerCoordinates(90, 150, viewport)).toBeNull();
+    expect(normalizePointerCoordinates(300, 260, viewport)).toBeNull();
   });
 });
 

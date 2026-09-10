@@ -22,6 +22,7 @@ import type {
   CoachingPrompt,
   LiveMeasurementDraft,
 } from '../utils/live-measurement-quality';
+import { normalizePointerCoordinates } from '../utils/aiming-ray-capture';
 import type { RecorderStore } from '../state/recorder-store';
 
 // ---------------------------------------------------------------------------
@@ -126,6 +127,13 @@ export interface MeasurementUIOptions {
   container: HTMLElement;
   /** The AR canvas element for tap events. */
   arCanvas: HTMLElement;
+  /** Optional camera viewport in client coordinates; defaults to arCanvas. */
+  getAimingViewport?: () => {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null;
   /** Measurement point handlers (for shoot/confirm/undo/delete). */
   handlers: MeasurementPointHandlers;
   /** Redux store. */
@@ -249,11 +257,15 @@ export function createMeasurementUI(
       return;
     }
 
-    const rect = arCanvas.getBoundingClientRect();
-    const normX = (event.clientX - rect.left) / rect.width;
-    const normY = (event.clientY - rect.top) / rect.height;
+    const rect = options.getAimingViewport?.() ?? arCanvas.getBoundingClientRect();
+    const normalized = normalizePointerCoordinates(
+      event.clientX,
+      event.clientY,
+      rect
+    );
+    if (!normalized) return;
 
-    handlers.handleShootRay(normX, normY);
+    handlers.handleShootRay(normalized.screenX, normalized.screenY);
   }
 
   arCanvas.addEventListener('pointerdown', handleTap);

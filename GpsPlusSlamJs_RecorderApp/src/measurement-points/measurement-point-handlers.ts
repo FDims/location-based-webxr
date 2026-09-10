@@ -33,6 +33,7 @@ import {
 } from '../storage/measurement-point-loader';
 import { sampleDepthPrior } from '../utils/depth-prior-provider';
 import { createAimedRay } from '../utils/aiming-ray-capture';
+import { arLocalToGpsWorld } from '../utils/measurement-coordinate-conversion';
 import {
   addMeasurementRay,
   deleteMeasurementPoint,
@@ -140,28 +141,6 @@ function buildRayFromPose(
   const direction: Vector3 =
     len > 1e-10 ? [dx / len, dy / len, dz / len] : [0, 0, -1];
   return { origin: position, direction };
-}
-
-/**
- * Convert an AR-local position to GPS-world coordinates
- * using the current alignment matrix. Returns null if no alignment available.
- */
-function arLocalToGpsWorld(
-  arPosition: Vector3,
-  state: ReturnType<RecorderStore['getState']>
-): Vector3 | null {
-  const alignmentMatrix = state.gpsData?.gpsEvents?.alignmentMatrix;
-  if (!alignmentMatrix) return null;
-
-  // Apply the 4x4 alignment matrix to the AR position.
-  // alignmentMatrix is column-major [m00, m10, m20, m30, m01, ...]
-  const m = alignmentMatrix;
-  const [x, y, z] = arPosition;
-  return [
-    m[0] * x + m[4] * y + m[8] * z + m[12],
-    m[1] * x + m[5] * y + m[9] * z + m[13],
-    m[2] * x + m[6] * y + m[10] * z + m[14],
-  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -272,12 +251,20 @@ export function createMeasurementPointHandlers(
       return;
     }
 
+    if (confirmationMode === 'quality' && !state.measurementPoints.draft.canConfirm) {
+      deps.showError('Cannot confirm — measurement quality is below the required threshold');
+      return;
+    }
+
     // FIX 6: dispatch requestConfirmMeasurement to transition draft → confirm_pending
-    deps.getStore().dispatch(requestConfirmMeasurement());
+    deps.getStore().dispatch(requestConfirmMeasurement({ confirmationMode }));
 
     const pendingRays = state.measurementPoints.pendingRays;
     // FIX 3: gpsSnapshot is null (not [0,0,0]) when no alignment matrix
-    const gpsSnapshot = arLocalToGpsWorld(provisional.point, state);
+    const gpsSnapshot = arLocalToGpsWorld(
+      provisional.point,
+      state.gpsData?.gpsEvents?.alignmentMatrix
+    );
 
     const entity: MeasurementPointEntity = {
       schemaVersion: 1,

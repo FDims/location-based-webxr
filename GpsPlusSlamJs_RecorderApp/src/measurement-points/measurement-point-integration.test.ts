@@ -96,7 +96,7 @@ describe('Measurement Point Integration', () => {
   // ── Ray accumulation + provisional solution ──────────────────────────
 
   test('dispatching N rays produces a provisional triangulation result', () => {
-    const state = measurementPointsReducer(undefined, { type: '@@INIT' });
+    let state = measurementPointsReducer(undefined, { type: '@@INIT' });
 
     // Add 3 rays with lateral separation
     for (let i = 0; i < 3; i++) {
@@ -110,6 +110,19 @@ describe('Measurement Point Integration', () => {
     expect(result).not.toBeNull();
     expect(result!.point).toBeDefined();
     expect(result!.inlierIds.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('one ray with a valid depth prior produces a provisional point', () => {
+    let state = measurementPointsReducer(undefined, { type: '@@INIT' });
+    state = measurementPointsReducer(state, addMeasurementRay(makeRay(0)));
+
+    const result = selectProvisionalMeasurement(asRootState(state));
+    expect(result).not.toBeNull();
+    expect(result!.point[0]).toBeCloseTo(5, 6);
+    expect(result!.point[1]).toBeCloseTo(0, 6);
+    expect(result!.point[2]).toBeCloseTo(-10, 6);
+    expect(state.draft.provisionalPointAr).toBeDefined();
+    expect(state.draft.canConfirm).toBe(false);
   });
 
   // ── Draft state transitions ──────────────────────────────────────────
@@ -241,7 +254,7 @@ describe('Measurement Point Integration', () => {
   });
 
   test('selectMeasurementDraft returns current draft', () => {
-    let state = measurementPointsReducer(undefined, { type: '@@INIT' });
+    const state = measurementPointsReducer(undefined, { type: '@@INIT' });
     const draft = selectMeasurementDraft(asRootState(state));
     expect(draft.status).toBe('idle');
     expect(draft.canConfirm).toBe(false);
@@ -300,5 +313,37 @@ describe('Measurement Point Integration', () => {
     expect(first).toEqual(second);
     expect(first.confirmed).toEqual([entity]);
     expect(first.pendingRays).toHaveLength(0);
+  });
+
+  test('override confirmation mode is retained on the confirmed entity', () => {
+    const entity = {
+      ...makeEntity('mp-override'),
+      confirmationMode: 'override' as const,
+    };
+    const state = measurementPointsReducer(
+      undefined,
+      confirmMeasurementSuccess(entity)
+    );
+
+    expect(state.confirmed[0].confirmationMode).toBe('override');
+  });
+
+  test('override confirmation transitions a refining draft to confirmed', () => {
+    let state = measurementPointsReducer(undefined, { type: '@@INIT' });
+    state = measurementPointsReducer(state, addMeasurementRay(makeRay(0)));
+    expect(state.draft.status).toBe('provisional');
+
+    state = measurementPointsReducer(
+      state,
+      requestConfirmMeasurement({ confirmationMode: 'override' })
+    );
+    expect(state.draft.status).toBe('confirm_pending');
+
+    state = measurementPointsReducer(
+      state,
+      confirmMeasurementSuccess(makeEntity('mp-override-lifecycle'))
+    );
+    expect(state.draft.status).toBe('confirmed');
+    expect(state.pendingRays).toHaveLength(0);
   });
 });

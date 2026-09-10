@@ -33,7 +33,11 @@ const {
   mockGetCamera,
   mockSetFrameCallback,
 } = vi.hoisted(() => {
-  const mockArWorldGroup = { name: 'ar-world' };
+  const mockArWorldGroup = {
+    name: 'ar-world',
+    add: vi.fn(),
+    remove: vi.fn(),
+  };
   const mockScene = { name: 'scene' };
   const mockCamera = { name: 'camera' };
   return {
@@ -256,7 +260,13 @@ vi.mock('gps-plus-slam-app-framework/utils/list-formatter', () => ({
 vi.mock('./state/recorder-store', () => ({
   createRecorderStore: vi.fn().mockReturnValue({
     dispatch: vi.fn(),
-    getState: vi.fn().mockReturnValue({}),
+    getState: vi.fn().mockReturnValue({
+      measurementPoints: {
+        pendingRays: [],
+        confirmed: [],
+        draft: { status: 'idle' },
+      },
+    }),
     subscribe: vi.fn().mockReturnValue(() => {}),
   }),
   startSession: vi.fn(),
