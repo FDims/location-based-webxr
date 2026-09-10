@@ -17,6 +17,7 @@
 
 import type { Vector3, Matrix4 } from 'gps-plus-slam-app-framework/core';
 import type { MeasurementPointEntity } from '../storage/measurement-point-loader';
+import { arLocalToGpsWorld } from '../utils/measurement-coordinate-conversion';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,31 +31,6 @@ const LINE_WIDTH = 2;
 const PROVISIONAL_DOT_COLOR = 0x39ff14; // Bright green — provisional
 const RAY_LINE_COLOR = 0xff2020; // Bright red — observation ray
 const RAY_LINE_LENGTH = 10; // How far to draw the ray into the scene (meters)
-
-// ---------------------------------------------------------------------------
-// Coordinate conversion
-// ---------------------------------------------------------------------------
-
-/**
- * Convert an AR-local position to GPS-world coordinates
- * using the current alignment matrix (column-major 4×4).
- *
- * Returns null if the alignment matrix is null/undefined
- * (no SLAM session is active).
- */
-function arLocalToGpsWorld(
-  arPosition: Vector3,
-  alignmentMatrix: Matrix4 | null | undefined
-): Vector3 | null {
-  if (!alignmentMatrix) return null;
-  const m = alignmentMatrix;
-  const [x, y, z] = arPosition;
-  return [
-    m[0] * x + m[4] * y + m[8] * z + m[12],
-    m[1] * x + m[5] * y + m[9] * z + m[13],
-    m[2] * x + m[6] * y + m[10] * z + m[14],
-  ];
-}
 
 // ---------------------------------------------------------------------------
 // THREE.js helpers (lazy-imported to keep the module testable without Three)
@@ -172,11 +148,16 @@ export function updateGpsDotPosition(
 export function updateConnectionLinePositions(
   lineGeometry: {
     setFromPoints(points: { x: number; y: number; z: number }[]): void;
+    visible?: boolean;
   },
   arPosition: Vector3,
   gpsPosition: Vector3 | null
 ): void {
-  if (!gpsPosition) return; // No GPS position — no connection line
+  if (!gpsPosition) {
+    lineGeometry.visible = false;
+    return;
+  }
+  lineGeometry.visible = true;
   lineGeometry.setFromPoints([
     { x: arPosition[0], y: arPosition[1], z: arPosition[2] },
     { x: gpsPosition[0], y: gpsPosition[1], z: gpsPosition[2] },
@@ -193,6 +174,7 @@ export function updateMeasurementPointVisual(
   gpsDot: ThreeMesh,
   lineGeometry: {
     setFromPoints(points: { x: number; y: number; z: number }[]): void;
+    visible?: boolean;
   },
   entity: MeasurementPointEntity,
   alignmentMatrix: Matrix4 | null | undefined

@@ -404,11 +404,6 @@ const measurementPointHandlers = createMeasurementPointHandlers({
   isReplayMode: () => replayHandlers.getIsReplayMode(),
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-(window as any).__measurementPointHandlers = measurementPointHandlers;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-(window as any).__measurementPointViews = MeasurementPointViews;
-
 // Measurement UI — created lazily when the AR session starts (Phase 4).
 // Disposed on session end / store swap.
 let measurementUI: MeasurementUIInstance | null = null;
@@ -508,6 +503,7 @@ function updateConfirmedMeasurementVisuals(
       entity.arPosition,
       matrix
     );
+    visual.line.visible = Boolean(matrix);
 
     const arWorldPosition = arWorldGroup.localToWorld(
       new THREE.Vector3(
@@ -517,7 +513,9 @@ function updateConfirmedMeasurementVisuals(
       ).applyMatrix4(WEBXR_TO_NUE)
     );
     const gpsWorldPosition = visual.gpsDot.position.clone();
-    visual.line.geometry.setFromPoints([arWorldPosition, gpsWorldPosition]);
+    if (matrix) {
+      visual.line.geometry.setFromPoints([arWorldPosition, gpsWorldPosition]);
+    }
   }
 }
 

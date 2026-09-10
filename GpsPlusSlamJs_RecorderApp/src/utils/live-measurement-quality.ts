@@ -79,7 +79,7 @@ export interface LiveMeasurementDraft {
 
 export type LiveMeasurementEvent =
   | { type: 'observationAdded' }
-  | { type: 'confirmRequested' }
+  | { type: 'confirmRequested'; confirmationMode?: 'quality' | 'override' }
   | { type: 'confirmSucceeded' }
   | { type: 'confirmFailed' }
   | { type: 'cancelDraft' }
@@ -419,7 +419,8 @@ export function decideCoachingPrompt(
 
 type LifecycleHandler = (
   current: LiveMeasurementDraft,
-  thresholds: QualityThresholds
+  thresholds: QualityThresholds,
+  event: LiveMeasurementEvent
 ) => LiveMeasurementDraft | null;
 
 function buildIdleDraft(thresholds: QualityThresholds): LiveMeasurementDraft {
@@ -462,7 +463,13 @@ function isCancellableDraftStatus(status: DraftStatus): boolean {
 }
 
 /** Ready + confirm_failed can (re)request confirm; confirm_pending is idempotent. */
-function canRequestConfirm(status: DraftStatus): boolean {
+function canRequestConfirm(
+  status: DraftStatus,
+  confirmationMode: 'quality' | 'override' = 'quality'
+): boolean {
+  if (confirmationMode === 'override') {
+    return isActiveDraftStatus(status) || status === 'confirm_failed';
+  }
   return (
     status === 'ready' ||
     status === 'confirm_failed' ||
@@ -483,8 +490,11 @@ const LIFECYCLE_HANDLERS: Partial<
     isActiveDraftStatus(current.status)
       ? buildProvisionalReset(thresholds)
       : null,
-  confirmRequested: (current) =>
-    canRequestConfirm(current.status)
+  confirmRequested: (current, _thresholds, event) =>
+    canRequestConfirm(
+      current.status,
+      event.type === 'confirmRequested' ? event.confirmationMode : undefined
+    )
       ? { ...current, status: 'confirm_pending' }
       : null,
   confirmSucceeded: (current) =>
@@ -504,7 +514,7 @@ function applyLifecycleEvent(
 ): LiveMeasurementDraft | null {
   if (!event) return null;
   const handler = LIFECYCLE_HANDLERS[event.type];
-  return handler ? handler(current, thresholds) : null;
+  return handler ? handler(current, thresholds, event) : null;
 }
 
 function resolveDraftStatus(

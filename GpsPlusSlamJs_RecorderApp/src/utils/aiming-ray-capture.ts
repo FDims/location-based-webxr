@@ -24,6 +24,13 @@ export interface AimingCoordinateOptions {
   readonly outOfBoundsPolicy?: OutOfBoundsPolicy;
 }
 
+export interface AimingViewport {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface AimedRay {
   readonly ray: MeasurementRay;
   /** Final normalized coordinate used to create the ray (after policy). */
@@ -102,6 +109,35 @@ export function normalizeAimingCoordinates(
 
   if (screenX < 0 || screenX > 1 || screenY < 0 || screenY > 1) return null;
   return { screenX, screenY };
+}
+
+/**
+ * Convert a client-space pointer into the camera viewport's normalized space.
+ * Letterboxed margins are rejected instead of being mapped to an incorrect
+ * camera ray. The viewport is supplied in the same client coordinate space as
+ * PointerEvent.clientX/clientY.
+ */
+export function normalizePointerCoordinates(
+  clientX: number,
+  clientY: number,
+  viewport: AimingViewport
+): { screenX: number; screenY: number } | null {
+  if (
+    !Number.isFinite(clientX) ||
+    !Number.isFinite(clientY) ||
+    !Number.isFinite(viewport.left) ||
+    !Number.isFinite(viewport.top) ||
+    !Number.isFinite(viewport.width) ||
+    !Number.isFinite(viewport.height) ||
+    viewport.width <= 0 ||
+    viewport.height <= 0
+  ) {
+    return null;
+  }
+
+  const screenX = (clientX - viewport.left) / viewport.width;
+  const screenY = (clientY - viewport.top) / viewport.height;
+  return normalizeAimingCoordinates(screenX, screenY);
 }
 
 /**

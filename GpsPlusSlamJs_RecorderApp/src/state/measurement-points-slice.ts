@@ -172,6 +172,15 @@ function buildQualityInputs(
   };
 }
 
+function getLatestObservationTimestamp(
+  pendingRays: readonly MeasurementRayRecord[]
+): number {
+  return pendingRays.reduce(
+    (latest, ray) => Math.max(latest, ray.timestamp),
+    0
+  );
+}
+
 /**
  * Recompute the draft state after a ray add/remove.
  * Runs the solver + quality evaluator purely from the pending rays.
@@ -238,7 +247,8 @@ const measurementPointsSlice = createSlice({
     undoMeasurementRay(state) {
       const removed = state.pendingRays.pop();
       // FIX 6: recompute draft after undo
-      const timestamp = removed?.timestamp ?? Date.now();
+      const timestamp =
+        removed?.timestamp ?? getLatestObservationTimestamp(state.pendingRays);
       state.draft = recomputeDraft(state.pendingRays, state.draft, timestamp);
     },
 
@@ -246,13 +256,25 @@ const measurementPointsSlice = createSlice({
      * FIX 6: Step 1 of the async confirm flow.
      * Draft transitions to confirm_pending, UI blocks the confirm button.
      */
-    requestConfirmMeasurement(state) {
+    requestConfirmMeasurement(
+      state,
+      action: PayloadAction<
+        { confirmationMode?: 'quality' | 'override' } | undefined
+      >
+    ) {
       state.draft = reduceLiveMeasurementDraft(
         state.draft,
         // Inputs don't matter for lifecycle events — the handler checks status only
-        buildQualityInputs(state.pendingRays, null, Date.now()),
+        buildQualityInputs(
+          state.pendingRays,
+          null,
+          getLatestObservationTimestamp(state.pendingRays)
+        ),
         DEFAULT_QUALITY_THRESHOLDS,
-        { type: 'confirmRequested' }
+        {
+          type: 'confirmRequested',
+          confirmationMode: action.payload?.confirmationMode,
+        }
       );
     },
 
@@ -268,7 +290,7 @@ const measurementPointsSlice = createSlice({
       state.pendingRays = [];
       state.draft = reduceLiveMeasurementDraft(
         state.draft,
-        buildQualityInputs([], null, Date.now()),
+        buildQualityInputs([], null, 0),
         DEFAULT_QUALITY_THRESHOLDS,
         { type: 'confirmSucceeded' }
       );
@@ -281,7 +303,11 @@ const measurementPointsSlice = createSlice({
     confirmMeasurementFailure(state) {
       state.draft = reduceLiveMeasurementDraft(
         state.draft,
-        buildQualityInputs(state.pendingRays, null, Date.now()),
+        buildQualityInputs(
+          state.pendingRays,
+          null,
+          getLatestObservationTimestamp(state.pendingRays)
+        ),
         DEFAULT_QUALITY_THRESHOLDS,
         { type: 'confirmFailed' }
       );
