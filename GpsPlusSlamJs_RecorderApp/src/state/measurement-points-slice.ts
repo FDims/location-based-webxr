@@ -158,6 +158,10 @@ function buildQualityInputs(
       ? Math.max(...pendingRays.map((r) => r.timestamp))
       : currentTimestamp;
   const observationAgeMs = currentTimestamp - newestTimestamp;
+  const poseDepthTimeSkewMs = pendingRays.reduce((maxSkew, ray) => {
+    if (ray.depthTimestamp === undefined) return maxSkew;
+    return Math.max(maxSkew, Math.abs(ray.timestamp - ray.depthTimestamp));
+  }, 0);
 
   return {
     uncertainty: solverResult?.uncertainty ?? null,
@@ -168,7 +172,7 @@ function buildQualityInputs(
     hasSolvedPoint: solverResult !== null,
     solverDegenerate: false,
     observationAgeMs,
-    poseDepthTimeSkewMs: 0, // Pose+depth captured in same tick (see integration plan §Risk 4)
+    poseDepthTimeSkewMs,
   };
 }
 

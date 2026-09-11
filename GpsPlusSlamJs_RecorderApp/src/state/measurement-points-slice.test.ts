@@ -51,7 +51,8 @@ const INITIAL_DRAFT = {
 
 function makeRay(
   id: string,
-  origin: Vector3 = [0, 0, 0]
+  origin: Vector3 = [0, 0, 0],
+  overrides: Partial<MeasurementRayRecord> = {}
 ): MeasurementRayRecord {
   return {
     id,
@@ -63,6 +64,7 @@ function makeRay(
     rayOrigin: origin,
     rayDirection: [0, 0, -1] as Vector3,
     rayWeight: 1.0,
+    ...overrides,
   };
 }
 

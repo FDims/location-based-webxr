@@ -228,7 +228,11 @@ export function createMeasurementPointHandlers(
       rayDirection: direction,
       rayWeight: 1.0,
       ...(depthObs
-        ? { depthPoint: depthObs.point, depthWeight: depthObs.weight }
+        ? {
+            depthPoint: depthObs.point,
+            depthWeight: depthObs.weight,
+            depthTimestamp: depthSample?.timestamp,
+          }
         : {}),
     };
 
