@@ -42,6 +42,8 @@ export interface MeasurementRayRecord {
   readonly depthPoint?: Vector3;
   /** Depth weight decaying with distance, if available */
   readonly depthWeight?: number;
+  /** Timestamp of the depth frame used for this observation, if available */
+  readonly depthTimestamp?: number;
 }
 
 /**
@@ -113,7 +115,8 @@ function isValidRayRecord(obs: unknown): obs is MeasurementRayRecord {
     hasValidArPose(o) &&
     isVector3(o.rayOrigin) &&
     isVector3(o.rayDirection) &&
-    typeof o.rayWeight === 'number'
+    typeof o.rayWeight === 'number' &&
+    (o.depthTimestamp === undefined || typeof o.depthTimestamp === 'number')
   );
 }
 

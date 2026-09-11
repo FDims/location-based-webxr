@@ -125,6 +125,19 @@ describe('Measurement Point Integration', () => {
     expect(state.draft.canConfirm).toBe(false);
   });
 
+  test('blocks quality readiness when pose and depth timestamps are skewed', () => {
+    let state = measurementPointsReducer(undefined, { type: '@@INIT' });
+    state = measurementPointsReducer(
+      state,
+      addMeasurementRay(
+        makeRay(0, { depthTimestamp: 1000, timestamp: 1000 + 500 })
+      )
+    );
+
+    expect(state.draft.canConfirm).toBe(false);
+    expect(state.draft.prompt).not.toBe('ready_to_confirm');
+  });
+
   // ── Draft state transitions ──────────────────────────────────────────
 
   test('draft transitions: idle → provisional → refining as rays accumulate', () => {
