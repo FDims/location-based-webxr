@@ -211,6 +211,8 @@ export function createMeasurementUI(
     'style',
     `${BUTTON_BASE_STYLES} background: #00c853; color: #fff;`
   );
+  confirmBtn.title =
+    'Save anyway stores the estimate even when the quality gate is not ready.';
 
   const undoBtn = createEl(
     'button',
@@ -257,7 +259,8 @@ export function createMeasurementUI(
       return;
     }
 
-    const rect = options.getAimingViewport?.() ?? arCanvas.getBoundingClientRect();
+    const rect =
+      options.getAimingViewport?.() ?? arCanvas.getBoundingClientRect();
     const normalized = normalizePointerCoordinates(
       event.clientX,
       event.clientY,
@@ -293,6 +296,7 @@ export function createMeasurementUI(
   });
 
   // ── Redux subscription ──
+  let visible = false;
   let lastDraft: LiveMeasurementDraft | null = null;
   let lastRayCount = 0;
 
@@ -332,6 +336,7 @@ export function createMeasurementUI(
     confirmBtn.disabled = !hasProvisionalPoint;
     confirmBtn.textContent = draft.canConfirm ? '✓ Confirm' : '⚠ Save anyway';
     confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '0.4';
+    confirmBtn.style.display = hasProvisionalPoint ? 'inline-block' : 'none';
 
     rayCountLabel.textContent = `${rays.length} observation ray${rays.length === 1 ? '' : 's'}`;
     undoBtn.disabled = rays.length === 0 || draft.status === 'confirm_pending';
@@ -340,7 +345,7 @@ export function createMeasurementUI(
 
     // A successful save ends the active draft; keep the recorder controls clear.
     panel.style.display =
-      draft.status === 'idle' || draft.status === 'confirmed' ? 'none' : 'flex';
+      visible && draft.status !== 'confirmed' ? 'flex' : 'none';
   }
 
   const unsubscribe = store.subscribe(updateUI);
@@ -350,10 +355,12 @@ export function createMeasurementUI(
   // ── Public API ──
   return {
     show() {
+      visible = true;
       crosshair.style.display = 'block';
       updateUI();
     },
     hide() {
+      visible = false;
       crosshair.style.display = 'none';
       panel.style.display = 'none';
     },

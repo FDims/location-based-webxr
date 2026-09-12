@@ -2067,20 +2067,9 @@ async function handleEnterAR(): Promise<void> {
     // Issue 7 Phase 2: Push AR screen state for back-button navigation
     pushScreenState('ar');
 
-    // Phase 4: Mount measurement point UI into the #app dom-overlay.
-    // Created lazily alongside other AR UI; disposed on session cleanup.
-    if (appContainer) {
-      measurementUI?.dispose();
-      measurementUI = createMeasurementUI({
-        container: appContainer,
-        arCanvas: appContainer,
-        handlers: measurementPointHandlers,
-        store,
-        getScenarioId: () => folderManager.getCurrentScenarioName(),
-        onConfirmIntegrated: (mode) => integratedMarkRefPoint(undefined, mode),
-      });
-      measurementUI.hide();
-    }
+    // Measurement UI is mounted only after Start Recording. The specification
+    // defines measurement marking as a recording-time workflow; disposing it
+    // here also prevents AR_READY taps from creating rays.
   } catch (err) {
     log.error('AR init failed:', err);
     // Field Test Readiness Issue #4: Provide specific error messages
