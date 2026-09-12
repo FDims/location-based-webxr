@@ -17,6 +17,7 @@ import type { MeasurementPointHandlers } from '../measurement-points/measurement
 import {
   selectMeasurementDraft,
   selectPendingRays,
+  DEFAULT_QUALITY_THRESHOLDS,
 } from '../state/measurement-points-slice';
 import type {
   CoachingPrompt,
@@ -332,20 +333,33 @@ export function createMeasurementUI(
 
     updateUncertainty(draft);
 
-    // Confirm button state
+    // Confirm becomes available only when the quality state is ready. A solved
+    // but below-threshold draft remains explicitly overridable.
     confirmBtn.disabled = !hasProvisionalPoint;
-    confirmBtn.textContent = draft.canConfirm ? '✓ Confirm' : '⚠ Save anyway';
+    if (draft.canConfirm) {
+      confirmBtn.textContent = '✓ Confirm';
+    } else if (hasProvisionalPoint) {
+      const uncertainty = draft.uncertainty;
+      const uncertaintyText =
+        uncertainty === undefined
+          ? 'error unavailable'
+          : `error ± ${(uncertainty * 100).toFixed(1)} cm`;
+      const thresholdText = `threshold ± ${(DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard * 100).toFixed(1)} cm`;
+      confirmBtn.textContent = `⚠ Save anyway (${uncertaintyText}; ${thresholdText})`;
+    } else {
+      confirmBtn.textContent = '✓ Confirm';
+    }
     confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '0.4';
     confirmBtn.style.display = hasProvisionalPoint ? 'inline-block' : 'none';
 
     rayCountLabel.textContent = `${rays.length} observation ray${rays.length === 1 ? '' : 's'}`;
     undoBtn.disabled = rays.length === 0 || draft.status === 'confirm_pending';
     undoBtn.style.opacity = undoBtn.disabled ? '0.4' : '1';
-    undoBtn.style.display = draft.status === 'idle' ? 'none' : 'inline-block';
+    undoBtn.style.display = rays.length === 0 ? 'none' : 'inline-block';
 
-    // A successful save ends the active draft; keep the recorder controls clear.
-    panel.style.display =
-      visible && draft.status !== 'confirmed' ? 'flex' : 'none';
+  // Keep aiming controls visible whenever the measurement UI is active,
+  // including before the first ray and after a confirmed save.
+  panel.style.display = visible ? 'flex' : 'none';
   }
 
   const unsubscribe = store.subscribe(updateUI);
@@ -357,6 +371,9 @@ export function createMeasurementUI(
     show() {
       visible = true;
       crosshair.style.display = 'block';
+      // Visibility is not part of the Redux render cache. Force one update
+      // when the UI is shown after construction or a recording swap.
+      lastDraft = null;
       updateUI();
     },
     hide() {

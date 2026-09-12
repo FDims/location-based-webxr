@@ -236,6 +236,10 @@ const measurementPointsSlice = createSlice({
   initialState,
   reducers: {
     addMeasurementRay(state, action: PayloadAction<MeasurementRayRecord>) {
+      // A confirmed point ends one draft; the next ray starts a new one.
+      if (state.draft.status === 'confirmed') {
+        state.draft = INITIAL_DRAFT;
+      }
       // Immer Draft widens readonly tuples; assert through.
       state.pendingRays.push(
         action.payload as (typeof state.pendingRays)[number]

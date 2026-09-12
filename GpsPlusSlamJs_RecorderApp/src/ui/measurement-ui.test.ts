@@ -2,7 +2,11 @@
 
 import { describe, expect, test, vi } from 'vitest';
 import { createMeasurementUI } from './measurement-ui';
-import { measurementPointsReducer } from '../state/measurement-points-slice';
+import {
+  addMeasurementRay,
+  confirmMeasurementSuccess,
+  measurementPointsReducer,
+} from '../state/measurement-points-slice';
 import type { MeasurementPointHandlers } from '../measurement-points/measurement-point-handlers';
 import type {
   CombinedRootState,
@@ -43,6 +47,84 @@ function makeHandlers(): MeasurementPointHandlers {
 }
 
 describe('measurement UI aiming modes', () => {
+  test('shows aiming controls before the first ray', () => {
+    document.body.innerHTML = '<div id="root"></div><div id="ar"></div>';
+    const container = document.getElementById('root')!;
+    const ui = createMeasurementUI({
+      container,
+      arCanvas: document.getElementById('ar')!,
+      handlers: makeHandlers(),
+      store: makeStore(),
+      getScenarioId: () => 'scenario',
+    });
+    ui.show();
+
+    expect(
+      (container.querySelector('#measurement-panel') as HTMLElement).style
+        .display
+    ).toBe('flex');
+    expect(container.querySelector('#measurement-aim-mode-btn')).not.toBeNull();
+    ui.dispose();
+  });
+
+  test('shows the error threshold and stays visible after a confirmed point', () => {
+    document.body.innerHTML = '<div id="root"></div><div id="ar"></div>';
+    const container = document.getElementById('root')!;
+    const store = makeStore();
+    const ui = createMeasurementUI({
+      container,
+      arCanvas: document.getElementById('ar')!,
+      handlers: makeHandlers(),
+      store,
+      getScenarioId: () => 'scenario',
+    });
+    ui.show();
+    const base = measurementPointsReducer(undefined, { type: '@@INIT' });
+    const confirmed = measurementPointsReducer(
+      base,
+      confirmMeasurementSuccess({
+        schemaVersion: 1,
+        id: 'confirmed',
+        createdAt: 1,
+        updatedAt: 1,
+        scenarioId: 'scenario',
+        observations: [],
+        arPosition: [0, 0, 0],
+        gpsPositionSnapshot: null,
+        uncertainty: 0.01,
+        rmsError: 0.01,
+        inlierIds: [],
+        outlierIds: [],
+      })
+    );
+    store.setMeasurementState(confirmed);
+    expect(
+      (container.querySelector('#measurement-panel') as HTMLElement).style
+        .display
+    ).toBe('flex');
+
+    const next = measurementPointsReducer(
+      confirmed,
+      addMeasurementRay({
+        id: 'new-ray',
+        timestamp: 1000,
+        arPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        rayOrigin: [0, 0, 0],
+        rayDirection: [0, 0, -1],
+        rayWeight: 1,
+        depthPoint: [0, 0, -1],
+        depthWeight: 1,
+      })
+    );
+    store.setMeasurementState(next);
+    const button = container.querySelector(
+      '#measurement-confirm-btn'
+    ) as HTMLButtonElement;
+    expect(button.textContent).toContain('threshold');
+    expect(button.textContent).toContain('20.0 cm');
+    ui.dispose();
+  });
+
   test('crosshair shoots center and tap mode forwards normalized coordinates', () => {
     document.body.innerHTML = '<div id="root"></div><div id="ar"></div>';
     const container = document.getElementById('root')!;
