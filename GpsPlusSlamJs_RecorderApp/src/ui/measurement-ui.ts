@@ -251,7 +251,7 @@ export function createMeasurementUI(
   // ── Tap handler (shoot ray) ──
   function handleTap(event: PointerEvent): void {
     const target = event.target;
-    if (target instanceof Element && target.closest('#measurement-panel')) {
+    if (target instanceof Element && (target.closest('#measurement-panel') || target.closest('button') || target.closest('a'))) {
       return;
     }
 
@@ -278,6 +278,10 @@ export function createMeasurementUI(
     aimingMode = aimingMode === 'crosshair' ? 'tap' : 'crosshair';
     aimModeBtn.textContent =
       aimingMode === 'crosshair' ? 'Aim: Crosshair' : 'Aim: Tap';
+    if (visible) {
+      crosshair.style.display = aimingMode === 'crosshair' ? 'block' : 'none';
+      updateUI();
+    }
   });
 
   // ── Button handlers ──
@@ -307,7 +311,7 @@ export function createMeasurementUI(
       draft.status !== 'idle' &&
       draft.status !== 'confirmed'
     ) {
-      uncertaintyLabel.textContent = `± ${(draft.uncertainty * 100).toFixed(1)} cm`;
+      uncertaintyLabel.textContent = `Error: ± ${(draft.uncertainty * 100).toFixed(1)} cm`;
       uncertaintyLabel.style.display = 'block';
     } else {
       uncertaintyLabel.style.display = 'none';
@@ -327,25 +331,33 @@ export function createMeasurementUI(
     lastRayCount = rays.length;
 
     // Coaching banner
-    const text = COACHING_TEXT[draft.prompt];
+    let text = COACHING_TEXT[draft.prompt];
+    if (draft.prompt === 'add_more_rays' || (draft.prompt === 'none' && rays.length === 0)) {
+      if (rays.length === 0) {
+        text = aimingMode === 'crosshair'
+          ? 'Tap anywhere to shoot observation ray through crosshair'
+          : 'Tap anywhere to shoot observation ray at tap location';
+      } else if (draft.prompt === 'add_more_rays') {
+        text = aimingMode === 'crosshair'
+          ? '⊕ Tap anywhere to shoot observation ray through crosshair'
+          : '⊕ Tap anywhere to shoot observation ray at tap location';
+      }
+    }
     coachingBanner.textContent = text;
     coachingBanner.style.display = text ? 'block' : 'none';
 
     updateUncertainty(draft);
 
-    // Confirm becomes available only when the quality state is ready. A solved
-    // but below-threshold draft remains explicitly overridable.
+    const isUnderHardThreshold =
+      draft.uncertainty !== undefined &&
+      draft.uncertainty <= DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard;
+
     confirmBtn.disabled = !hasProvisionalPoint;
-    if (draft.canConfirm) {
+    if (draft.canConfirm || isUnderHardThreshold) {
       confirmBtn.textContent = '✓ Confirm';
     } else if (hasProvisionalPoint) {
-      const uncertainty = draft.uncertainty;
-      const uncertaintyText =
-        uncertainty === undefined
-          ? 'error unavailable'
-          : `error ± ${(uncertainty * 100).toFixed(1)} cm`;
       const thresholdText = `threshold ± ${(DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard * 100).toFixed(1)} cm`;
-      confirmBtn.textContent = `⚠ Save anyway (${uncertaintyText}; ${thresholdText})`;
+      confirmBtn.textContent = `⚠ Save anyway (${thresholdText})`;
     } else {
       confirmBtn.textContent = '✓ Confirm';
     }
@@ -370,7 +382,7 @@ export function createMeasurementUI(
   return {
     show() {
       visible = true;
-      crosshair.style.display = 'block';
+      crosshair.style.display = aimingMode === 'crosshair' ? 'block' : 'none';
       // Visibility is not part of the Redux render cache. Force one update
       // when the UI is shown after construction or a recording swap.
       lastDraft = null;

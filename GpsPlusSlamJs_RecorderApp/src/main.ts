@@ -531,7 +531,7 @@ async function integratedMarkRefPoint(
   options?: {
     forceNew?: boolean;
   },
-  confirmationMode: 'quality' | 'override' = 'quality'
+  confirmationMode?: 'quality' | 'override'
 ): Promise<void> {
   const state = store.getState();
   const draft = selectMeasurementDraft(state);
