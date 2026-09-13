@@ -251,7 +251,12 @@ export function createMeasurementUI(
   // ── Tap handler (shoot ray) ──
   function handleTap(event: PointerEvent): void {
     const target = event.target;
-    if (target instanceof Element && (target.closest('#measurement-panel') || target.closest('button') || target.closest('a'))) {
+    if (
+      target instanceof Element &&
+      (target.closest('#measurement-panel') ||
+        target.closest('button') ||
+        target.closest('a'))
+    ) {
       return;
     }
 
@@ -332,15 +337,20 @@ export function createMeasurementUI(
 
     // Coaching banner
     let text = COACHING_TEXT[draft.prompt];
-    if (draft.prompt === 'add_more_rays' || (draft.prompt === 'none' && rays.length === 0)) {
+    if (
+      draft.prompt === 'add_more_rays' ||
+      (draft.prompt === 'none' && rays.length === 0)
+    ) {
       if (rays.length === 0) {
-        text = aimingMode === 'crosshair'
-          ? 'Tap anywhere to shoot observation ray through crosshair'
-          : 'Tap anywhere to shoot observation ray at tap location';
+        text =
+          aimingMode === 'crosshair'
+            ? 'Tap anywhere to shoot observation ray through ⊕'
+            : 'Tap anywhere to shoot observation ray at tap location';
       } else if (draft.prompt === 'add_more_rays') {
-        text = aimingMode === 'crosshair'
-          ? '⊕ Tap anywhere to shoot observation ray through crosshair'
-          : '⊕ Tap anywhere to shoot observation ray at tap location';
+        text =
+          aimingMode === 'crosshair'
+            ? '⊕ Tap anywhere to shoot observation ray through ⊕'
+            : 'Tap anywhere to shoot observation ray at tap location';
       }
     }
     coachingBanner.textContent = text;
@@ -369,9 +379,9 @@ export function createMeasurementUI(
     undoBtn.style.opacity = undoBtn.disabled ? '0.4' : '1';
     undoBtn.style.display = rays.length === 0 ? 'none' : 'inline-block';
 
-  // Keep aiming controls visible whenever the measurement UI is active,
-  // including before the first ray and after a confirmed save.
-  panel.style.display = visible ? 'flex' : 'none';
+    // Keep aiming controls visible whenever the measurement UI is active,
+    // including before the first ray and after a confirmed save.
+    panel.style.display = visible ? 'flex' : 'none';
   }
 
   const unsubscribe = store.subscribe(updateUI);
