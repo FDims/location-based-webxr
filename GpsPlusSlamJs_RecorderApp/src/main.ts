@@ -1827,15 +1827,14 @@ function handleToggleMap(): void {
     );
   }
 
-  arSessionResources.mapOverlay.toggle();
-  if (arSessionResources.mapOverlay.isVisible()) {
-    // 2026-07-06 round-4 live-map fix: refresh AFTER toggle() — the overlay
-    // creates its inner Leaflet map only inside show(), so a refresh before
-    // toggle() always ran against a null map and drew nothing (green prior /
-    // red captured, same renderer as the summary map). Re-run on every
-    // re-show too: phases without store events (e.g. AR_READY has no GPS
-    // watch) would otherwise never trigger the wirer's subscriber.
-    arSessionResources.refPointViews?.refreshMapMarkers();
+  mapOverlay.toggle();
+  if (mapOverlay.isVisible()) {
+    // 2026-07-06 round-4 live-map fix: refresh AFTER toggle()
+    refPointViews?.refreshMapMarkers();
+    // Dispatch a resize event slightly after to fix Leaflet gray/white map tile bug
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
   }
   log.info(
     `Map overlay ${arSessionResources.mapOverlay.isVisible() ? 'shown' : 'hidden'}`

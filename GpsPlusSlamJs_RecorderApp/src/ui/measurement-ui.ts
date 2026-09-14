@@ -61,7 +61,7 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
 
 const PANEL_STYLES = `
   position: fixed;
-  top: calc(50% + 48px);
+  bottom: 120px;
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 520px);
@@ -210,7 +210,7 @@ export function createMeasurementUI(
   );
   confirmBtn.setAttribute(
     'style',
-    `${BUTTON_BASE_STYLES} background: #00c853; color: #fff;`
+    `${BUTTON_BASE_STYLES} background: rgba(0, 200, 83, 0.4); backdrop-filter: blur(8px); color: #fff;`
   );
   confirmBtn.title =
     'Save anyway stores the estimate even when the quality gate is not ready.';
@@ -360,7 +360,7 @@ export function createMeasurementUI(
 
     const isUnderHardThreshold =
       draft.uncertainty !== undefined &&
-      draft.uncertainty <= DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard;
+      draft.uncertainty <= DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard + 1e-4; // FP tolerance
 
     confirmBtn.disabled = !hasProvisionalPoint;
     if (draft.canConfirm || isUnderHardThreshold) {
