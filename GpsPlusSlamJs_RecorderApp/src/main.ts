@@ -511,12 +511,25 @@ function updateConfirmedMeasurementVisuals(
       createConfirmedMeasurementVisual(arParent, scene);
     confirmedMeasurementVisuals.set(entity.id, visual);
     MeasurementPointViews.updateArDotPosition(visual.arDot, entity.arPosition);
-    MeasurementPointViews.updateGpsDotPosition(
-      visual.gpsDot,
-      entity.arPosition,
-      matrix
-    );
-    visual.line.visible = Boolean(matrix);
+    
+    // FIX 2: Use the saved GPS snapshot so the gap between AR and GPS dot is visible.
+    // If no snapshot exists (alignment was lost when saving), fall back to recomputing.
+    if (entity.gpsPositionSnapshot && matrix) {
+      visual.gpsDot.position.set(
+        entity.gpsPositionSnapshot[0],
+        entity.gpsPositionSnapshot[1],
+        entity.gpsPositionSnapshot[2]
+      );
+      visual.gpsDot.visible = true;
+    } else {
+      MeasurementPointViews.updateGpsDotPosition(
+        visual.gpsDot,
+        entity.arPosition,
+        matrix
+      );
+    }
+    
+    visual.line.visible = visual.gpsDot.visible;
 
     const arWorldPosition = arWorldGroup.localToWorld(
       new THREE.Vector3(
@@ -2016,6 +2029,8 @@ async function handleEnterAR(): Promise<void> {
             color: params.arDotColor,
             transparent: true,
             opacity: 0.5,
+            depthTest: false,
+            depthWrite: false,
           });
           measurementProvisionalSphere = new THREE.Mesh(geom, mat);
           measurementParent.add(measurementProvisionalSphere);
@@ -2043,6 +2058,9 @@ async function handleEnterAR(): Promise<void> {
             state.gpsData?.gpsEvents?.alignmentMatrix
           );
         }
+        
+        // Ensure transforms are updated even if the parent didn't cascade it
+        measurementParent.updateMatrixWorld(true);
       }
     });
 
