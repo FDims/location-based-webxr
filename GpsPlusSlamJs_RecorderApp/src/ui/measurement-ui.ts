@@ -61,7 +61,7 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
 
 const PANEL_STYLES = `
   position: fixed;
-  bottom: 120px;
+  bottom: 25%;
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 520px);
@@ -78,7 +78,7 @@ const COACHING_STYLES = `
   color: #fff;
   font-family: 'Inter', 'Roboto', system-ui, sans-serif;
   font-size: 14px;
-  padding: 8px 16px;
+  padding: 2px 6px;
   border-radius: 20px;
   max-width: 100%;
   text-align: center;
@@ -194,7 +194,7 @@ export function createMeasurementUI(
   const rayCountLabel = createEl('div', { id: 'measurement-ray-count' });
   rayCountLabel.setAttribute(
     'style',
-    'color: #fff; font: 600 13px system-ui, sans-serif;'
+    'color: #ff0000; font: 600 13px system-ui, sans-serif;'
   );
 
   const buttonRow = createEl('div');
@@ -210,7 +210,7 @@ export function createMeasurementUI(
   );
   confirmBtn.setAttribute(
     'style',
-    `${BUTTON_BASE_STYLES} background: rgba(0, 200, 83, 0.4); backdrop-filter: blur(8px); color: #fff;`
+    `${BUTTON_BASE_STYLES} background: rgba(0, 150, 60, 0.55); color: #fff;`
   );
   confirmBtn.title =
     'Save anyway stores the estimate even when the quality gate is not ready.';
@@ -229,7 +229,7 @@ export function createMeasurementUI(
   const aimModeBtn = createEl(
     'button',
     { id: 'measurement-aim-mode-btn' },
-    'Aim: Crosshair'
+    'Aiming mode: Crosshair'
   );
   aimModeBtn.setAttribute(
     'style',
@@ -282,7 +282,9 @@ export function createMeasurementUI(
   aimModeBtn.addEventListener('click', () => {
     aimingMode = aimingMode === 'crosshair' ? 'tap' : 'crosshair';
     aimModeBtn.textContent =
-      aimingMode === 'crosshair' ? 'Aim: Crosshair' : 'Aim: Tap';
+      aimingMode === 'crosshair'
+        ? 'Aiming mode: Crosshair'
+        : 'Aiming mode: Tap';
     if (visible) {
       crosshair.style.display = aimingMode === 'crosshair' ? 'block' : 'none';
       updateUI();
@@ -349,7 +351,7 @@ export function createMeasurementUI(
       } else if (draft.prompt === 'add_more_rays') {
         text =
           aimingMode === 'crosshair'
-            ? '⊕ Tap anywhere to shoot observation ray through ⊕'
+            ? 'Tap anywhere to shoot observation ray through ⊕'
             : 'Tap anywhere to shoot observation ray at tap location';
       }
     }
@@ -371,7 +373,7 @@ export function createMeasurementUI(
     } else {
       confirmBtn.textContent = '✓ Confirm';
     }
-    confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '0.4';
+    confirmBtn.style.opacity = hasProvisionalPoint ? '1' : '1';
     confirmBtn.style.display = hasProvisionalPoint ? 'inline-block' : 'none';
 
     rayCountLabel.textContent = `${rays.length} observation ray${rays.length === 1 ? '' : 's'}`;
