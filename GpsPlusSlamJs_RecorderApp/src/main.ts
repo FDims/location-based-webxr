@@ -1263,6 +1263,7 @@ async function main(): Promise<void> {
       onMapToggle: () => replayHandlers.handleReplayMapToggle(),
       onMapZoomIn: () => replayHandlers.handleReplayMapZoomIn(),
       onMapZoomOut: () => replayHandlers.handleReplayMapZoomOut(),
+      onRestart: () => void replayHandlers.handleReplayRestart(),
     });
     updateStatus('Replay Mode — Open a recordings folder');
     // In replay mode the recordings folder is the PRIMARY action (you browse
