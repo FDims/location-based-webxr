@@ -28,6 +28,7 @@ export interface ReplayUICallbacks {
   onMapToggle: () => void;
   onMapZoomIn: () => void;
   onMapZoomOut: () => void;
+  onRestart: () => void;
 }
 
 // ─── Module state ─────────────────────────────────────────────
@@ -93,6 +94,11 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
   });
   el('btn-map-zoom-out-replay')?.addEventListener('click', () => {
     callbacks?.onMapZoomOut();
+  });
+
+  // Restart button (shown after replay completes)
+  el('btn-replay-restart')?.addEventListener('click', () => {
+    callbacks?.onRestart();
   });
 
   // Live speed presets (in the playback controls overlay)
@@ -307,6 +313,7 @@ export function showReplayControls(): void {
   show('replay-controls');
   show('replay-legend');
   hide('controls');
+  hide('btn-replay-restart');
 }
 
 /** Hide replay playback controls and color legend. */
@@ -335,12 +342,14 @@ export function updatePlayPauseButton(
   switch (state) {
     case 'playing':
       btn.textContent = '⏸ Pause';
+      hide('btn-replay-restart');
       break;
     case 'paused':
       btn.textContent = '▶ Resume';
       break;
     case 'completed':
       btn.textContent = '✅ Complete';
+      show('btn-replay-restart');
       break;
   }
 }

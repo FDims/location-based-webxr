@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Replay Handlers
  *
  * Encapsulates all replay-mode state and event handlers, extracted from
@@ -68,6 +68,7 @@ export interface ReplayHandlers {
   handleReplayMapToggle(): void;
   handleReplayMapZoomIn(): void;
   handleReplayMapZoomOut(): void;
+  handleReplayRestart(): Promise<void>;
 
   // State accessors
   getSessionEntries(): SessionEntry[];
@@ -93,6 +94,8 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
   let replayZipScenariosCache: ScenarioSessionMap = new Map();
   let mapOverlay: LeafletMapOverlay | null = null;
   let previewMap: PreviewMapInstance | null = null;
+  /** The session entry most recently replayed — needed for restart. */
+  let lastReplayedSession: SessionEntry | null = null;
 
   // --- Handlers ---
 
@@ -210,6 +213,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     speedFactor: number
   ): Promise<void> {
     log.info(`Starting replay of "${session.filename}" at ${speedFactor}x...`);
+    lastReplayedSession = session;
     updateStatus('Loading session...');
 
     try {
@@ -280,6 +284,34 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
   function handleReplaySpeedChange(speed: number): void {
     replayController?.setSpeed(speed);
     log.info(`Replay speed changed to ${speed}x`);
+  }
+
+  /** Dispose the current replay and restart the same session from scratch. */
+  async function handleReplayRestart(): Promise<void> {
+    if (!replayController) {
+      return;
+    }
+
+    // Find the session that was replayed. Look up by entry or index.
+    const session = lastReplayedSession;
+    if (!session) {
+      log.warn('Cannot restart — no session reference saved');
+      showError('Cannot restart — no session reference');
+      return;
+    }
+
+    log.info(`Restarting replay of "${session.filename}"...`);
+
+    // Dispose the current replay fully (scene, engine, subscribers)
+    replayController.dispose();
+    replayController = null;
+    if (mapOverlay) {
+      mapOverlay.dispose();
+      mapOverlay = null;
+    }
+
+    // Start a fresh replay of the same session at 1× speed
+    await startReplayOfSession(session, 1);
   }
 
   function handleReplayCameraToggle(): void {
@@ -374,6 +406,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
       mapOverlay.dispose();
       mapOverlay = null;
     }
+    lastReplayedSession = null;
   }
 
   return {
@@ -387,6 +420,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     handleReplayMapToggle,
     handleReplayMapZoomIn,
     handleReplayMapZoomOut,
+    handleReplayRestart,
     getSessionEntries,
     getSelectedSessionIndex,
     getIsReplayMode,
