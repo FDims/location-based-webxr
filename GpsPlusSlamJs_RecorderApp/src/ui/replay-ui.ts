@@ -29,6 +29,8 @@ export interface ReplayUICallbacks {
   onMapZoomIn: () => void;
   onMapZoomOut: () => void;
   onRestart: () => void;
+  /** Called when the user releases the scrubber slider at a new position. */
+  onSeek: (actionIndex: number) => void;
 }
 
 // ─── Module state ─────────────────────────────────────────────
@@ -36,6 +38,9 @@ export interface ReplayUICallbacks {
 let callbacks: ReplayUICallbacks | null = null;
 // Track which session entry is selected (used by selectSessionEntry)
 let _selectedSessionIndex = -1;
+/** True while the user is actively dragging the scrubber thumb — prevents
+ *  programmatic updates from fighting with the user's drag. */
+let _isUserDraggingScrubber = false;
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -100,6 +105,25 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
   el('btn-replay-restart')?.addEventListener('click', () => {
     callbacks?.onRestart();
   });
+
+  // Scrubber / timeline slider
+  const scrubber = el('replay-scrubber') as HTMLInputElement | null;
+  if (scrubber) {
+    // Track drag state to suppress programmatic updates while user is dragging
+    scrubber.addEventListener('pointerdown', () => {
+      _isUserDraggingScrubber = true;
+    });
+    // On release: fire seek and clear drag state
+    scrubber.addEventListener('pointerup', () => {
+      _isUserDraggingScrubber = false;
+    });
+    // change fires when the user commits a new value (mouseup / touchend)
+    scrubber.addEventListener('change', () => {
+      _isUserDraggingScrubber = false;
+      const targetIndex = parseInt(scrubber.value, 10);
+      callbacks?.onSeek(targetIndex);
+    });
+  }
 
   // Live speed presets (in the playback controls overlay)
   for (const btn of document.querySelectorAll('.replay-live-speed')) {
@@ -322,11 +346,40 @@ export function hideReplayControls(): void {
   hide('replay-legend');
 }
 
-/** Update progress display. */
+/** Update progress display and scrubber position. */
 export function updateReplayProgress(current: number, total: number): void {
   const progress = el('replay-progress');
   if (progress) {
     progress.textContent = `Action ${current}/${total}`;
+  }
+  // Update scrubber thumb position (unless user is actively dragging)
+  if (!_isUserDraggingScrubber) {
+    const scrubber = el('replay-scrubber') as HTMLInputElement | null;
+    if (scrubber) {
+      scrubber.max = String(total);
+      scrubber.value = String(current);
+    }
+  }
+}
+
+/**
+ * Initialize the scrubber range for a new replay session.
+ * Sets the max value and resets the thumb to 0.
+ */
+export function initScrubber(totalActions: number): void {
+  const scrubber = el('replay-scrubber') as HTMLInputElement | null;
+  if (scrubber) {
+    scrubber.min = '0';
+    scrubber.max = String(totalActions);
+    scrubber.value = '0';
+  }
+}
+
+/** Mark the scrubber as seeking (visual feedback). */
+export function setScrubberSeeking(seeking: boolean): void {
+  const scrubber = el('replay-scrubber');
+  if (scrubber) {
+    scrubber.classList.toggle('seeking', seeking);
   }
 }
 
