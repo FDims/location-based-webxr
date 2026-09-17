@@ -11,10 +11,10 @@ export function arLocalToGpsWorld(
 ): Vector3 | null {
   if (!alignmentMatrix || alignmentMatrix.length !== 16) return null;
 
-  // WEBXR_TO_NUE: NUE = (-WebXR.z, WebXR.y, WebXR.x)
-  const nueX = -arPosition[2];
+  // arPosition is already in NUE space (from extractOdomPosition)
+  const nueX = arPosition[0];
   const nueY = arPosition[1];
-  const nueZ = arPosition[0];
+  const nueZ = arPosition[2];
   const m = alignmentMatrix;
 
   return [
