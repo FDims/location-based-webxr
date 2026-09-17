@@ -1264,6 +1264,8 @@ async function main(): Promise<void> {
       onMapZoomIn: () => replayHandlers.handleReplayMapZoomIn(),
       onMapZoomOut: () => replayHandlers.handleReplayMapZoomOut(),
       onRestart: () => void replayHandlers.handleReplayRestart(),
+      onSeek: (actionIndex: number) =>
+        void replayHandlers.handleReplaySeek(actionIndex),
     });
     updateStatus('Replay Mode — Open a recordings folder');
     // In replay mode the recordings folder is the PRIMARY action (you browse
