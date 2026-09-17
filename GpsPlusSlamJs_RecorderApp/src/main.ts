@@ -536,7 +536,7 @@ function updateConfirmedMeasurementVisuals(
         entity.arPosition[0],
         entity.arPosition[1],
         entity.arPosition[2]
-      ).applyMatrix4(WEBXR_TO_NUE)
+      )
     );
     const gpsWorldPosition = visual.gpsDot.position.clone();
     if (matrix) {
@@ -1979,9 +1979,9 @@ async function handleEnterAR(): Promise<void> {
       if (arWorldGroup) {
         if (!measurementBasisGroup) {
           measurementBasisGroup = new THREE.Group();
-          measurementBasisGroup.name = 'measurement-webxr-basis';
-          measurementBasisGroup.matrixAutoUpdate = false;
-          measurementBasisGroup.matrix.copy(WEBXR_TO_NUE);
+          measurementBasisGroup.name = 'measurement-basis';
+          // Rays and points are already in NUE space (from extractOdomPosition).
+          // arWorldGroup's local space is NUE space. So no basis change is needed.
           arWorldGroup.add(measurementBasisGroup);
         }
         const measurementParent = measurementBasisGroup;
