@@ -73,6 +73,8 @@ export interface ReplayHandlers {
   handleReplayRestart(): Promise<void>;
   /** Seek to a specific action index (seek-by-reset). */
   handleReplaySeek(targetIndex: number): Promise<void>;
+  /** Get the current action index from the replay engine. */
+  getCurrentActionIndex(): number;
 
   // State accessors
   getSessionEntries(): SessionEntry[];
@@ -326,10 +328,10 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
       updatePlayPauseButton('playing');
       updateStatus('Replaying...');
     } else if (state === 'idle') {
-      // First play from paused-at-start state
-      void replayController.play(1);
+      // First play from paused-at-start state — default to 0.1× speed
+      void replayController.play(0.1);
       updatePlayPauseButton('playing');
-      updateStatus('Replaying...');
+      updateStatus('Replaying at 0.1×...');
     }
   }
 
@@ -391,6 +393,8 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
 
     // Recreate and fast-forward to the target index
     await startReplayOfSession(session, 1, targetIndex);
+    // After seek completes, set speed to 0.1× so resume is slow
+    replayController?.setSpeed(0.1);
   }
 
   function handleReplayCameraToggle(): void {
@@ -491,6 +495,11 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     seekTargetIndex = -1;
   }
 
+  function getCurrentActionIndex(): number {
+    if (!replayController) return 0;
+    return replayController.getEngine().getCurrentActionIndex();
+  }
+
   return {
     handleReplayScenarioChange,
     handleReplaySessionSelect,
@@ -504,6 +513,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     handleReplayMapZoomOut,
     handleReplayRestart,
     handleReplaySeek,
+    getCurrentActionIndex,
     getSessionEntries,
     getSelectedSessionIndex,
     getIsReplayMode,

@@ -523,7 +523,7 @@ function updateConfirmedMeasurementVisuals(
         entity.arPosition[0],
         entity.arPosition[1],
         entity.arPosition[2]
-      )
+      ).applyMatrix4(WEBXR_TO_NUE)
     );
     const gpsWorldPosition = visual.gpsDot.position.clone();
     if (matrix) {
@@ -1266,6 +1266,16 @@ async function main(): Promise<void> {
       onRestart: () => void replayHandlers.handleReplayRestart(),
       onSeek: (actionIndex: number) =>
         void replayHandlers.handleReplaySeek(actionIndex),
+      onStepForward: () => {
+        const idx = replayHandlers.getCurrentActionIndex();
+        void replayHandlers.handleReplaySeek(idx + 1);
+      },
+      onStepBackward: () => {
+        const idx = replayHandlers.getCurrentActionIndex();
+        if (idx > 0) {
+          void replayHandlers.handleReplaySeek(idx - 1);
+        }
+      },
     });
     updateStatus('Replay Mode — Open a recordings folder');
     // In replay mode the recordings folder is the PRIMARY action (you browse
@@ -1579,9 +1589,9 @@ async function handleEnterAR(): Promise<void> {
       if (arWorldGroup) {
         if (!measurementBasisGroup) {
           measurementBasisGroup = new THREE.Group();
-          measurementBasisGroup.name = 'measurement-basis';
-          // Rays and points are already in NUE space (from extractOdomPosition).
-          // arWorldGroup's local space is NUE space. So no basis change is needed.
+          measurementBasisGroup.name = 'measurement-webxr-basis';
+          measurementBasisGroup.matrixAutoUpdate = false;
+          measurementBasisGroup.matrix.copy(WEBXR_TO_NUE);
           arWorldGroup.add(measurementBasisGroup);
         }
         const measurementParent = measurementBasisGroup;

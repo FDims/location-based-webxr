@@ -4,6 +4,11 @@ import type { Vector3 } from 'gps-plus-slam-app-framework/core';
  * Convert a raw WebXR AR-local position into the recorder's GPS-world frame.
  * The recorder's alignment matrix operates in NUE coordinates, so the static
  * WebXR-to-NUE basis change must happen before alignment.
+ *
+ * extractOdomPosition() returns raw WebXR coordinates [x, y, z].
+ * NUE convention: X=North, Y=Up, Z=East.
+ * WebXR convention: X=East, Y=Up, Z=South.
+ * WEBXR_TO_NUE: NUE = (-WebXR.z, WebXR.y, WebXR.x)
  */
 export function arLocalToGpsWorld(
   arPosition: Vector3,
@@ -11,10 +16,10 @@ export function arLocalToGpsWorld(
 ): Vector3 | null {
   if (!alignmentMatrix || alignmentMatrix.length !== 16) return null;
 
-  // arPosition is already in NUE space (from extractOdomPosition)
-  const nueX = arPosition[0];
+  // WEBXR_TO_NUE: NUE = (-WebXR.z, WebXR.y, WebXR.x)
+  const nueX = -arPosition[2];
   const nueY = arPosition[1];
-  const nueZ = arPosition[2];
+  const nueZ = arPosition[0];
   const m = alignmentMatrix;
 
   return [
@@ -22,4 +27,4 @@ export function arLocalToGpsWorld(
     m[1]! * nueX + m[5]! * nueY + m[9]! * nueZ + m[13]!,
     m[2]! * nueX + m[6]! * nueY + m[10]! * nueZ + m[14]!,
   ];
-}
+}
