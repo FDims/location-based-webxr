@@ -31,6 +31,10 @@ export interface ReplayUICallbacks {
   onRestart: () => void;
   /** Called when the user releases the scrubber slider at a new position. */
   onSeek: (actionIndex: number) => void;
+  /** Called when user presses Right arrow to step forward one action. */
+  onStepForward: () => void;
+  /** Called when user presses Left arrow to step backward one action. */
+  onStepBackward: () => void;
 }
 
 // ─── Module state ─────────────────────────────────────────────
@@ -150,6 +154,17 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
     selectSessionEntry(index);
 
     callbacks?.onSessionSelect(index);
+  });
+
+  // Keyboard stepping: Left/Right arrows for single-action stepping
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      callbacks?.onStepForward();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      callbacks?.onStepBackward();
+    }
   });
 }
 
