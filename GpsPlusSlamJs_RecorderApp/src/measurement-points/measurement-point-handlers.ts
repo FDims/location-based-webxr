@@ -133,8 +133,8 @@ function buildRayFromPose(
   const [qx, qy, qz, qw] = rotation;
   // v' = q * v * q^-1, where v = (0, 0, -1)
   // Simplified for v = (0, 0, -1):
-  const dx = 2 * (qx * qz + qy * qw);
-  const dy = 2 * (qy * qz - qx * qw);
+  const dx = -2 * (qx * qz + qy * qw);
+  const dy = -2 * (qy * qz - qx * qw);
   const dz = -(1 - 2 * (qx * qx + qy * qy));
   // Normalise
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
