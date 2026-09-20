@@ -431,3 +431,17 @@ export function updateCameraModeButton(mode: 'orbit' | 'fps'): void {
 
   btn.textContent = mode === 'orbit' ? '🔄 Orbit' : '🎮 Free Fly';
 }
+
+/** Highlight the selected speed button. */
+export function updateSpeedButtonSelection(speed: number): void {
+  for (const btn of document.querySelectorAll('.replay-live-speed')) {
+    const btnSpeed = parseFloat((btn as HTMLElement).dataset.replaySpeed ?? '1');
+    if (btnSpeed === speed) {
+      btn.classList.add('bg-blue-600');
+      btn.classList.remove('hover:bg-gray-600');
+    } else {
+      btn.classList.remove('bg-blue-600');
+      btn.classList.add('hover:bg-gray-600');
+    }
+  }
+}

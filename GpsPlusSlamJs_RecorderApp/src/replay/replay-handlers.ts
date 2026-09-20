@@ -27,6 +27,7 @@ import {
   updateCameraModeButton,
   initScrubber,
   setScrubberSeeking,
+  updateSpeedButtonSelection,
 } from '../ui/replay-ui.js';
 import { showError, updateStatus } from '../ui/hud.js';
 import { showToast, TOAST_DURATION_ERROR } from '../ui/toast.js';
@@ -300,12 +301,14 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
         updatePlayPauseButton('paused');
         updateReplayProgress(0, totalActions);
         updateStatus('Seeking...');
+        updateSpeedButtonSelection(speedFactor);
         void replayController.play(999999);
       } else {
         // Normal start: show paused state, let user press Play
         updatePlayPauseButton('paused');
         updateReplayProgress(0, totalActions);
         updateStatus(`Ready: ${session.filename}`);
+        updateSpeedButtonSelection(speedFactor);
       }
     } catch (err) {
       log.error('Failed to start replay:', err);
@@ -332,12 +335,20 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
       void replayController.play(0.1);
       updatePlayPauseButton('playing');
       updateStatus('Replaying at 0.1×...');
+      updateSpeedButtonSelection(0.1);
     }
   }
 
   function handleReplaySpeedChange(speed: number): void {
     replayController?.setSpeed(speed);
     log.info(`Replay speed changed to ${speed}x`);
+    
+    // Update the HUD status if we're currently playing
+    if (replayController?.getState() === 'playing') {
+      updateStatus(`Replaying at ${speed}×...`);
+    }
+    
+    updateSpeedButtonSelection(speed);
   }
 
   /** Dispose the current replay and restart the same session from scratch. */
