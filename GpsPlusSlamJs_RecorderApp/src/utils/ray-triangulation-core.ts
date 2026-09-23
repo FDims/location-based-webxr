@@ -66,7 +66,7 @@ function invertMatrix3x3(m: Mat3): Mat3 | null {
     m[0] * (m[4] * m[8] - m[5] * m[7]) -
     m[1] * (m[3] * m[8] - m[5] * m[6]) +
     m[2] * (m[3] * m[7] - m[4] * m[6]);
-  if (Math.abs(det) < 1e-8) return null;
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-8) return null;
   const inv = 1.0 / det;
   return [
     (m[4] * m[8] - m[7] * m[5]) * inv,
@@ -209,6 +209,8 @@ export function solveClosestPointOfApproach(
 
   const rmsError = computeRMSError(observations, P);
   const uncertainty = A_inv[0] + A_inv[4] + A_inv[8];
+
+  if (!Number.isFinite(uncertainty) || !Number.isFinite(rmsError)) return null;
 
   return { point: P, uncertainty, rmsError };
 }
