@@ -731,7 +731,7 @@
       }
 
       if (result) {
-        const { x: px, y: py, z: pz } = result.point;
+        const [px, py, pz] = result.point;
         const col = statusColour();
         // The provisional sphere tightens as uncertainty (raw solver trace) shrinks.
         const uncR = Math.min(3.5, Math.max(0.15, result.uncertainty * 0.6));
@@ -754,7 +754,7 @@
     }
 
     function recompute(event) {
-      const obs = rays.map(r => ({ ray: { origin: r.origin, direction: r.dir }, rayWeight: r.weight }));
+      const obs = rays.map(r => ({ ray: { origin: [r.origin.x, r.origin.y, r.origin.z], direction: [r.dir.x, r.dir.y, r.dir.z] }, rayWeight: r.weight }));
       result = obs.length > 0 ? solveClosestPointOfApproach(obs) : null;
 
       const staleToggle = document.getElementById('toggle-stale').checked;
