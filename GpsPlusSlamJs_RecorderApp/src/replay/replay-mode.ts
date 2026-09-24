@@ -63,6 +63,7 @@ import {
   createStatsOverlay,
   type StatsOverlayHandle,
 } from '../ui/stats-overlay';
+import { MeasurementPointVisualizer } from '../visualization/measurement-point-visualizer';
 import * as THREE from 'three';
 
 const log = createLogger('ReplayMode');
@@ -343,27 +344,38 @@ export async function startReplayMode(
     );
   }
 
-  // Perf stats overlay (visualization.statsOverlay — Step 0 of the 2026-07-03
-  // long-session fps plan; the one visualization toggle that ALSO applies to
-  // replay, since replay frame time matters for the same investigation). The
-  // replay scene's render loop is module-private in the framework, so the
-  // panels are advanced by their own rAF loop — rAF fires once per browser
-  // frame, so the measured cadence equals the replay render cadence.
-  // Best-effort like the visualizers above.
+  // Perf stats overlay and Measurement Points visualizer
+  // Both need a frame loop. The replay scene's render loop is module-private,
+  // so we drive them with our own rAF loop.
   let statsOverlay: StatsOverlayHandle | null = null;
-  let statsRafId: number | null = null;
+  let measurementPointVisualizer: MeasurementPointVisualizer | null = null;
+  let replayFrameLoopId: number | null = null;
+  
   try {
     if (loadRecordingOptions().visualization.statsOverlay) {
       statsOverlay = createStatsOverlay(config.container);
-      const statsTick = (): void => {
-        statsOverlay?.update();
-        statsRafId = requestAnimationFrame(statsTick);
-      };
-      statsRafId = requestAnimationFrame(statsTick);
     }
   } catch (err) {
     log.warn('Stats overlay skipped; replay continues without it', err);
   }
+
+  try {
+    measurementPointVisualizer = new MeasurementPointVisualizer(
+      replaySceneState.arWorldGroup,
+      replaySceneState.scene
+    );
+  } catch (err) {
+    log.warn('Measurement visualizer skipped', err);
+  }
+
+  // Unified replay frame loop
+  const storeRefGeneral = createStoreRef(store);
+  const replayTick = (): void => {
+    statsOverlay?.update();
+    measurementPointVisualizer?.update(storeRefGeneral.get().getState());
+    replayFrameLoopId = requestAnimationFrame(replayTick);
+  };
+  replayFrameLoopId = requestAnimationFrame(replayTick);
 
   // Get the alignment lerper (Issue 4) — store subscribers route alignment
   // updates through the lerper for smooth interpolation instead of snapping.
@@ -511,11 +523,12 @@ export async function startReplayMode(
       occupancyCubesVisualizer?.dispose();
       occluderSinkHandle?.dispose();
       occluderSinkHandle = null;
-      if (statsRafId !== null) {
-        cancelAnimationFrame(statsRafId);
-        statsRafId = null;
+      if (replayFrameLoopId !== null) {
+        cancelAnimationFrame(replayFrameLoopId);
+        replayFrameLoopId = null;
       }
       statsOverlay?.dispose();
+      measurementPointVisualizer?.dispose();
       disposeReplayScene();
       log.info('Replay mode disposed');
     },

@@ -207,6 +207,7 @@ import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
 import { createMeasurementPointHandlers } from './measurement-points/measurement-point-handlers';
 import * as MeasurementPointViews from './view/measurement-point-view';
+import { MeasurementPointVisualizer } from './visualization/measurement-point-visualizer';
 import {
   createMeasurementUI,
   type MeasurementUIInstance,
@@ -420,130 +421,7 @@ const measurementPointHandlers = createMeasurementPointHandlers({
 // Measurement UI — created lazily when the AR session starts (Phase 4).
 // Disposed on session end / store swap.
 let measurementUI: MeasurementUIInstance | null = null;
-let measurementProvisionalSphere: THREE.Mesh | null = null;
-let measurementBasisGroup: THREE.Group | null = null;
-const measurementRayLines = new Map<string, THREE.LineSegments>();
-interface ConfirmedMeasurementVisual {
-  readonly arDot: THREE.Mesh;
-  readonly gpsDot: THREE.Mesh;
-  readonly line: THREE.Line;
-}
-const confirmedMeasurementVisuals = new Map<
-  string,
-  ConfirmedMeasurementVisual
->();
-
-function disposeConfirmedMeasurementVisual(
-  visual: ConfirmedMeasurementVisual,
-  arParent: THREE.Object3D,
-  scene: THREE.Scene
-): void {
-  arParent.remove(visual.arDot);
-  scene.remove(visual.gpsDot, visual.line);
-  visual.arDot.geometry.dispose();
-  visual.gpsDot.geometry.dispose();
-  visual.line.geometry.dispose();
-  (visual.arDot.material as THREE.Material).dispose();
-  (visual.gpsDot.material as THREE.Material).dispose();
-  (visual.line.material as THREE.Material).dispose();
-}
-
-function createConfirmedMeasurementVisual(
-  arParent: THREE.Object3D,
-  scene: THREE.Scene
-): ConfirmedMeasurementVisual {
-  const params = MeasurementPointViews.getConfirmedVisualParams();
-  const arDot = new THREE.Mesh(
-    new THREE.SphereGeometry(params.dotRadius, 12, 12),
-    new THREE.MeshBasicMaterial({
-      color: params.arDotColor,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  const gpsDot = new THREE.Mesh(
-    new THREE.SphereGeometry(params.dotRadius, 12, 12),
-    new THREE.MeshBasicMaterial({
-      color: params.gpsDotColor,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  const line = new THREE.Line(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({
-      color: params.lineColor,
-      linewidth: params.lineWidth,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  arDot.renderOrder = 1002;
-  gpsDot.renderOrder = 1002;
-  line.renderOrder = 1001;
-  arParent.add(arDot);
-  scene.add(gpsDot, line);
-  return { arDot, gpsDot, line };
-}
-
-function updateConfirmedMeasurementVisuals(
-  confirmed: readonly MeasurementPointEntity[],
-  arParent: THREE.Object3D,
-  arWorldGroup: THREE.Group,
-  scene: THREE.Scene,
-  alignmentMatrix: readonly number[] | null | undefined
-): void {
-  const activeIds = new Set(confirmed.map((entity) => entity.id));
-  const matrix =
-    alignmentMatrix?.length === 16
-      ? (alignmentMatrix as unknown as Matrix4)
-      : undefined;
-  for (const [id, visual] of confirmedMeasurementVisuals) {
-    if (!activeIds.has(id)) {
-      disposeConfirmedMeasurementVisual(visual, arParent, scene);
-      confirmedMeasurementVisuals.delete(id);
-    }
-  }
-
-  for (const entity of confirmed) {
-    const visual =
-      confirmedMeasurementVisuals.get(entity.id) ??
-      createConfirmedMeasurementVisual(arParent, scene);
-    confirmedMeasurementVisuals.set(entity.id, visual);
-    MeasurementPointViews.updateArDotPosition(visual.arDot, entity.arPosition);
-    
-    // FIX 2: Use the saved GPS snapshot so the gap between AR and GPS dot is visible.
-    // If no snapshot exists (alignment was lost when saving), fall back to recomputing.
-    if (entity.gpsPositionSnapshot && matrix) {
-      visual.gpsDot.position.set(
-        entity.gpsPositionSnapshot[0],
-        entity.gpsPositionSnapshot[1],
-        entity.gpsPositionSnapshot[2]
-      );
-      visual.gpsDot.visible = true;
-    } else {
-      MeasurementPointViews.updateGpsDotPosition(
-        visual.gpsDot,
-        entity.arPosition,
-        matrix
-      );
-    }
-    
-    visual.line.visible = visual.gpsDot.visible;
-
-    const arWorldPosition = arWorldGroup.localToWorld(
-      new THREE.Vector3(
-        entity.arPosition[0],
-        entity.arPosition[1],
-        entity.arPosition[2]
-      ).applyMatrix4(WEBXR_TO_NUE)
-    );
-    const gpsWorldPosition = visual.gpsDot.position.clone();
-    if (matrix) {
-      visual.line.geometry.setFromPoints([arWorldPosition, gpsWorldPosition]);
-    }
-  }
-}
+let measurementPointVisualizer: MeasurementPointVisualizer | null = null;
 
 /**
  * Integrated "Mark Ref Point" flow.
@@ -1675,8 +1553,8 @@ async function handleEnterAR(): Promise<void> {
         // Log suspicious images so they appear in the expandable log panel
         log.error(
           `Suspicious image detected at frame ${frameIndex}: ` +
-            `size ${blobSize} bytes - image may be black/empty. ` +
-            `This can occur when WebGL hasn't composited the frame yet.`
+          `size ${blobSize} bytes - image may be black/empty. ` +
+          `This can occur when WebGL hasn't composited the frame yet.`
         );
       }
     );
@@ -1841,7 +1719,7 @@ async function handleEnterAR(): Promise<void> {
           );
           occupancyVisualizerSink = occupancyCubesVisualizer;
         } else {
-          occupancyVisualizerSink = { refresh: () => {}, clear: () => {} };
+          occupancyVisualizerSink = { refresh: () => { }, clear: () => { } };
         }
 
         // Persistent depth-only occluder (ON by default). When on, it
@@ -1987,93 +1865,15 @@ async function handleEnterAR(): Promise<void> {
 
       // -- Measurement Visualization (Task 3) --
       if (arWorldGroup) {
-        if (!measurementBasisGroup) {
-          measurementBasisGroup = new THREE.Group();
-          measurementBasisGroup.name = 'measurement-webxr-basis';
-          measurementBasisGroup.matrixAutoUpdate = false;
-          measurementBasisGroup.matrix.copy(WEBXR_TO_NUE);
-          arWorldGroup.add(measurementBasisGroup);
-        }
-        const measurementParent = measurementBasisGroup;
-        const state = storeRef.get().getState();
-        const pendingRays = state.measurementPoints.pendingRays;
-        const provisional = selectProvisionalMeasurement(state);
-
-        // 1. Ray Lines
-        // Remove stale rays
-        for (const [id, line] of measurementRayLines) {
-          if (!pendingRays.some((r: MeasurementRayRecord) => r.id === id)) {
-            measurementParent.remove(line);
-            measurementRayLines.delete(id);
+        if (!measurementPointVisualizer) {
+          const scene = getScene();
+          if (scene) {
+            measurementPointVisualizer = new MeasurementPointVisualizer(arWorldGroup, scene);
           }
         }
-        // Add or update active rays
-        for (const ray of pendingRays) {
-          let line = measurementRayLines.get(ray.id);
-          if (!line) {
-            const geom = new THREE.BufferGeometry();
-            const params = MeasurementPointViews.getRayVisualParams();
-            const mat = new THREE.LineBasicMaterial({
-              color: params.color,
-              linewidth: params.lineWidth,
-              depthTest: false,
-              depthWrite: false,
-            });
-            line = new THREE.LineSegments(geom, mat);
-            line.renderOrder = 1001;
-            measurementParent.add(line);
-            measurementRayLines.set(ray.id, line);
-          }
-          const pts = MeasurementPointViews.buildRayLinePoints(
-            ray.rayOrigin,
-            ray.rayDirection
-          );
-          line.geometry.setFromPoints([
-            new THREE.Vector3(pts[0].x, pts[0].y, pts[0].z),
-            new THREE.Vector3(pts[1].x, pts[1].y, pts[1].z),
-          ]);
+        if (measurementPointVisualizer) {
+          measurementPointVisualizer.update(storeRef.get().getState());
         }
-
-        // 2. Provisional Sphere
-        if (!measurementProvisionalSphere) {
-          const params = MeasurementPointViews.getProvisionalVisualParams();
-          const geom = new THREE.SphereGeometry(params.dotRadius, 16, 16);
-          const mat = new THREE.MeshBasicMaterial({
-            color: params.arDotColor,
-            transparent: true,
-            opacity: 0.5,
-            depthTest: false,
-            depthWrite: false,
-          });
-          measurementProvisionalSphere = new THREE.Mesh(geom, mat);
-          measurementParent.add(measurementProvisionalSphere);
-        }
-        MeasurementPointViews.updateProvisionalSphere(
-          measurementProvisionalSphere,
-          provisional?.point
-            ? {
-                x: provisional.point[0],
-                y: provisional.point[1],
-                z: provisional.point[2],
-              }
-            : undefined,
-          provisional?.uncertainty,
-          DEFAULT_QUALITY_THRESHOLDS.maxUncertaintyHard
-        );
-
-        const scene = getScene();
-        if (scene) {
-          updateConfirmedMeasurementVisuals(
-            selectConfirmedMeasurementPoints(state),
-            measurementParent,
-            arWorldGroup,
-            scene,
-            state.gpsData?.gpsEvents?.alignmentMatrix
-          );
-        }
-        
-        // Ensure transforms are updated even if the parent didn't cascade it
-        measurementParent.updateMatrixWorld(true);
       }
     });
 
