@@ -339,7 +339,7 @@ function hasFusedObservation(defs: readonly RefPointDefinition[]): boolean {
  */
 export async function loadRecording(zip: ZipSource): Promise<LoadedRecording> {
   const [rawEntries, meta, sidecarDefs] = await Promise.all([
-    loadActionsFromZip(zip),
+    loadActionsFromZip(zip, 10 * 1024 * 1024), // Allow up to 10MB per action file
     loadSessionMetadata(zip),
     readSidecarRefPoints(zip),
   ]);
