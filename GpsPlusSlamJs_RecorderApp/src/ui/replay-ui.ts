@@ -77,9 +77,9 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
     callbacks?.onScenarioChange(scenarioSelect.value);
   });
 
-  // Start Replay button — always starts at 1× (speed adjustable via live overlay)
+  // Start Replay button — starts at 0.1× by default for better visibility
   el('btn-start-replay')?.addEventListener('click', () => {
-    callbacks?.onStartReplay(1);
+    callbacks?.onStartReplay(0.1);
   });
 
   // Play/Pause button

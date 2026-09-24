@@ -80,7 +80,7 @@ interface MeasurementPointVisualDescriptor {
  */
 export function getConfirmedVisualParams(): MeasurementPointVisualDescriptor {
   return {
-    arDotColor: AR_DOT_COLOR,
+    arDotColor: AR_DOT_COLOR, // Green for confirmed points
     gpsDotColor: GPS_DOT_COLOR,
     lineColor: LINE_COLOR,
     dotRadius: DOT_RADIUS,

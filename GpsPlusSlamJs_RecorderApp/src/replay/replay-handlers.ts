@@ -109,6 +109,8 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
   let isSeeking = false;
   /** The action index to pause at during a seek-by-reset fast-forward. */
   let seekTargetIndex = -1;
+  /** Current requested replay speed (defaults to 0.1x for better frame-by-frame visibility). */
+  let currentReplaySpeed = 0.1;
 
   // --- Handlers ---
 
@@ -229,6 +231,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
   ): Promise<void> {
     log.info(`Starting replay of "${session.filename}" at ${speedFactor}x...`);
     lastReplayedSession = session;
+    currentReplaySpeed = speedFactor;
     updateStatus('Loading session...');
 
     try {
@@ -327,19 +330,21 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
       updatePlayPauseButton('paused');
       updateStatus('Replay paused');
     } else if (state === 'paused') {
+      replayController.setSpeed(currentReplaySpeed);
       void replayController.resume();
       updatePlayPauseButton('playing');
-      updateStatus('Replaying...');
+      updateStatus(`Replaying at ${currentReplaySpeed}×...`);
     } else if (state === 'idle') {
-      // First play from paused-at-start state — default to 0.1× speed
-      void replayController.play(0.1);
+      // First play from paused-at-start state
+      void replayController.play(currentReplaySpeed);
       updatePlayPauseButton('playing');
-      updateStatus('Replaying at 0.1×...');
-      updateSpeedButtonSelection(0.1);
+      updateStatus(`Replaying at ${currentReplaySpeed}×...`);
+      updateSpeedButtonSelection(currentReplaySpeed);
     }
   }
 
   function handleReplaySpeedChange(speed: number): void {
+    currentReplaySpeed = speed;
     replayController?.setSpeed(speed);
     log.info(`Replay speed changed to ${speed}x`);
     
