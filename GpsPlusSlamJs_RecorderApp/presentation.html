@@ -1,428 +1,543 @@
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>Accurate Measurements in AR</title>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reset.min.css">
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reveal.min.css">
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/theme/dracula.min.css">
-		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
-		<style>
-			:root {
-				--brand-primary: #00E676; /* Vibrant Green */
-				--brand-secondary: #FF9100; /* Vibrant Orange */
-				--brand-accent: #2979FF; /* Blue */
-				--bg-gradient: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
-				--glass-bg: rgba(255, 255, 255, 0.03);
-				--glass-border: rgba(255, 255, 255, 0.08);
-				--text-main: #E6EDF3;
-			}
-			
-			body {
-				background: var(--bg-gradient);
-				font-family: 'Inter', sans-serif;
-			}
-			
-			.reveal {
-				color: var(--text-main);
+	<title>Accurate Measurements in AR</title>
+
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reset.min.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reveal.min.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/theme/dracula.min.css">
+	<link
+		href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700;900&display=swap"
+		rel="stylesheet">
+	<style>
+		:root {
+			--brand-primary: #00E676;
+			/* Vibrant Green */
+			--brand-secondary: #FF9100;
+			/* Vibrant Orange */
+			--brand-accent: #2979FF;
+			/* Blue */
+			--bg-gradient: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+			--glass-bg: rgba(255, 255, 255, 0.03);
+			--glass-border: rgba(255, 255, 255, 0.08);
+			--text-main: #E6EDF3;
+		}
+
+		body {
+			background: var(--bg-gradient);
+			font-family: 'Inter', sans-serif;
+		}
+
+		.reveal {
+			color: var(--text-main);
+		}
+
+		.reveal h1,
+		.reveal h2,
+		.reveal h3,
+		.reveal h4,
+		.reveal h5,
+		.reveal h6 {
+			font-family: 'Outfit', sans-serif;
+			text-transform: none;
+			font-weight: 800;
+			letter-spacing: -0.02em;
+		}
+
+		.reveal h1 {
+			background: linear-gradient(to right, #00E676, #2979FF);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			font-size: 3.5em;
+			margin-bottom: 20px;
+			text-shadow: 0px 10px 30px rgba(0, 230, 118, 0.2);
+		}
+
+		.reveal h2 {
+			color: #fff;
+			font-size: 2.5em;
+		}
+
+		/* Glassmorphism Card */
+		.glass-card {
+			background: var(--glass-bg);
+			backdrop-filter: blur(16px);
+			-webkit-backdrop-filter: blur(16px);
+			border: 1px solid var(--glass-border);
+			border-radius: 20px;
+			padding: 25px;
+			box-shadow: 0 15px 35px -10px rgba(0, 0, 0, 0.4);
+			transition: transform 0.3s ease, box-shadow 0.3s ease;
+		}
+
+		.glass-card:hover {
+			transform: translateY(-3px);
+			box-shadow: 0 20px 40px -10px rgba(0, 230, 118, 0.15);
+		}
+
+		/* Split Layout */
+		.split-layout {
+			display: flex;
+			gap: 20px;
+			justify-content: space-between;
+			align-items: stretch;
+		}
+
+		.split-half {
+			flex: 1;
+			text-align: left;
+		}
+
+		/* Lists */
+		.reveal ul {
+			list-style-type: none;
+			padding: 0;
+			margin: 0;
+		}
+
+		.reveal li {
+			margin-bottom: 15px;
+			position: relative;
+			padding-left: 30px;
+			font-size: 0.9em;
+			line-height: 1.4;
+			color: white;
+		}
+
+		.reveal li::before {
+			content: '→';
+			position: absolute;
+			left: 0;
+			color: var(--brand-primary);
+			font-weight: bold;
+		}
+
+		/* Before & After Cards */
+		.card-before {
+			border-top: 4px solid #FF5252;
+		}
+
+		.card-before h3 {
+			color: #FF5252;
+			margin-top: 0;
+			margin-bottom: 15px;
+			font-size: 1.2em;
+		}
+
+		.card-after {
+			border-top: 4px solid var(--brand-primary);
+			background: rgba(0, 230, 118, 0.05);
+		}
+
+		.card-after h3 {
+			color: var(--brand-primary);
+			margin-top: 0;
+			margin-bottom: 15px;
+			font-size: 1.2em;
+		}
+
+		.card-before li,
+		.card-after li {
+			margin-bottom: 8px;
+			font-size: 0.75em;
+			line-height: 1.2;
+		}
+
+		/* Highlight text */
+		.highlight-green {
+			color: var(--brand-primary);
+			font-weight: 600;
+		}
+
+		.highlight-orange {
+			color: var(--brand-secondary);
+			font-weight: 600;
+		}
+
+		.highlight-blue {
+			color: var(--brand-accent);
+			font-weight: 600;
+		}
+
+		.demo-link {
+			color: inherit;
+			text-decoration: none;
+			border-bottom: 2px dashed var(--brand-accent);
+			transition: color 0.2s, border-bottom 0.2s;
+		}
+
+		.demo-link:hover {
+			color: var(--brand-primary);
+			border-bottom: 2px solid var(--brand-primary);
+		}
+
+		.team-names {
+			font-size: 1.2em;
+			color: #8B949E;
+			margin-top: 40px;
+		}
+
+		.team-names span {
+			color: #fff;
+			font-weight: 600;
+		}
+
+		/* Flow step */
+		.flow-step {
+			display: flex;
+			align-items: center;
+			margin-bottom: 10px;
+			background: rgba(255, 255, 255, 0.02);
+			padding: 5px 15px;
+			border-radius: 12px;
+			border-left: 4px solid var(--brand-primary);
+		}
+
+		.flow-step-num {
+			font-size: 1.2em;
+			font-weight: 900;
+			color: var(--brand-primary);
+			margin-right: 15px;
+			opacity: 0.5;
+		}
+
+		.flow-step-content {
+			text-align: left;
+		}
+
+		.flow-step-content h4 {
+			margin: 0 0 3px 0;
+			font-size: 0.9em;
+		}
+
+		.flow-step-content p {
+			margin: 0;
+			font-size: 0.65em;
+			color: #8B949E;
+		}
+
+		/* Fancy Animations */
+		@keyframes float {
+			0% {
+				transform: translateY(0px);
 			}
 
-			.reveal h1, .reveal h2, .reveal h3, .reveal h4, .reveal h5, .reveal h6 {
-				font-family: 'Outfit', sans-serif;
-				text-transform: none;
-				font-weight: 800;
-				letter-spacing: -0.02em;
+			50% {
+				transform: translateY(-10px);
 			}
 
-			.reveal h1 {
-				background: linear-gradient(to right, #00E676, #2979FF);
-				-webkit-background-clip: text;
-				-webkit-text-fill-color: transparent;
-				font-size: 3.5em;
-				margin-bottom: 20px;
-				text-shadow: 0px 10px 30px rgba(0, 230, 118, 0.2);
+			100% {
+				transform: translateY(0px);
 			}
+		}
 
-			.reveal h2 {
-				color: #fff;
-				font-size: 2.5em;
-			}
+		.floating-icon {
+			animation: float 4s ease-in-out infinite;
+			font-size: 3em;
+			margin-bottom: 20px;
+		}
+	</style>
+</head>
 
-			/* Glassmorphism Card */
-			.glass-card {
-				background: var(--glass-bg);
-				backdrop-filter: blur(16px);
-				-webkit-backdrop-filter: blur(16px);
-				border: 1px solid var(--glass-border);
-				border-radius: 20px;
-				padding: 25px;
-				box-shadow: 0 15px 35px -10px rgba(0, 0, 0, 0.4);
-				transition: transform 0.3s ease, box-shadow 0.3s ease;
-			}
+<body>
+	<div class="reveal">
+		<div class="slides">
 
-			.glass-card:hover {
-				transform: translateY(-3px);
-				box-shadow: 0 20px 40px -10px rgba(0, 230, 118, 0.15);
-			}
+			<!-- Slide 1: Title -->
+			<section data-auto-animate>
+				<h1 style="font-size: 3em;">Accurate Measurements<br>in AR</h1>
+				<p style="font-size: 1.2em; color: #8B949E;">Software Lab - Final Presentation</p>
+				<div class="team-names" style="margin-top: 20px; font-size: 0.9em;">
+					Team 7<br>
+					<span>Fachrial Dimas Putra Perdana</span> & <span>Célien Grozel</span>
+				</div>
+			</section>
 
-			/* Split Layout */
-			.split-layout {
-				display: flex;
-				gap: 20px;
-				justify-content: space-between;
-				align-items: stretch;
-			}
+			<!-- Slide 2: Limitation of recorder app -->
+			<section data-auto-animate>
+				<h2 style="font-size: 70px;">Limitations of recorder app</h2>
+				<div class="glass-card" style="text-align: left; padding: 25px; font-size: 0.95em;">
+					<style>
+						.bullet-list li::before {
+							content: '•';
+							color: #C9D1D9;
+						}
 
-			.split-half {
-				flex: 1;
-				text-align: left;
-			}
+						.unordered-list li::before {
+							content: '';
+							color: #C9D1D9;
+						}
 
-			/* Lists */
-			.reveal ul {
-				list-style-type: none;
-				padding: 0;
-				margin: 0;
-			}
+						.dash-list li::before {
+							content: '-';
+							color: var(--brand-primary);
+							font-weight: normal;
+						}
 
-			.reveal li {
-				margin-bottom: 15px;
-				position: relative;
-				padding-left: 30px;
-				font-size: 0.9em;
-				line-height: 1.4;
-				color: #C9D1D9;
-			}
+						.dash-list li {
+							color: var(--brand-primary) !important;
+						}
 
-			.reveal li::before {
-				content: '→';
-				position: absolute;
-				left: 0;
-				color: var(--brand-primary);
-				font-weight: bold;
-			}
+						.nested-list li::before {
+							content: none;
+						}
 
-			/* Before & After Cards */
-			.card-before {
-				border-top: 4px solid #FF5252;
-			}
-			.card-before h3 {
-				color: #FF5252;
-				margin-top: 0;
-				margin-bottom: 15px;
-				font-size: 1.2em;
-			}
-			.card-after {
-				border-top: 4px solid var(--brand-primary);
-				background: rgba(0, 230, 118, 0.05);
-			}
-			.card-after h3 {
-				color: var(--brand-primary);
-				margin-top: 0;
-				margin-bottom: 15px;
-				font-size: 1.2em;
-			}
-			.card-before li, .card-after li {
-				margin-bottom: 8px;
-				font-size: 0.75em;
-				line-height: 1.2;
-			}
+						.nested-list li {
+							padding-left: 0;
+						}
+					</style>
+					<ul class="bullet-list">
+						<li>Existing reference points: Physically walking with phone to + around landmark</li>
+						<li style="margin-top: 10px;">Problem: What if we cannot physically touch the landmark? E.g. top
+							of SuperC</li>
+						<li style="margin-top: 10px;">Solution:
+							<ul class="nested-list" style="margin-top: 8px; margin-left: 30px;">
+								<li>Mark landmarks location in 3D space via ray-triangulation</li>
+								<li>Combine with camera’s depth sensor, reject outliers<br>
+									<span style="color: #C9D1D9; margin-left: 20px;">→ Measurement sphere(s)</span>
+								</li>
+								<li>Result persisted and visualized in 3D world</li>
+								<li>Asterisk: depth reading less useful for farther (100m+) targets<br>
+									<span style="color: #C9D1D9; margin-left: 20px;">→ Repeatedly move sideways and mark
+										landmark to refine triangulation</span>
+								</li>
+							</ul>
+						</li>
+						<li style="margin-top: 10px;">Additionally: Replay functionality extended to handle new
+							measurements</li>
+					</ul>
+				</div>
+			</section>
 
-			/* Highlight text */
-			.highlight-green { color: var(--brand-primary); font-weight: 600; }
-			.highlight-orange { color: var(--brand-secondary); font-weight: 600; }
-			.highlight-blue { color: var(--brand-accent); font-weight: 600; }
+			<!-- Slide 3: (Implementation) Details -->
+			<section data-auto-animate>
+				<h2>(Implementation) Details</h2>
+				<div class="glass-card" style="text-align: left; padding: 40px; font-size: 0.9em;">
+					<ul class="bullet-list">
+						<li style="margin-bottom: 12px;">Crosshair and tap-screen-location ray shooting modes</li>
+						<li style="margin-bottom: 12px;">Undo last ray button</li>
+						<li style="margin-bottom: 12px;">Active coaching hints to gain baseline -> parallax</li>
+						<li style="margin-bottom: 12px;">Uncertainty/error current measure + measureent confirm
+							threshold</li>
+						<li style="margin-bottom: 12px;">Random Sample Consensus (RANSAC) outlier rejection</li>
+						<li style="margin-bottom: 12px;">Measurement point: AR-local position (green sphere) connected
+							to GPS-world position (orange sphere) via live alignment probe white line)</li>
+						<li style="margin-bottom: 12px;">Integration with base recorder app UI without text/box overlay
+							etc.</li>
+					</ul>
+				</div>
+			</section>
 
-			.demo-link {
-				color: inherit;
-				text-decoration: none;
-				border-bottom: 2px dashed var(--brand-accent);
-				transition: color 0.2s, border-bottom 0.2s;
-			}
-			.demo-link:hover {
-				color: var(--brand-primary);
-				border-bottom: 2px solid var(--brand-primary);
-			}
-
-			.team-names {
-				font-size: 1.2em;
-				color: #8B949E;
-				margin-top: 40px;
-			}
-			.team-names span {
-				color: #fff;
-				font-weight: 600;
-			}
-
-			/* Flow step */
-			.flow-step {
-				display: flex;
-				align-items: center;
-				margin-bottom: 10px;
-				background: rgba(255,255,255,0.02);
-				padding: 5px 15px;
-				border-radius: 12px;
-				border-left: 4px solid var(--brand-primary);
-			}
-			.flow-step-num {
-				font-size: 1.2em;
-				font-weight: 900;
-				color: var(--brand-primary);
-				margin-right: 15px;
-				opacity: 0.5;
-			}
-			.flow-step-content {
-				text-align: left;
-			}
-			.flow-step-content h4 {
-				margin: 0 0 3px 0;
-				font-size: 0.9em;
-			}
-			.flow-step-content p {
-				margin: 0;
-				font-size: 0.65em;
-				color: #8B949E;
-			}
-
-			/* Fancy Animations */
-			@keyframes float {
-				0% { transform: translateY(0px); }
-				50% { transform: translateY(-10px); }
-				100% { transform: translateY(0px); }
-			}
-			.floating-icon {
-				animation: float 4s ease-in-out infinite;
-				font-size: 3em;
-				margin-bottom: 20px;
-			}
-
-		</style>
-	</head>
-	<body>
-		<div class="reveal">
-			<div class="slides">
-
-				<!-- Slide 1: Title -->
-				<section data-auto-animate>
-					<h1 style="font-size: 3em;">Accurate Measurements<br>in AR</h1>
-					<p style="font-size: 1.2em; color: #8B949E;">Software Lab - Final Presentation</p>
-					<div class="team-names" style="margin-top: 20px; font-size: 0.9em;">
-						Team 7<br>
-						<span>Fachrial Dimas Putra Perdana</span> & <span>Célien Grozel</span>
-					</div>
-				</section>
-
-				<!-- Slide 2: Limitation of recorder app -->
-				<section data-auto-animate>
-					<h2>Limitation of recorder app</h2>
-					<div class="glass-card" style="text-align: left; padding: 25px; font-size: 0.75em;">
-						<style>
-							.bullet-list li::before { content: '•'; color: #C9D1D9; }
-							.dash-list li::before { content: '-'; color: var(--brand-primary); font-weight: normal; }
-							.dash-list li { color: var(--brand-primary) !important; }
-							.nested-list li::before { content: none; }
-							.nested-list li { padding-left: 0; }
-						</style>
-						<ul class="bullet-list">
-							<li>Existing reference points: Physically walking with phone to + around landmark</li>
-							<li style="margin-top: 10px;">Problem: What if we cannot physically touch the landmark? E.g. top of SuperC</li>
-							<li style="margin-top: 10px;">Solution:
-								<ul class="nested-list" style="margin-top: 8px; margin-left: 30px;">
-									<li>Mark landmarks location in 3D space via ray-triangulation</li>
-									<li>Combine with camera’s depth sensor, reject outliers<br>
-									<span style="color: #C9D1D9; margin-left: 20px;">→ Measurement sphere(s)</span></li>
-									<li>Result persisted and visualized in 3D world</li>
-									<li>Asterisk: depth reading less useful for farther (100m+) targets<br>
-									<span style="color: #C9D1D9; margin-left: 20px;">→ Repeatedly move sideways and mark landmark to refine triangulation</span></li>
-								</ul>
-							</li>
-							<li style="margin-top: 10px;">Additionally: Replay functionality extended to handle new measurements</li>
-						</ul>
-					</div>
-				</section>
-
-				<!-- Slide 3: (Implementation) Details -->
-				<section data-auto-animate>
-					<h2>(Implementation) Details</h2>
-					<div class="glass-card" style="text-align: left; padding: 40px; font-size: 0.9em;">
-						<ul class="dash-list">
-							<li style="margin-bottom: 12px;">Crosshair and tap-screen-location ray shooting modes</li>
-							<li style="margin-bottom: 12px;">Undo last ray button</li>
-							<li style="margin-bottom: 12px;">Active coaching hints to gain baseline -> parallax</li>
-							<li style="margin-bottom: 12px;">Uncertainty/error current measure + measureent confirm threshold</li>
-							<li style="margin-bottom: 12px;">Random Sample Consensus (RANSAC) outlier rejection</li>
-							<li style="margin-bottom: 12px;">Measurement point: AR-local position (green sphere) connected to GPS-world position (orange sphere) via live alignment probe white line)</li>
-							<li style="margin-bottom: 12px;">Integration with base recorder app UI without text/box overlay etc.</li>
-						</ul>
-					</div>
-				</section>
-
-				<!-- Slide 4: Technical Architecture Deep Dive -->
-				<section data-auto-animate>
-					<h2>Technical Architecture Deep Dive</h2>
-					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-						<div class="glass-card" style="padding: 30px; text-align: left;">
-							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 15px; font-size: 1.1em;">1. Pure Estimator Math</h4>
-							<p style="font-size: 0.75em; color: #C9D1D9; margin: 0;">CPA solver with RANSAC robust outlier rejection. Depth as soft prior.</p>
+			<!-- Slide 8: Demo -->
+			<section id="live-demos" data-auto-animate>
+				<h2>Live Demos</h2>
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<a href="#/demo-ray" style="text-decoration: none;">
+						<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
+							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">1.
+								Ray Triangulation Core</h4>
+							<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Ported from phase 1
+							</p>
 						</div>
-						<div class="glass-card" style="padding: 30px; text-align: left;">
-							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 15px; font-size: 1.1em;">2. Redux State & Persistence</h4>
-							<p style="font-size: 0.75em; color: #C9D1D9; margin: 0;">Persists via library store for deterministic replay.</p>
+					</a>
+					<a href="#/demo-coaching" style="text-decoration: none;">
+						<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
+							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">4.
+								Aiming & Ray Capture</h4>
+							<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Device-forward
+								crosshair and AR screen tapping</p>
 						</div>
-						<div class="glass-card" style="padding: 30px; text-align: left;">
-							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 15px; font-size: 1.1em;">3. Aiming & AR Capture</h4>
-							<p style="font-size: 0.75em; color: #C9D1D9; margin: 0;">Device-forward axis crosshair; unprojects pixel via camera intrinsics.</p>
+					</a>
+					<a href="#/demo-depth" style="text-decoration: none;">
+						<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
+							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">2.
+								Depth prior provider</h4>
+							<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Fusing depth maps as
+								distance-weighted priors</p>
 						</div>
-						<div class="glass-card" style="padding: 30px; text-align: left;">
-							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 15px; font-size: 1.1em;">4. Dual-Frame Visualization</h4>
-							<p style="font-size: 0.75em; color: #C9D1D9; margin: 0;">Solved in AR-local frame, stored in both AR and GPS.</p>
+					</a>
+					<a href="#/demo-aiming" style="text-decoration: none;">
+						<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
+							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">5.
+								Live Measurement UX & Baseline Coaching</h4>
+							<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">End-to-end interactive
+								quality feedback and UX flow</p>
 						</div>
-					</div>
-				</section>
+					</a>
+					<a href="#/demo-robust" style="text-decoration: none; grid-column: span 2;">
+						<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
+							<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">3.
+								Combine Triangulation and Depth Measurements + 6. Persistency</h4>
+							<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">MSAC outlier rejection
+								for noisy measurements.</p>
+							<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Dual measurement point
+								representation: AR-local (green sphere)
+								and GPS-world (orange sphere).</p>
+						</div>
+					</a>
+				</div>
+			</section>
 
-				<!-- Slide 8: Demo -->
-				<section id="live-demos" data-auto-animate>
-					<h2>Live Demos</h2>
-					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-						<a href="#/demo-ray" style="text-decoration: none;">
-							<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
-								<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">1. Ray Triangulation</h4>
-								<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Interactive CPA solver</p>
-							</div>
-						</a>
-						<a href="#/demo-depth" style="text-decoration: none;">
-							<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
-								<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">2. Depth prior provider</h4>
-								<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Fusing depth maps as distance-weighted priors</p>
-							</div>
-						</a>
-						<a href="#/demo-robust" style="text-decoration: none;">
-							<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
-								<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">3. Robust triangulation</h4>
-								<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">MSAC outlier rejection for noisy measurements</p>
-							</div>
-						</a>
-						<a href="#/demo-aiming" style="text-decoration: none;">
-							<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
-								<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">4. Aiming & Ray Capture</h4>
-								<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">Device-forward crosshair and AR screen tapping</p>
-							</div>
-						</a>
-						<a href="#/demo-coaching" style="text-decoration: none; grid-column: span 2;">
-							<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
-								<h4 style="color: #E6EDF3; font-weight: normal; margin-bottom: 5px; font-size: 0.9em;">5. Live Measurement UX & Baseline Coaching</h4>
-								<p style="font-size: 0.65em; color: var(--brand-primary); margin: 0;">End-to-end interactive quality feedback and UX flow</p>
-							</div>
-						</a>
+			<!-- Result Demo -->
+			<section data-auto-animate>
+				<h2>Result Demo</h2>
+				<div class="glass-card" style="padding: 20px; display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 40px; min-height: 540px;">
+					<!-- To upload and embed your videos, uncomment and use the video tags below -->
+					<!-- Video 1 -->
+					<div style="flex-direction: column; align-items: center; display: flex;">
+						<p style="color: #8B949E; font-size: 0.9em; margin-bottom: 15px;">[ Video 1 Placeholder ]</p>
+						<!-- 
+						<video height="480" style="border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,0.5);" controls>
+							<source src="your-video-file-1.mp4" type="video/mp4">
+						</video>
+						-->
 					</div>
-				</section>
+					
+					<!-- Video 2 -->
+					<div style="flex-direction: column; align-items: center; display: flex;">
+						<p style="color: #8B949E; font-size: 0.9em; margin-bottom: 15px;">[ Video 2 Placeholder ]</p>
+						<!-- 
+						<video height="480" style="border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,0.5);" controls>
+							<source src="your-video-file-2.mp4" type="video/mp4">
+						</video>
+						-->
+					</div>
+				</div>
+			</section>
 
-				<!-- Slide 5: Problems -->
-				<section data-auto-animate>
-					<h2>Problems</h2>
-					<div class="glass-card" style="text-align: left; padding: 40px;">
-						<ul class="bullet-list" style="font-size: 0.9em;">
-							<li style="margin-bottom: 20px;">Different LLMs - sharply differeng coding experiences (same for LLM-integrations into IDE, Antigravity vs VS Code)</li>
-							<li style="margin-bottom: 20px;">The "premium" LLM experience (Gemini Pro, Github Copilot Pro) vs free (Claude 4.6 Sonnet - 1 simple prompt wiped all tokens)</li>
-							<li style="margin-bottom: 20px;">Integration testing takes a long time, many UI bugs (overlays), new recorder functionality hindering/blocking old functionality and vice versa</li>
-						</ul>
-					</div>
-				</section>
+			<!-- Slide 5: Problems -->
+			<section data-auto-animate>
+				<h2>Problems</h2>
+				<div class="glass-card" style="text-align: left; padding: 40px;">
+					<ul class="bullet-list" style="font-size: 40px;">
+						<li style="margin-bottom: 20px;">Different LLMs - sharply differ coding experiences (same for
+							LLM-integrations into IDE, Antigravity vs VS Code)</li>
+						<li style="margin-bottom: 20px;">The "premium" LLM experience (Gemini Pro, Github Copilot Pro)
+							vs free (Claude 4.6 Sonnet - 1 simple prompt wiped all tokens)</li>
+						<li style="margin-bottom: 20px;">Integration testing takes a long time, many UI bugs (overlays),
+							new recorder functionality hindering/blocking old functionality and vice versa</li>
+					</ul>
+				</div>
+			</section>
 
-				<!-- Slide 6: What Worked Well / Lessons Learned -->
-				<section data-auto-animate>
-					<h2>What Worked Well / Lessons Learned</h2>
-					<div class="glass-card" style="text-align: left; padding: 25px;">
-						<ul class="bullet-list" style="font-size: 0.75em;">
-							<li style="margin-bottom: 10px;">Pair programming</li>
-							<li style="margin-bottom: 10px;">AI-assisted planning & developing
-								<ul class="bullet-list" style="margin-top: 10px; margin-left: 30px;">
-									<li style="margin-bottom: 5px;">Planning before coding</li>
-									<li style="margin-bottom: 5px;">AI as a critical reviewer and discussion partner</li>
-								</ul>
-							</li>
-							<li style="margin-bottom: 10px; line-height: 1.6;">Recorder Testing: feedback-loop<br>tester-implementer (due to free tier token limits<br>reached)</li>
-						</ul>
-					</div>
-				</section>
+			<!-- Slide 6: What Worked Well / Lessons Learned -->
+			<section data-auto-animate>
+				<h2 style="color: white; font-size: 70px;">What Worked Well / Lessons Learned</h2>
+				<div class="glass-card" style="text-align: left; padding: 10px; font-size: 60px;;">
+					<ul class="bullet-list" style="font-size: 0.75em; color: white;">
+						<li style="margin-bottom: 10px;">Pair programming</li>
+						<li style="margin-bottom: 10px;">AI-assisted planning & developing
+							<ul class="unordered-list" style="margin-top: 10px; margin-left: 30px;">
+								<li style="margin-bottom: 5px;">Planning before coding</li>
+								<li style="margin-bottom: 5px;">AI as a critical reviewer and discussion partner
+								</li>
+								<li style="margin-bottom: 5px;">Throwaway prototypes
+								</li>
+							</ul>
+						</li>
+						<li style="margin-bottom: 10px; line-height: 1.6;">Recorder Testing:
+							feedback-loop tester-implementer <br> (due to free tier token limits reached)</li>
+					</ul>
+				</div>
+			</section>
 
-				<!-- Slide 7: Summary & Questions -->
-				<section data-auto-animate>
-					<h2>Summary & Questions</h2>
-					<div class="glass-card" style="text-align: left; padding: 25px; display: flex; flex-direction: column;">
-						<h3 style="font-size: 1.1em; margin-bottom: 15px; color: #E6EDF3; text-align: left; font-weight: normal;">Summary:</h3>
-						<ul class="bullet-list" style="font-size: 0.8em; margin-left: 20px; line-height: 1.6;">
-							<li>Remote measurement points</li>
-							<li>AR triangulation</li>
-							<li>Depth fusion</li>
-							<li>Recorder integration</li>
-						</ul>
-						<h1 style="font-size: 2.5em; margin-top: 25px; text-align: left; background: none; -webkit-text-fill-color: #E6EDF3; text-shadow: none; font-weight: normal;">Questions?</h1>
-					</div>
-				</section>
+			<!-- Slide 7: Summary & Questions -->
+			<section data-auto-animate>
+				<h2>Summary & Questions</h2>
+				<div class="glass-card" style="text-align: left; padding: 25px; display: flex; flex-direction: column;">
+					<ul class="bullet-list"
+						style="font-size: 0.8em; margin-left: 20px; line-height: 1.6; font-size: 40px;">
+						<li>Recorder-App extended with Ray Triangulation + Depth Sensing</li>
+						<li>Measurement Persistency</li>
+						<li>Dual Measurement Representation (AR + GPS)</li>
+						<li>Ray Shooting UI + Coaching Hints</li>
+						<li>Recorder integration</li>
+					</ul>
+					<h1
+						style="font-size: 2.5em; margin-top: 25px; text-align: left; background: none; -webkit-text-fill-color: #E6EDF3; text-shadow: none; font-weight: normal;">
+						Questions?</h1>
+				</div>
+			</section>
 
-				<!-- Demo Slides -->
-				<section id="demo-ray">
-					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-						<h3 style="margin: 0; color: var(--brand-primary);">1. Ray Triangulation</h3>
-						<a href="#/live-demos" style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">← Back to Demos</a>
-					</div>
-					<iframe data-src="ray-triangulation-demo.html" width="100%" height="550" style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
-				</section>
+			<!-- Demo Slides -->
+			<section id="demo-ray">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+					<h3 style="margin: 0; color: var(--brand-primary);">1. Ray Triangulation</h3>
+					<a href="#/live-demos"
+						style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">←
+						Back to Demos</a>
+				</div>
+				<iframe data-src="ray-triangulation-demo.html" width="100%" height="550"
+					style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
+			</section>
 
-				<section id="demo-depth">
-					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-						<h3 style="margin: 0; color: var(--brand-primary);">2. Depth prior provider</h3>
-						<a href="#/live-demos" style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">← Back to Demos</a>
-					</div>
-					<iframe data-src="depth-prior-demo.html" width="100%" height="550" style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
-				</section>
+			<section id="demo-depth">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+					<h3 style="margin: 0; color: var(--brand-primary);">2. Depth prior provider</h3>
+					<a href="#/live-demos"
+						style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">←
+						Back to Demos</a>
+				</div>
+				<iframe data-src="depth-prior-demo.html" width="100%" height="550"
+					style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
+			</section>
 
-				<section id="demo-robust">
-					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-						<h3 style="margin: 0; color: var(--brand-primary);">3. Robust triangulation</h3>
-						<a href="#/live-demos" style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">← Back to Demos</a>
-					</div>
-					<iframe data-src="robust-triangulation-demo.html" width="100%" height="550" style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
-				</section>
-				
-				<section id="demo-aiming">
-					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-						<h3 style="margin: 0; color: var(--brand-primary);">4. Aiming & Ray Capture</h3>
-						<a href="#/live-demos" style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">← Back to Demos</a>
-					</div>
-					<iframe data-src="aiming-ray-capture-demo.html" width="100%" height="550" style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
-				</section>
+			<section id="demo-robust">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+					<h3 style="margin: 0; color: var(--brand-primary);">3. Robust triangulation</h3>
+					<a href="#/live-demos"
+						style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">←
+						Back to Demos</a>
+				</div>
+				<iframe data-src="robust-triangulation-demo.html" width="100%" height="550"
+					style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
+			</section>
 
-				<section id="demo-coaching">
-					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-						<h3 style="margin: 0; color: var(--brand-primary);">5. Live Measurement UX & Baseline Coaching</h3>
-						<a href="#/live-demos" style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">← Back to Demos</a>
-					</div>
-					<iframe data-src="live-measurement-quality-demo.html" width="100%" height="550" style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
-				</section>
+			<section id="demo-aiming">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+					<h3 style="margin: 0; color: var(--brand-primary);">4. Aiming & Ray Capture</h3>
+					<a href="#/live-demos"
+						style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">←
+						Back to Demos</a>
+				</div>
+				<iframe data-src="aiming-ray-capture-demo.html" width="100%" height="550"
+					style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
+			</section>
 
-			</div>
+			<section id="demo-coaching">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+					<h3 style="margin: 0; color: var(--brand-primary);">5. Live Measurement UX & Baseline Coaching</h3>
+					<a href="#/live-demos"
+						style="background: rgba(255,255,255,0.1); padding: 10px 20px; border-radius: 8px; font-size: 0.6em; border: 1px solid var(--brand-primary); color: white; text-decoration: none;">←
+						Back to Demos</a>
+				</div>
+				<iframe data-src="live-measurement-quality-demo.html" width="100%" height="550"
+					style="border-radius: 12px; border: 1px solid var(--glass-border); background: #000;"></iframe>
+			</section>
+
 		</div>
+	</div>
 
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reveal.js"></script>
-		<script>
-			Reveal.initialize({
-				hash: true,
-				width: 1280,
-				height: 720,
-				margin: 0.05,
-				minScale: 0.2,
-				maxScale: 2.0,
-				transition: 'zoom', // Premium transition
-				backgroundTransition: 'slide',
-				controls: true,
-				progress: true,
-				center: true,
-			});
-		</script>
-	</body>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.0.4/reveal.js"></script>
+	<script>
+		Reveal.initialize({
+			hash: true,
+			width: 1280,
+			height: 720,
+			margin: 0.05,
+			minScale: 0.2,
+			maxScale: 2.0,
+			transition: 'zoom', // Premium transition
+			backgroundTransition: 'slide',
+			controls: true,
+			progress: true,
+			center: true,
+		});
+	</script>
+</body>
+
 </html>
