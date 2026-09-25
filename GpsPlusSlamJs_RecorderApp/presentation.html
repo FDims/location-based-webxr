@@ -291,12 +291,12 @@
 						}
 					</style>
 					<ul class="bullet-list">
-						<li>Existing reference points: Physically walking with phone to + around landmark</li>
+						<li>Marking reference points: Physically walking with phone to + around landmark</li>
 						<li style="margin-top: 10px;">Problem: What if we cannot physically touch the landmark? E.g. top
 							of SuperC</li>
 						<li style="margin-top: 10px;">Solution:
 							<ul class="nested-list" style="margin-top: 8px; margin-left: 30px;">
-								<li>Mark landmarks location in 3D space via ray-triangulation</li>
+								<li>Mark location of landmark in 3D space via ray-triangulation</li>
 								<li>Combine with camera’s depth sensor, reject outliers<br>
 									<span style="color: #C9D1D9; margin-left: 20px;">→ Measurement sphere(s)</span>
 								</li>
@@ -319,13 +319,13 @@
 				<div class="glass-card" style="text-align: left; padding: 40px; font-size: 0.9em;">
 					<ul class="bullet-list">
 						<li style="margin-bottom: 12px;">Crosshair and tap-screen-location ray shooting modes</li>
-						<li style="margin-bottom: 12px;">Undo last ray button</li>
+						<li style="margin-bottom: 12px;">Undo-last-ray button</li>
 						<li style="margin-bottom: 12px;">Active coaching hints to gain baseline -> parallax</li>
-						<li style="margin-bottom: 12px;">Uncertainty/error current measure + measureent confirm
+						<li style="margin-bottom: 12px;">Uncertainty/error current measure + measurement confirm
 							threshold</li>
 						<li style="margin-bottom: 12px;">Random Sample Consensus (RANSAC) outlier rejection</li>
 						<li style="margin-bottom: 12px;">Measurement point: AR-local position (green sphere) connected
-							to GPS-world position (orange sphere) via live alignment probe white line)</li>
+							to GPS-world position (orange sphere) via live alignment probe white line</li>
 						<li style="margin-bottom: 12px;">Integration with base recorder app UI without text/box overlay
 							etc.</li>
 					</ul>
@@ -334,7 +334,7 @@
 
 			<!-- Slide 8: Demo -->
 			<section id="live-demos" data-auto-animate>
-				<h2>Live Demos</h2>
+				<h2>Core of the Features</h2>
 				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 					<a href="#/demo-ray" style="text-decoration: none;">
 						<div class="glass-card" style="padding: 20px; text-align: left; cursor: pointer;">
@@ -387,7 +387,7 @@
 				<div
 					style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 120px; height: 720px;">
 					<div style="text-align: left;">
-						<h2 style="font-size: 3.5em; margin: 0; line-height: 1.2;">Result<br>Demo</h2>
+						<h2 style="font-size: 3.5em; margin: 0; line-height: 1.2;">Implementation<br>Demo</h2>
 					</div>
 					<video style="height: 100%; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);" controls
 						autoplay muted>
@@ -406,10 +406,10 @@
 				<h2>Problems</h2>
 				<div class="glass-card" style="text-align: left; padding: 40px;">
 					<ul class="bullet-list" style="font-size: 40px;">
-						<li style="margin-bottom: 20px;">Different LLMs - sharply differ coding experiences (same for
+						<li style="margin-bottom: 20px;">Different LLMs - sharply differing coding experiences (same for
 							LLM-integrations into IDE, Antigravity vs VS Code)</li>
 						<li style="margin-bottom: 20px;">The "premium" LLM experience (Gemini Pro, Github Copilot Pro)
-							vs free (Claude 4.6 Sonnet - 1 simple prompt wiped all tokens)</li>
+							vs free tier (Claude 4.6 Sonnet - 1 simple prompt wiped all tokens)</li>
 						<li style="margin-bottom: 20px;">Integration testing takes a long time, many UI bugs (overlays),
 							new recorder functionality hindering/blocking old functionality and vice versa</li>
 					</ul>
@@ -422,6 +422,8 @@
 				<div class="glass-card" style="text-align: left; padding: 10px; font-size: 60px;;">
 					<ul class="bullet-list" style="font-size: 0.75em; color: white;">
 						<li style="margin-bottom: 10px;">Pair programming</li>
+						<li style="margin-bottom: 10px; line-height: 1.6;">Recorder Testing:
+							feedback-loop tester-implementer <br> (due to free tier token limits reached)</li>
 						<li style="margin-bottom: 10px;">AI-assisted planning & developing
 							<ul class="unordered-list" style="margin-top: 10px; margin-left: 30px;">
 								<li style="margin-bottom: 5px;">Planning before coding</li>
@@ -431,8 +433,6 @@
 								</li>
 							</ul>
 						</li>
-						<li style="margin-bottom: 10px; line-height: 1.6;">Recorder Testing:
-							feedback-loop tester-implementer <br> (due to free tier token limits reached)</li>
 					</ul>
 				</div>
 			</section>
