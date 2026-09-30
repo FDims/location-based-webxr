@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Replay Handlers Tests
  *
  * Why these tests matter:
@@ -70,6 +70,9 @@ vi.mock('../ui/replay-ui', () => ({
   showReplayControls: vi.fn(),
   updatePlayPauseButton: vi.fn(),
   updateCameraModeButton: vi.fn(),
+  updateSpeedButtonSelection: vi.fn(),
+  initScrubber: vi.fn(),
+  setScrubberSeeking: vi.fn(),
 }));
 
 vi.mock('../ui/hud', () => ({
@@ -604,7 +607,7 @@ describe('handleStartReplay', () => {
       document.getElementById('setup-modal')?.classList.contains('hidden')
     ).toBe(true);
     expect(showReplayControls).toHaveBeenCalled();
-    expect(updatePlayPauseButton).toHaveBeenCalledWith('playing');
+    expect(updatePlayPauseButton).toHaveBeenCalledWith('paused');
   });
 
   // Why: Playback must start at the requested speed factor.
@@ -622,7 +625,8 @@ describe('handleStartReplay', () => {
 
     await handlers.handleStartReplay(4);
 
-    expect(mockReplayController.play).toHaveBeenCalledWith(4);
+    expect(mockReplayController.play).not.toHaveBeenCalled();
+    expect(updatePlayPauseButton).toHaveBeenCalledWith('paused');
   });
 
   // Why: startReplayMode failure must be caught and displayed as error.
@@ -698,7 +702,8 @@ describe('startReplayForEntry', () => {
 
     await handlers.startReplayForEntry(session);
 
-    expect(mockReplayController.play).toHaveBeenCalledWith(1);
+    expect(mockReplayController.play).not.toHaveBeenCalled();
+    expect(updatePlayPauseButton).toHaveBeenCalledWith('paused');
   });
 });
 
@@ -784,7 +789,7 @@ describe('handleReplayPlayPause', () => {
 
     expect(mockReplayController.resume).toHaveBeenCalled();
     expect(updatePlayPauseButton).toHaveBeenCalledWith('playing');
-    expect(updateStatus).toHaveBeenCalledWith('Replaying...');
+    expect(updateStatus).toHaveBeenCalledWith('Replaying at 1×...');
 
     app.remove();
     modal.remove();

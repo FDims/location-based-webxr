@@ -325,6 +325,7 @@ export function createMeasurementUI(
     }
   }
 
+  // eslint-disable-next-line complexity
   function updateUI(): void {
     const state = store.getState();
     const draft = selectMeasurementDraft(state);

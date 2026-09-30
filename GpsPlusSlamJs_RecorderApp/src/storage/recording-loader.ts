@@ -355,7 +355,7 @@ export async function loadRecording(zip: ZipSource): Promise<LoadedRecording> {
   const migratedActions = migrateActionsIfNeeded(rawActions, meta);
   const migrationApplied = migratedActions !== rawActions;
 
-  // NOTE: If migrateActionsIfNeeded changes the length (e.g. injectRefPointsActions), 
+  // NOTE: If migrateActionsIfNeeded changes the length (e.g. injectRefPointsActions),
   // mapping by index is flawed. We rebuild ZipActionEntry for each migrated action.
   const actions: ZipActionEntry[] = migratedActions.map((action, i) => {
     // If the length matches (which is typical for modern files), preserve the original metadata.
@@ -363,7 +363,7 @@ export async function loadRecording(zip: ZipSource): Promise<LoadedRecording> {
     const originalEntry = validRawEntries[i];
     return {
       filename: originalEntry?.filename ?? `migrated_${i}.json`,
-      actionIndex: originalEntry?.actionIndex ?? i,
+      index: Number(originalEntry?.index ?? i),
       action,
     };
   });

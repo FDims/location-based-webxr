@@ -206,24 +206,17 @@ import { gpsPathToCoverageCells } from 'gps-plus-slam-app-framework/geo';
 import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
 import { createMeasurementPointHandlers } from './measurement-points/measurement-point-handlers';
-import * as MeasurementPointViews from './view/measurement-point-view';
 import { MeasurementPointVisualizer } from './visualization/measurement-point-visualizer';
+import { wireMeasurementPointSubscribers } from './visualization/wire-measurement-point-subscribers';
 import {
   createMeasurementUI,
   type MeasurementUIInstance,
 } from './ui/measurement-ui';
 import {
-  DEFAULT_QUALITY_THRESHOLDS,
   selectMeasurementDraft,
   selectProvisionalMeasurement,
-  selectConfirmedMeasurementPoints,
 } from './state/measurement-points-slice';
-import type {
-  MeasurementPointEntity,
-  MeasurementRayRecord,
-} from './storage/measurement-point-loader';
-import { WEBXR_TO_NUE } from 'gps-plus-slam-app-framework/ar/webxr-nue-basis';
-import type { Matrix4, Vector3 } from 'gps-plus-slam-app-framework/core';
+import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   loadRecordingOptions,
@@ -422,6 +415,7 @@ const measurementPointHandlers = createMeasurementPointHandlers({
 // Disposed on session end / store swap.
 let measurementUI: MeasurementUIInstance | null = null;
 let measurementPointVisualizer: MeasurementPointVisualizer | null = null;
+let unsubscribeMeasurementPoints: (() => void) | null = null;
 
 /**
  * Integrated "Mark Ref Point" flow.
@@ -809,6 +803,7 @@ function wireLoopClosureCapture(): void {
  * Reset main module state.
  * Exported for testing purposes to ensure test isolation.
  */
+// eslint-disable-next-line complexity
 export function resetMainState(): void {
   if (mapOverlay) {
     mapOverlay.dispose();
@@ -882,33 +877,14 @@ export function resetMainState(): void {
   measurementUI?.dispose();
   measurementUI = null;
 
-  if (measurementProvisionalSphere) {
-    measurementProvisionalSphere.parent?.remove(measurementProvisionalSphere);
-    if (measurementProvisionalSphere.geometry)
-      measurementProvisionalSphere.geometry.dispose();
-    if (measurementProvisionalSphere.material)
-      (measurementProvisionalSphere.material as THREE.Material).dispose();
-    measurementProvisionalSphere = null;
+  if (unsubscribeMeasurementPoints) {
+    unsubscribeMeasurementPoints();
+    unsubscribeMeasurementPoints = null;
   }
-  measurementBasisGroup?.parent?.remove(measurementBasisGroup);
-  const measurementScene = getScene();
-  if (measurementScene && measurementBasisGroup) {
-    for (const visual of confirmedMeasurementVisuals.values()) {
-      disposeConfirmedMeasurementVisual(
-        visual,
-        measurementBasisGroup,
-        measurementScene
-      );
-    }
+  if (measurementPointVisualizer) {
+    measurementPointVisualizer.dispose();
+    measurementPointVisualizer = null;
   }
-  confirmedMeasurementVisuals.clear();
-  measurementBasisGroup = null;
-  for (const line of measurementRayLines.values()) {
-    line.parent?.remove(line);
-    if (line.geometry) line.geometry.dispose();
-    if (line.material) (line.material as THREE.Material).dispose();
-  }
-  measurementRayLines.clear();
   setFolderSelected(false);
   setSaveLocationSelected(false);
 }
@@ -1553,8 +1529,8 @@ async function handleEnterAR(): Promise<void> {
         // Log suspicious images so they appear in the expandable log panel
         log.error(
           `Suspicious image detected at frame ${frameIndex}: ` +
-          `size ${blobSize} bytes - image may be black/empty. ` +
-          `This can occur when WebGL hasn't composited the frame yet.`
+            `size ${blobSize} bytes - image may be black/empty. ` +
+            `This can occur when WebGL hasn't composited the frame yet.`
         );
       }
     );
@@ -1719,7 +1695,7 @@ async function handleEnterAR(): Promise<void> {
           );
           occupancyVisualizerSink = occupancyCubesVisualizer;
         } else {
-          occupancyVisualizerSink = { refresh: () => { }, clear: () => { } };
+          occupancyVisualizerSink = { refresh: () => {}, clear: () => {} };
         }
 
         // Persistent depth-only occluder (ON by default). When on, it
@@ -1835,6 +1811,21 @@ async function handleEnterAR(): Promise<void> {
       }
     }
 
+    // Measurement point visualizer
+    const measScene = getScene();
+    if (arWorldGroup && measScene) {
+      unsubscribeMeasurementPoints?.();
+      measurementPointVisualizer?.dispose();
+      measurementPointVisualizer = new MeasurementPointVisualizer(
+        arWorldGroup,
+        measScene
+      );
+      unsubscribeMeasurementPoints = wireMeasurementPointSubscribers(
+        storeRef,
+        measurementPointVisualizer
+      );
+    }
+
     // Issue #14: Map overlay is created lazily on first toggle (not here)
     // Register per-frame callback for smooth map position updates and follower tracking
     // This is called every XR frame (~60+ Hz) rather than on GPS events (~1 Hz)
@@ -1861,19 +1852,6 @@ async function handleEnterAR(): Promise<void> {
         // relative to where the user is actually looking (the same camera the
         // CSS3D overlay is composited through). See the 2026-06-29 plan.
         mapOverlay.updatePosition(dt, camera ?? undefined);
-      }
-
-      // -- Measurement Visualization (Task 3) --
-      if (arWorldGroup) {
-        if (!measurementPointVisualizer) {
-          const scene = getScene();
-          if (scene) {
-            measurementPointVisualizer = new MeasurementPointVisualizer(arWorldGroup, scene);
-          }
-        }
-        if (measurementPointVisualizer) {
-          measurementPointVisualizer.update(storeRef.get().getState());
-        }
       }
     });
 

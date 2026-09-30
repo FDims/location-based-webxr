@@ -534,7 +534,7 @@ describe('replay-mode', () => {
     const dispatchSpy = vi.spyOn(store, 'dispatch');
 
     void controller.play(1);
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10_000);
 
     // All 3 actions from our fixture should be dispatched
     expect(dispatchSpy).toHaveBeenCalledTimes(3);
@@ -549,7 +549,7 @@ describe('replay-mode', () => {
     const controller = await startReplayMode(fakeZipData, config);
 
     void controller.play(100); // high speed for instant replay
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(onProgress).toHaveBeenCalled();
     // Last call should be (3, 3) — all actions dispatched
@@ -565,7 +565,7 @@ describe('replay-mode', () => {
     const controller = await startReplayMode(fakeZipData, config);
 
     void controller.play(100);
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
@@ -664,7 +664,7 @@ describe('replay-mode', () => {
     });
 
     void controller.play(100);
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(onError).toHaveBeenCalled();
   });
@@ -695,7 +695,7 @@ describe('replay-mode', () => {
 
     // Resume
     void controller.resume();
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10_000);
 
     // Remaining actions dispatched
     expect(dispatchSpy).toHaveBeenCalledTimes(3);
@@ -714,7 +714,7 @@ describe('replay-mode', () => {
     const engine = controller.getEngine();
     // Verify internal speed was updated by playing and checking timing
     void controller.play(10);
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(engine.getState()).toBe('completed');
   });

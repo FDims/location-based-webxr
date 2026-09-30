@@ -44,10 +44,7 @@ describe('measurement point view', () => {
     const gpsDot = makeDot();
     const setFromPoints = vi.fn();
     const alignment = [
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      10, 20, 30, 1,
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 20, 30, 1,
     ] as unknown as Parameters<typeof updateGpsDotPosition>[2];
 
     updateMeasurementPointVisual(
@@ -72,11 +69,7 @@ describe('measurement point view', () => {
     const setFromPoints = vi.fn();
 
     updateGpsDotPosition(gpsDot, [1, 2, 3], null);
-    updateConnectionLinePositions(
-      { setFromPoints },
-      [1, 2, 3],
-      null
-    );
+    updateConnectionLinePositions({ setFromPoints }, [1, 2, 3], null);
 
     expect(gpsDot.visible).toBe(false);
     expect(setFromPoints).not.toHaveBeenCalled();
