@@ -8,10 +8,7 @@ import {
   measurementPointsReducer,
 } from '../state/measurement-points-slice';
 import type { MeasurementPointHandlers } from '../measurement-points/measurement-point-handlers';
-import type {
-  CombinedRootState,
-  RecorderStore,
-} from '../state/recorder-store';
+import type { CombinedRootState, RecorderStore } from '../state/recorder-store';
 
 function makeStore() {
   let state = {

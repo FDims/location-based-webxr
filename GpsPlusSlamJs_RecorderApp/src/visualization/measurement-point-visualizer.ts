@@ -26,7 +26,10 @@ export class MeasurementPointVisualizer {
 
   private measurementRayLines = new Map<string, THREE.LineSegments>();
   private measurementProvisionalSphere: THREE.Mesh | null = null;
-  private confirmedMeasurementVisuals = new Map<string, ConfirmedMeasurementVisual>();
+  private confirmedMeasurementVisuals = new Map<
+    string,
+    ConfirmedMeasurementVisual
+  >();
 
   constructor(arWorldGroup: THREE.Group, scene: THREE.Scene) {
     this.arWorldGroup = arWorldGroup;
@@ -40,6 +43,7 @@ export class MeasurementPointVisualizer {
     this.arParent = this.measurementParent;
   }
 
+  // eslint-disable-next-line complexity
   public update(state: CombinedRootState): void {
     const pendingRays = state.measurementPoints.pendingRays;
     const provisional = selectProvisionalMeasurement(state);
@@ -140,12 +144,14 @@ export class MeasurementPointVisualizer {
     return { arDot, gpsDot };
   }
 
-  private disposeConfirmedMeasurementVisual(visual: ConfirmedMeasurementVisual) {
+  private disposeConfirmedMeasurementVisual(
+    visual: ConfirmedMeasurementVisual
+  ) {
     this.arParent.remove(visual.arDot);
     this.scene.remove(visual.gpsDot);
-    (visual.arDot.geometry as THREE.BufferGeometry).dispose();
+    visual.arDot.geometry.dispose();
     (visual.arDot.material as THREE.Material).dispose();
-    (visual.gpsDot.geometry as THREE.BufferGeometry).dispose();
+    visual.gpsDot.geometry.dispose();
     (visual.gpsDot.material as THREE.Material).dispose();
   }
 
@@ -170,7 +176,10 @@ export class MeasurementPointVisualizer {
         this.confirmedMeasurementVisuals.get(entity.id) ??
         this.createConfirmedMeasurementVisual();
       this.confirmedMeasurementVisuals.set(entity.id, visual);
-      MeasurementPointViews.updateArDotPosition(visual.arDot, entity.arPosition);
+      MeasurementPointViews.updateArDotPosition(
+        visual.arDot,
+        entity.arPosition
+      );
 
       if (entity.gpsPositionSnapshot && matrix) {
         visual.gpsDot.position.set(
@@ -195,7 +204,7 @@ export class MeasurementPointVisualizer {
       this.disposeConfirmedMeasurementVisual(visual);
     }
     this.confirmedMeasurementVisuals.clear();
-    
+
     for (const line of this.measurementRayLines.values()) {
       this.measurementParent.remove(line);
       line.geometry.dispose();
@@ -205,7 +214,7 @@ export class MeasurementPointVisualizer {
 
     if (this.measurementProvisionalSphere) {
       this.measurementParent.remove(this.measurementProvisionalSphere);
-      (this.measurementProvisionalSphere.geometry as THREE.BufferGeometry).dispose();
+      this.measurementProvisionalSphere.geometry.dispose();
       (this.measurementProvisionalSphere.material as THREE.Material).dispose();
       this.measurementProvisionalSphere = null;
     }

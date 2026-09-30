@@ -152,21 +152,21 @@ export async function startReplayMode(
   // in a pseudo-gps event. We then intercept them at dispatch.
   actions = (function interpolateActions(origActions: ReplayAction[]) {
     const tsArray: (number | null)[] = origActions.map(extractActionTimestamp);
-    
+
     // Fill nulls with interpolated values
     for (let i = 0; i < tsArray.length; i++) {
       if (tsArray[i] !== null) continue;
-      
+
       // Find previous known ts
       let prevIdx = i - 1;
       while (prevIdx >= 0 && tsArray[prevIdx] === null) prevIdx--;
       const prevTs = prevIdx >= 0 ? tsArray[prevIdx]! : null;
-      
+
       // Find next known ts
       let nextIdx = i + 1;
       while (nextIdx < tsArray.length && tsArray[nextIdx] === null) nextIdx++;
       const nextTs = nextIdx < tsArray.length ? tsArray[nextIdx]! : null;
-      
+
       if (prevTs !== null && nextTs !== null) {
         // Interpolate between prev and next
         const fraction = (i - prevIdx) / (nextIdx - prevIdx);
@@ -192,9 +192,9 @@ export async function startReplayMode(
         type: 'gpsData/recordGpsEvent',
         payload: {
           __realAction: action,
-          gpsPoint: { timestamp: tsArray[i] }
-        }
-      } as unknown as ReplayAction;
+          gpsPoint: { timestamp: tsArray[i] },
+        },
+      };
     });
   })(actions);
 
@@ -219,11 +219,12 @@ export async function startReplayMode(
 
   // Intercept dispatch to unwrap our pseudo-gps events before the reducers see them
   const originalDispatch = store.dispatch;
-  store.dispatch = ((action: any) => {
-    if (action.payload && action.payload.__realAction) {
-      return originalDispatch(action.payload.__realAction);
+  store.dispatch = ((action: Record<string, unknown>) => {
+    const payload = action.payload as Record<string, unknown> | undefined;
+    if (payload && payload.__realAction) {
+      return originalDispatch(payload.__realAction as ReplayAction);
     }
-    return originalDispatch(action);
+    return originalDispatch(action as unknown as ReplayAction);
   }) as typeof store.dispatch;
 
   // Initialize Three.js replay scene (no WebXR)
@@ -350,7 +351,7 @@ export async function startReplayMode(
   let statsOverlay: StatsOverlayHandle | null = null;
   let measurementPointVisualizer: MeasurementPointVisualizer | null = null;
   let replayFrameLoopId: number | null = null;
-  
+
   try {
     if (loadRecordingOptions().visualization.statsOverlay) {
       statsOverlay = createStatsOverlay(config.container);

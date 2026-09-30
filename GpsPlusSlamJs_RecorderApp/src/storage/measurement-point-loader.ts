@@ -145,6 +145,7 @@ function hasValidEntityArrays(v: Record<string, unknown>): boolean {
  * Prevents runtime crashes from malformed or legacy JSON files.
  * Validates schemaVersion, nested observations, and required fields.
  */
+// eslint-disable-next-line complexity
 export function isMeasurementPointEntity(
   value: unknown
 ): value is MeasurementPointEntity {

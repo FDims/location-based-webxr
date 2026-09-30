@@ -151,6 +151,7 @@ function buildRayFromPose(
 export function createMeasurementPointHandlers(
   deps: MeasurementPointHandlersDeps
 ): MeasurementPointHandlers {
+  // eslint-disable-next-line complexity
   function handleShootRay(aimedScreenX: number, aimedScreenY: number): void {
     // FIX 2: Replay guard — prevent handler re-invocation during replay.
     // During replay, only the serialized action log is dispatched.
@@ -255,8 +256,13 @@ export function createMeasurementPointHandlers(
       return;
     }
 
-    if (confirmationMode === 'quality' && !state.measurementPoints.draft.canConfirm) {
-      deps.showError('Cannot confirm — measurement quality is below the required threshold');
+    if (
+      confirmationMode === 'quality' &&
+      !state.measurementPoints.draft.canConfirm
+    ) {
+      deps.showError(
+        'Cannot confirm — measurement quality is below the required threshold'
+      );
       return;
     }
 

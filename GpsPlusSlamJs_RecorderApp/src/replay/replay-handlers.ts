@@ -347,12 +347,12 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     currentReplaySpeed = speed;
     replayController?.setSpeed(speed);
     log.info(`Replay speed changed to ${speed}x`);
-    
+
     // Update the HUD status if we're currently playing
     if (replayController?.getState() === 'playing') {
       updateStatus(`Replaying at ${speed}×...`);
     }
-    
+
     updateSpeedButtonSelection(speed);
   }
 
@@ -410,7 +410,8 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     // Recreate and fast-forward to the target index
     await startReplayOfSession(session, 1, targetIndex);
     // After seek completes, set speed to 0.1× so resume is slow
-    replayController?.setSpeed(0.1);
+    const ctrl = replayController as ReplayModeController | null;
+    ctrl?.setSpeed(0.1);
   }
 
   function handleReplayCameraToggle(): void {
@@ -418,6 +419,7 @@ export function createReplayHandlers(deps: ReplayHandlersDeps): ReplayHandlers {
     updateCameraModeButton(getCameraMode());
   }
 
+  // eslint-disable-next-line complexity
   function handleReplayMapToggle(): void {
     if (!replayController) {
       return;

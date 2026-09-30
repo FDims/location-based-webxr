@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { ReplayEngine } from 'gps-plus-slam-app-framework/state/replay-engine';
 import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage/null-storage-backend';
-import {
-  installOPFSMocks,
-} from 'gps-plus-slam-app-framework/test-utils/browser-mocks';
+import { installOPFSMocks } from 'gps-plus-slam-app-framework/test-utils/browser-mocks';
 import {
   createSession,
   initOpfsStorage,
