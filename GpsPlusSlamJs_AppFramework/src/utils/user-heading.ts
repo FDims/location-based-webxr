@@ -4,7 +4,7 @@
  * Turns the latest AR camera rotation into an absolute compass bearing (degrees
  * clockwise from geographic North) so the live/replay map overlay can draw a
  * thin view-direction line from the user-position dot. See Finding 2 of
- * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-map-rings-transparency-and-view-direction-user-feedback.md.
+ * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-1822-map-rings-transparency-and-view-direction-user-feedback.md.
  *
  * Why this lives in the app-framework (NOT the library's `orientation-heading.ts`):
  * that library module is the MAGNETIC path — its bearings come from the
@@ -35,6 +35,7 @@
 
 import { vec3 } from 'gl-matrix';
 import type { Matrix4, Quaternion } from 'gps-plus-slam-js';
+import { normalizeBearingDeg } from './bearing-degrees.js';
 
 /** Camera-forward basis vector in the NUE-AR frame: `webxrToNUE([0,0,-1]) = [1,0,0]`. */
 const NUE_CAMERA_FORWARD: vec3 = [1, 0, 0];
@@ -124,5 +125,5 @@ export function computeUserHeadingDeg(input: UserHeadingInput): number | null {
   }
 
   const deg = Math.atan2(east, north) * RAD_TO_DEG;
-  return ((deg % 360) + 360) % 360;
+  return normalizeBearingDeg(deg);
 }

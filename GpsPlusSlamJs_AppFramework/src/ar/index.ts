@@ -1,6 +1,14 @@
 /**
- * AR module — WebXR session management, scene hierarchy, image/depth capture.
+ * AR module — WebXR session management, scene hierarchy, image/depth capture,
+ * and QR detection/pose (the `qr/` subdirectory, re-exported below).
  */
+
+// --- ar-crash-isolation (XR session-negotiation diagnostic flags) ---
+export {
+  type ArCrashIsolationOptions,
+  DEFAULT_AR_CRASH_ISOLATION,
+  validateArCrashIsolationOptions,
+} from './ar-crash-isolation.js';
 
 // --- camera-blit-capture ---
 export {
@@ -9,6 +17,8 @@ export {
   computeCaptureSize,
   computeAspectFitSize,
   CameraBlitCapture,
+  type RgbaFrame,
+  rgbaImageToJpegBlob,
 } from './camera-blit-capture.js';
 
 // --- capability-checker ---
@@ -31,11 +41,12 @@ export {
 } from './chromium-camera-access-workaround.js';
 
 // --- capture-failure-tracker ---
+// The preset returns the generic `FailureTracker` (exported from `utils`);
+// there is deliberately no `CaptureFailureTracker` type any more.
 export {
   type CaptureFailureTrackerConfig,
   DEFAULT_CAPTURE_TRACKER_CONFIG,
   CAPTURE_FAILURE_WARNING,
-  type CaptureFailureTracker,
   createCaptureFailureTracker,
 } from './capture-failure-tracker.js';
 
@@ -61,122 +72,10 @@ export {
   type DepthGridLookup,
 } from './depth-grid-lookup.js';
 
-// --- qr-size-from-depth (Note 4 — measure the QR size from the depth map) ---
-export {
-  type QrSizeStatus,
-  type QrSizeEstimate,
-  type QrSizeObservation,
-  type QrSizeAccumulatorOptions,
-  type QrSizeAccumulator,
-  estimateQrSizeFromDepth,
-  createQrSizeAccumulator,
-} from './qr-size-from-depth.js';
-
-// --- qr-size-measurer (Part B — shared depth→size piece) ---
-export {
-  type QrSizeDepthContext,
-  type ImageSize,
-  type QrSizeMeasurement,
-  type QrSizeMeasurer,
-  createQrSizeMeasurer,
-} from './qr-size-measurer.js';
-
-// --- qr-size-depth-context (shared DepthSample → QrSizeDepthContext factory) ---
-export { createQrSizeDepthContext } from './qr-size-depth-context.js';
-
-// --- qr-pose ---
-export {
-  type Point2,
-  type CameraIntrinsics,
-  type Pose,
-  type OpenCvPnpResult,
-  type SolvePnpSquare,
-  type SolveQrPoseInput,
-  type QrPoseSolution,
-  type QuadValidation,
-  buildObjectPoints,
-  intrinsicsFromProjection,
-  projectViewPoint,
-  qrInCameraFromOpenCv,
-  composePose,
-  invertPose,
-  transformPoint,
-  signedQuadArea,
-  validateQuad,
-  reprojectionErrorPx,
-  solveQrPose,
-} from './qr-pose.js';
-
-// --- qr-derived-pose (decision D-A — derive size/pose from RAW on read) ---
-export {
-  type RawQrObservation,
-  type DeriveQrPoseDeps,
-  type DerivedQrPlacement,
-  type IncrementalQrPlacement,
-  deriveQrSizeM,
-  solveQrPoseFromObservation,
-  deriveSolvedQrPose,
-  deriveQrPlacement,
-  createIncrementalQrPlacement,
-} from './qr-derived-pose.js';
-
-// --- qr-debug-view (shared 3D debug axis+cube consumer, WS-5) ---
-export { createQrDebugView, type QrDebugView } from './qr-debug-view.js';
-
-// --- qr-detection-controller (the thin geo-less RAW producer, D-X) ---
-export {
-  type QrScanStatus,
-  type RawObservationSink,
-  type QrDetectionControllerDeps,
-  type QrDetectionController,
-  createQrDetectionController,
-} from './qr-detection-controller.js';
-
-// --- qr-pose-aggregation (sliding-window pose stabilization) ---
-export {
-  DEFAULT_ROTATION_INLIER_ANGLE_DEG,
-  type AverageRotationOptions,
-  type AverageRotationResult,
-  type AggregateQrPoseResult,
-  type QrPoseStabilityStatus,
-  type QrPoseStabilityOptions,
-  type QrPoseStability,
-  averageRotation,
-  aggregateQrPose,
-  evaluateQrPoseStability,
-} from './qr-pose-aggregation.js';
-
-// --- qr-level ---
-export {
-  type QrLevel,
-  type FetchLike,
-  type FetchQrLevelOptions,
-  QrLevelValidationError,
-  parseQrLevel,
-  fetchQrLevel,
-} from './qr-level.js';
-
-// --- qr-tracking-controller ---
-export {
-  type QrTrackingStatus,
-  type QrSolvePoseInput,
-  type QrDetectionEvent,
-  type QrTrackingControllerConfig,
-  type QrTrackingController,
-  createQrTrackingController,
-} from './qr-tracking-controller.js';
-
-// --- qr-frontend ---
-export {
-  type RgbaImage,
-  type QrDetection,
-  type QrFrontEnd,
-  type DetectedBarcodeLike,
-  type BarcodeDetectorLike,
-  type ToImageBitmapSource,
-  BarcodeDetectorFrontEnd,
-  createBarcodeDetectorFrontEnd,
-} from './qr-frontend.js';
+// --- qr/ (QR detection, pose, size-from-depth, aggregation, GPS vote,
+// planar-pnp, detection-scheduler) — the whole sub-barrel is re-exported so
+// barrel consumers are unaffected by the ar/qr/ namespace split. ---
+export * from './qr/index.js';
 
 // --- camera-frame-source (B2 — generic throttled RGBA feed for CV) ---
 export {
@@ -185,54 +84,39 @@ export {
   CameraFrameSource,
 } from './camera-frame-source.js';
 
-// --- planar-pnp (pure-JS IPPE; the OpenCV-free SolvePnpSquare) ---
-export {
-  type Mat3,
-  type Homography,
-  type PoseCandidate,
-  solveLinear,
-  homographyFromCorrespondences,
-  nearestRotation3x3,
-  ippePoseCandidates,
-  rotationToRodrigues,
-  PlanarPnpSquare,
-} from './planar-pnp.js';
-
-// --- detection-scheduler (generic; QR aliases kept for back-compat) ---
-export {
-  type DetectionSchedulerConfig,
-  type DetectionScheduler,
-  type QrDetectionSchedulerConfig,
-  type QrDetectionScheduler,
-  createDetectionScheduler,
-  createQrDetectionScheduler,
-} from './detection-scheduler.js';
-
-// --- qr-gps-vote ---
-export {
-  METERS_PER_DEG_LAT,
-  type QrGeoPose,
-  type QrGpsVoteInput,
-  type Enu,
-  localPlaneToEnu,
-  offsetGeo,
-  buildQrGpsVotes,
-} from './qr-gps-vote.js';
-
-// --- qr-occupancy-check ---
-export {
-  type OccupancySurface,
-  type QrPlausibilityVerdict,
-  type QrPlausibility,
-  type QrPlausibilityOptions,
-  checkQrPlausibility,
-} from './qr-occupancy-check.js';
-
 // --- bresenham3d ---
 export { bresenham3d, type GridCell } from './bresenham3d.js';
 
 // --- occupancy-grid ---
 export { OccupancyGrid, type OccupancyGridOptions } from './occupancy-grid.js';
+
+// --- floor-estimator (column-histogram + plane-fit floor under the camera) ---
+export {
+  type FloorEstimatorOptions,
+  type FloorHit,
+  type FloorEstimate,
+  DEFAULT_FLOOR_QUERY_RADIUS_M,
+  DEFAULT_FLOOR_MIN_BELOW_CAMERA_M,
+  DEFAULT_FLOOR_MIN_SUPPORT_CELLS,
+  DEFAULT_FLOOR_BAND_CELLS,
+  PLAUSIBLE_HEIGHT_MIN_M,
+  PLAUSIBLE_HEIGHT_MAX_M,
+  estimateFloor,
+} from './floor-estimator.js';
+
+// --- elevation-offset-estimator (slew-limited weighted median + freeze
+// layer over baseline-free floor-vs-terrain delta samples) ---
+export {
+  type ElevationOffsetSample,
+  type ElevationOffsetTick,
+  type ElevationOffsetFreezeOptions,
+  type ElevationOffsetOptions,
+  type ElevationOffsetState,
+  type ElevationOffsetEstimator,
+  DEFAULT_ELEVATION_OFFSET_OPTIONS,
+  MAX_SLEW_DT_S,
+  createElevationOffsetEstimator,
+} from './elevation-offset-estimator.js';
 
 // --- occupancy-mesher (sparse voxel Set → face-culled surface + AABB list) ---
 export {
@@ -252,6 +136,13 @@ export {
   registerXrFrameUpdate,
 } from './xr-frame-loop.js';
 
+// --- hit-test-reticle-driver ---
+export {
+  type HitTestReticleHandle,
+  type HitTestReticleArgs,
+  startHitTestReticle,
+} from './hit-test-reticle-driver.js';
+
 // --- enable-gps-ar ---
 export {
   type EnableGpsArStatus,
@@ -266,12 +157,18 @@ export {
 // --- image-quality (pure blur/blackness metrics + drop/retry verdict policy) ---
 export {
   type QualityFilterConfig,
+  type BlurMetricId,
+  BLUR_METRIC_IDS,
   DEFAULT_QUALITY_FILTER,
+  QUALITY_FILTER_CONSTRAINTS,
+  validateQualityFilterConfig,
   DEFAULT_SHARPNESS_HISTORY_SIZE,
   DEFAULT_SHARPNESS_MIN_SAMPLES,
   type QualityRejectReason,
   type QualityVerdict,
   sharpnessScore,
+  highFrequencyEnergyRatio,
+  blurMetricScorer,
   rgbaToGrayscale,
   meanLuminance,
   ImageQualityGate,
@@ -310,37 +207,70 @@ export { SCENE_NODE } from './scene-node-names.js';
 export {
   initAR,
   endARSession,
-  setSessionEndCallback,
+  type ArSessionCallbacks,
   type SessionEndInfo,
-  setImageCaptureCallback,
-  setImageQualityAnalyzer,
+  // EXPORTED 2026-08-12 because it is part of `initAR`'s public contract and a
+  // consumer could not name it: `ArSessionCallbacks.tracking.store` requires
+  // this shape, so an app typing its own store dependency had to either
+  // re-declare the interface or widen to `SubscribableStore` and fail to
+  // compile on the missing `dispatch`.
+  type TrackingSubscribableStore,
+  rebindTrackingStore,
   startImageCapture,
   stopImageCapture,
   getImageCaptureFrameCount,
-  setTrackingCallbacks,
-  setTrackingLostCallback,
-  setTrackingStore,
-  setDepthCaptureCallback,
   startDepthCapture,
   stopDepthCapture,
   getDepthSampleCount,
-  setCameraFrameCallback,
   startCameraFrameCapture,
   stopCameraFrameCapture,
   getCameraFrameCount,
   type CameraFrameCaptureConfig,
-  setFrameCallback,
-  getLiveCss3dManager,
   getScene,
   getArWorldGroup,
   getCamera,
+  getRenderer,
   getCurrentArPose,
   getDepthInfoFromFrame,
   type SessionFeatureOptions,
 } from './webxr-session.js';
 
+// --- webxr-support-probe ---
+export {
+  probeImmersiveArSupport,
+  probeImmersiveArSupportOutcome,
+  WEBXR_SUPPORT_PROBE_TIMEOUT_MS,
+  type ImmersiveArProbeOutcome,
+  type XrSystemLike,
+} from './webxr-support-probe.js';
+
+// --- tour-manifest / tour-archive (`tour.json`: placed content with exact
+// geo poses, and where it lives in a tour archive) ---
+export {
+  TOUR_MANIFEST_VERSION,
+  type TourManifest,
+  type TourObject,
+  type TourPin,
+  type TourPhoto,
+  type TourObjectKind,
+  TourManifestValidationError,
+  createEmptyTourManifest,
+  parseTourManifest,
+  serializeTourManifest,
+} from './tour-manifest.js';
+export {
+  TOUR_MANIFEST_ENTRY,
+  TOUR_CONTENT_FOLDER,
+  tourContentEntryName,
+  tourManifestEntryOf,
+  readTourManifestFromEntries,
+} from './tour-archive.js';
+
 // --- webxr-nue-basis ---
 export { WEBXR_TO_NUE } from './webxr-nue-basis.js';
+
+// --- nue-webxr-conversions (component form of the same basis change) ---
+export { nueToWebXR, nueQuaternionToWebXR } from './nue-webxr-conversions.js';
 
 // --- xr-camera-texture ---
 export {

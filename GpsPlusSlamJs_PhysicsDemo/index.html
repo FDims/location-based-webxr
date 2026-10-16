@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>gps-plus-slam — physics demo</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - which is why there are so few of them.
+    -->
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      /* What stays app-owned: the page ground (the camera feed in AR, a
+         near-black stand-in before it), the AR / replay mount, the overlay's
+         stacking, and one behavioural rule on the sliders. Everything
+         visible is the design system's - the atoms and the start / bottom
+         compositions in design.css (adoption plan M4). A rule that styles
+         an element here would win over the system silently, so none is
+         added lightly. */
+      html,
+      body {
+        height: 100%;
+        background: #111;
+        overflow: hidden;
+      }
+      /* Range sliders in a panel that is swiped past on a phone: `pan-y` hands
+         vertical panning back to the page so a downward swipe scrolls (and the
+         browser cancels the slider gesture) instead of dragging the thumb. The
+         value itself is protected by the framework's slider-scroll-guard —
+         CSS cannot undo Blink's jump-to-position write on pointer-down. */
+      input[type="range"] {
+        touch-action: pan-y;
+      }
+      /* The replay / AR scene mounts its canvas here. */
+      #app {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+      }
+      #overlay > * {
+        pointer-events: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      #overlay is nested inside #app (the element the AR/replay scene mounts
+      into) so it composites over the AR camera feed under the WebXR DOM Overlay
+      feature. See the AppFramework README "DOM-Overlay / HUD stacking".
+    -->
+    <div id="app">
+      <div id="overlay">
+        <!-- Mode entry / capability screen: the .start-panel composition.
+             The file input has no atom (adoption plan §7); it sits native
+             under a hint-voiced label. -->
+        <section
+          id="mode-screen"
+          class="start-panel plate"
+          data-testid="mode-screen"
+        >
+          <h1>Physics demo</h1>
+          <p class="prose">
+            Drop balls into the real world and watch them bounce off the
+            reconstructed surfaces. On a phone this runs in AR; on the desktop,
+            load a recorded walk and replay it — the developer harness.
+          </p>
+          <button
+            id="start-ar-button"
+            class="btn btn--accent"
+            data-testid="start-ar-button"
+            hidden
+          >
+            Start AR
+          </button>
+          <div id="file-row" class="col" data-testid="file-row">
+            <label class="hint" for="recording-input"
+              >Load a recording (.zip):</label
+            >
+            <input
+              id="recording-input"
+              class="prose"
+              data-testid="recording-input"
+              type="file"
+              accept=".zip"
+            />
+          </div>
+          <p
+            id="capability-message"
+            class="prose"
+            data-tone="warn"
+            data-testid="capability-message"
+            hidden
+          ></p>
+        </section>
+
+        <!-- Replay controls: the .bottom-panel composition - status prose,
+             the transport row, the mesh selects, the tap hint, the stats
+             readout and a failure-toned error. -->
+        <section
+          id="replay-panel"
+          class="bottom-panel plate"
+          data-testid="replay-panel"
+          hidden
+        >
+          <p id="replay-status" class="prose" data-testid="replay-status"></p>
+          <div id="replay-controls" class="row">
+            <button
+              id="play-pause-button"
+              class="btn"
+              data-testid="play-pause-button"
+            >
+              Pause
+            </button>
+            <label id="replay-speed-label" class="hint" for="replay-speed"
+              >Speed</label
+            >
+            <input
+              id="replay-speed"
+              class="slider"
+              data-testid="replay-speed"
+              type="range"
+              min="0.25"
+              max="4"
+              step="0.25"
+              value="1"
+            />
+            <span
+              id="replay-speed-value"
+              class="num"
+              data-testid="replay-speed-value"
+              >1×</span
+            >
+          </div>
+          <div id="mesh-controls" class="row">
+            <label class="hint" for="mesh-style">Mesh</label>
+            <span class="select-wrap">
+              <select
+                id="mesh-style"
+                class="select select--small"
+                data-testid="mesh-style"
+              >
+                <option value="smooth" selected>Surface nets</option>
+                <option value="greedy">Cubes (blocky)</option>
+                <option value="corner-fit">Corner-fit (smoothed)</option>
+              </select>
+            </span>
+            <label class="hint" for="mesh-shader">Shader</label>
+            <span class="select-wrap">
+              <select
+                id="mesh-shader"
+                class="select select--small"
+                data-testid="mesh-shader"
+              >
+                <option value="depth-shaded-wireframe" selected>
+                  Depth-shaded + wireframe
+                </option>
+                <option value="depth-shaded">Depth-shaded</option>
+                <option value="matcap">Matcap</option>
+                <option value="wireframe">Wireframe</option>
+                <option value="off">Off</option>
+              </select>
+            </span>
+          </div>
+          <span id="physics-hint" class="hint">
+            Click / tap to shoot a ball into the scene.
+          </span>
+          <span id="stats" class="num" data-testid="stats"></span>
+          <p
+            id="error"
+            class="prose"
+            data-tone="warn"
+            data-testid="error"
+            hidden
+          ></p>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

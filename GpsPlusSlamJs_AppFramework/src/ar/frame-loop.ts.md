@@ -14,8 +14,14 @@ to satisfy P4 of the C# port survey
 
 - `type FrameUpdate = (dt: number, elapsed: number) => void` — the
   callback shape. `dt` is seconds since the previous frame (0 on the
-  first tick after a reset); `elapsed` is seconds since the session
-  started. Both come from the XR `time` argument, not `THREE.Clock`.
+  first tick after a reset); `elapsed` is the XR frame timestamp in seconds.
+  Both come from the XR `time` argument, not `THREE.Clock`.
+  - **`elapsed` is PAGE-relative, not session-relative.** That clock starts at
+    page load, so entering AR a minute in gives a first `elapsed` near 60
+    rather than near 0. This line used to say "seconds since the session
+    started"; a consumer believed it, opened its first averaging window at
+    zero and read a wildly wrong first sample. Treat `elapsed` as a monotonic
+    stamp to difference against itself, never as a duration.
 - `registerFrameUpdate(fn) → unregister` — add `fn` to the registry.
   Idempotent (Set dedup). Returns an unregister function components store
   and call from their `dispose()`.
@@ -30,6 +36,12 @@ to satisfy P4 of the C# port survey
 
 - Plain functions, no class. There is exactly one frame loop per
   session; a class would only add ceremony.
+- **The registry mechanics live in `utils/isolated-registry.ts`**, not here.
+  This module is the frame loop's NAME, lifetime and public signature; the
+  snapshot-and-isolate behaviour is shared with `xr-frame-loop.ts` and
+  `session-disposers.ts`, which were structurally identical modules until the
+  shape was extracted. Behaviour is pinned once, in
+  `isolated-registry.test.ts`.
 - `runFrameUpdates` snapshots the registry before iterating. A handler
   may safely register or unregister callbacks during its own tick; the
   change takes effect on the next frame. This removes a subtle
@@ -37,12 +49,11 @@ to satisfy P4 of the C# port survey
   not-yet-visited entry that an earlier handler unregistered. The
   snapshot array is **cached** between registry mutations (2026-07-04,
   PR #67 review) — same deferral semantics, without re-allocating an
-  identical array at 60–90 Hz. `xr-frame-loop.ts` mirrors this.
+  identical array at 60–90 Hz.
 - Each callback runs in its own `try/catch`. A throwing `FrameUpdate` is
-  isolated (error logged via `createLogger('FrameLoop').error`, which also
-  reports to Sentry) so it cannot abort the remaining callbacks nor propagate
-  up through `onXRFrame` and kill the scene render for the frame.
-  `runXrFrameUpdates` mirrors this.
+  isolated (error logged via the shared registry's logger, which also reports
+  to Sentry) so it cannot abort the remaining callbacks nor propagate up
+  through `onXRFrame` and kill the scene render for the frame.
 - The registry has no notion of priority or ordering beyond insertion
   order (Set iteration order in modern engines). Components MUST NOT
   depend on running before/after each other; if they do, the dependency

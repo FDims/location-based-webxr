@@ -20,7 +20,10 @@
     teardown; returns a deregister fn (call it when the resource is disposed
     early so a later flush won't re-run it).
   - `runSessionDisposers()` — snapshot, **clear**, then run each disposer in its
-    own `try/catch`. Called from `resetWebXRState()`.
+    own `try/catch`. Called from `resetWebXRState()`. This is
+    `isolated-registry`'s `runOnce()`; the clear-before-run ordering is what
+    makes a second flush a no-op and stops a disposer that re-registers during
+    teardown from looping.
   - `clearSessionDisposers()` — drop all without running (test-only hygiene,
     parallels `clearFrameUpdates`).
 
@@ -55,4 +58,4 @@
   `ar/webxr-session.ts` (`resetWebXRState` flushes this),
   `visualization/ar-world-group-alignment.ts` (the first consumer), and the plan
   at
-  `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-08-arworldgroup-alignment-session-scoped-disposal.md`.
+  `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-08-2149-arworldgroup-alignment-session-scoped-disposal.md`.

@@ -5,7 +5,7 @@
 Pure string builders for the three COLMAP `sparse/0/` model files. No I/O, no
 state — they take already-converted records and return file text. Part of the
 COLMAP/3DGS export
-([2026-06-13-colmap-export-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-13-colmap-export-plan.md)
+([2026-06-13-1205-colmap-export-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-13-1205-colmap-export-plan.md)
 §5, Iter 2).
 
 ## Public API
@@ -39,7 +39,9 @@ Records: `ColmapImageRecord { imageId, pose: ColmapPose, name }`,
 - Tracks and keypoint lines are intentionally empty — valid for 3DGS-init
   loaders, not for vanilla COLMAP mapper/triangulator (plan Q1).
 - Numbers: floats via `String` (compact, `-0`→`0`); ids/dimensions rounded;
-  color channels rounded + clamped to 0–255.
+  color channels rounded + clamped to 0–255; a non-finite channel writes `0`
+  (`+Infinity` → 255) instead of the literal `NaN` it used to emit, which no
+  COLMAP reader parses (fixed 2026-09-04).
 - Comment (`#`) headers mirror COLMAP's writer; parsers skip them.
 
 ## Examples

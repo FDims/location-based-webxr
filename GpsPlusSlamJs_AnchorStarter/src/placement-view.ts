@@ -1,6 +1,6 @@
 /**
  * Pure view-model for the placement controls (the "Place anchor" button,
- * the status banner, the reload call-to-action, and the error line).
+ * the status banner, the copy-link action, and the error line).
  *
  * Derives everything the placement UI shows from the tested `SetupState`
  * finite state machine. Keeping it pure lets us unit-test the async-UX
@@ -17,16 +17,12 @@ interface PlaceButtonView {
   readonly visible: boolean;
   readonly label: string;
   readonly disabled: boolean;
-  /** In-progress (spinner) state while the save is in flight. */
-  readonly busy: boolean;
 }
 
 export interface PlacementView {
   readonly button: PlaceButtonView;
   /** Sentence describing what the user should do / what just happened. */
   readonly banner: string;
-  /** Whether to surface the "reload or share the link" call-to-action. */
-  readonly reloadPrompt: boolean;
   /**
    * Whether to surface the "copy link" share button. Shown once the anchor is
    * saved into the URL, so the user can hand the shareable link to another
@@ -41,7 +37,6 @@ const HIDDEN_BUTTON: PlaceButtonView = {
   visible: false,
   label: "Place anchor",
   disabled: true,
-  busy: false,
 };
 
 function buttonFor(state: SetupState): PlaceButtonView {
@@ -53,12 +48,11 @@ function buttonFor(state: SetupState): PlaceButtonView {
         visible: true,
         label: "Place anchor",
         disabled: false,
-        busy: false,
       };
     case "saving":
-      return { visible: true, label: "Saving…", disabled: true, busy: true };
+      return { visible: true, label: "Saving…", disabled: true };
     case "saved":
-      return { visible: true, label: "Saved ✓", disabled: true, busy: false };
+      return { visible: true, label: "Saved ✓", disabled: true };
     default:
       return HIDDEN_BUTTON;
   }
@@ -89,7 +83,6 @@ export function toPlacementView(state: SetupState): PlacementView {
   return {
     button: buttonFor(state),
     banner: bannerFor(state),
-    reloadPrompt: state.phase === "saved",
     copyLink: { visible: state.phase === "saved" },
     error: state.errorMessage,
   };

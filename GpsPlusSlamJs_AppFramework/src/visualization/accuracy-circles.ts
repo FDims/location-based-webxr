@@ -4,8 +4,8 @@
  * Lives in the app-framework (D4 of the unified-map plan,
  * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-unified-trajectory-map-phase3-plan.md)
  * so BOTH the framework's shared map-overlay-draw module AND the recorder
- * app's preview/summary maps can reuse it. The recorder's
- * `ui/accuracy-circles.ts` now re-exports from here.
+ * app's preview/summary maps can reuse it. The recorder imports it directly
+ * (its `ui/accuracy-circles.ts` re-export shim was deleted on 2026-09-04).
  *
  * Future style changes only need to happen in one place.
  */
@@ -31,7 +31,7 @@ import L from 'leaflet';
  * @deprecated Stroke-only since 2026-06-28 (Finding 1) — accuracy circles no
  * longer render a fill, so this opacity is unused. Retained as an exported
  * constant only to preserve the published API surface; do not pass it to
- * `L.circle`. See `2026-06-28-map-rings-transparency-and-view-direction-user-feedback.md`.
+ * `L.circle`. See `2026-06-28-1822-map-rings-transparency-and-view-direction-user-feedback.md`.
  */
 export const ACCURACY_CIRCLE_FILL_OPACITY = 0.12;
 export const ACCURACY_CIRCLE_STROKE_OPACITY = 0.5;

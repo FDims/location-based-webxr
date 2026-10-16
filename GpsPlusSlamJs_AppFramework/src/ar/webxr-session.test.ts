@@ -10,13 +10,10 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as THREE from 'three';
-import { Scene, Group, PerspectiveCamera } from 'three';
 import {
   buildSessionOptions,
   extractPoseFromViewer,
   extractResetTransformData,
-  createSceneHierarchy,
   isXRCameraLike,
   getXrCameraFromPose,
   shouldLogCameraAccessDiagnostic,
@@ -25,38 +22,21 @@ import {
   getScene,
   getArWorldGroup,
   getCamera,
-  getArPose,
-  setScene,
-  setArWorldGroup,
-  setCamera,
-  setArPose,
+  getRenderer,
   resetWebXRState,
   endARSession,
   applyAlignmentMatrix,
-  nuePositionToWebXR,
-  setImageCaptureCallback,
   startImageCapture,
   stopImageCapture,
   getImageCaptureFrameCount,
-  setTrackingCallbacks,
-  setTrackingLostCallback,
-  setTrackingRecoveredCallback,
-  setDepthCaptureCallback,
   startDepthCapture,
   stopDepthCapture,
   getDepthSampleCount,
-  setCameraFrameCallback,
   startCameraFrameCapture,
   stopCameraFrameCapture,
   getCameraFrameCount,
-  getCameraFrameCaptureSize,
   DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
-  setFrameCallback,
-  getLiveCss3dManager,
   getDepthInfoFromFrame,
-  AR_CAMERA_FOV,
-  AR_CAMERA_NEAR,
-  AR_CAMERA_FAR,
   type ARPose,
 } from './webxr-session.js';
 import { createMockPose } from '../test-utils/browser-mocks.js';
@@ -64,7 +44,6 @@ import {
   registerSessionDisposer,
   clearSessionDisposers,
 } from './session-disposers.js';
-import { SCENE_NODE } from './scene-node-names';
 
 describe('buildSessionOptions', () => {
   /**
@@ -203,7 +182,7 @@ describe('buildSessionOptions', () => {
    * `hit-test` feature. It is opt-in (default off) so existing
    * recorder/anchor sessions are unaffected, and it is *optional* (not
    * required) so the session still starts on runtimes without hit-test. See
-   * `2026-06-03-threejs-arbutton-minimal-ar-example-user-feedback.md` §6.3.
+   * `2026-06-03-0553-threejs-arbutton-minimal-ar-example-user-feedback.md` §6.3.
    */
   it('does not request hit-test by default', () => {
     const mockElement = document.createElement('div');
@@ -246,7 +225,7 @@ describe('buildSessionOptions', () => {
 
   /**
    * Why these tests matter (live depth occluder, Iter 1 —
-   * 2026-06-14-webxr-depth-occlusion-plan.md §6/§8):
+   * 2026-06-14-0009-webxr-depth-occlusion-plan.md §6/§8):
    * The live CPU-depth occluder is a consumer of the SAME cpu-optimized depth
    * stream the grid uses, but consumer apps want occlusion WITHOUT the
    * recorder's depth-capture crash-isolation flag. So `requestDepthOcclusion`
@@ -477,259 +456,6 @@ describe('shouldLogCameraAccessDiagnostic', () => {
   });
 });
 
-/**
- * Scene Hierarchy Tests
- *
- * CRITICAL: These tests verify the AR/GPS coordinate frame separation.
- * See docs/architecture-ar-gps-pose-separation.md for why this matters.
- */
-describe('createSceneHierarchy', () => {
-  /**
-   * Why this test matters:
-   * The arWorldGroup MUST be a child of the scene for the alignment
-   * matrix to work correctly. Without this, the GPS world frame cannot
-   * transform the AR local frame.
-   */
-  it('creates scene with arWorldGroup as direct child', () => {
-    const { scene, arWorldGroup } = createSceneHierarchy();
-
-    expect(arWorldGroup.parent).toBe(scene);
-    expect(arWorldGroup.name).toBe('ar-world');
-  });
-
-  /**
-   * Why this test matters:
-   * The camera MUST be a descendant of arWorldGroup (via arpose) so that:
-   * - camera.matrix (local) = raw AR pose
-   * - camera.matrixWorld = GPS world pose
-   * If camera is directly in scene, we can't read the raw AR pose.
-   */
-  it('creates camera as descendant of arWorldGroup (via arpose)', () => {
-    const { arpose, camera } = createSceneHierarchy();
-
-    expect(camera.parent).toBe(arpose);
-  });
-
-  /**
-   * Why this test matters:
-   * Verifies the complete hierarchy depth:
-   * scene -> arWorldGroup -> basisChangeNode -> arpose -> camera
-   * The basisChangeNode holds the constant WEBXR_TO_NUE basis-change so
-   * arWorldGroup's local space remains NUE (not WebXR).
-   */
-  it('maintains correct hierarchy depth (scene -> arWorldGroup -> basisChangeNode -> arpose -> camera)', () => {
-    const { scene, arWorldGroup, arpose, camera } = createSceneHierarchy();
-    const basisChangeNode = arWorldGroup.children.find(
-      (c) => c.name === SCENE_NODE.BASIS_CHANGE
-    )!;
-
-    // Traverse from camera up to scene
-    expect(camera.parent).toBe(arpose);
-    expect(arpose.parent).toBe(basisChangeNode);
-    expect(basisChangeNode.parent).toBe(arWorldGroup);
-    expect(arWorldGroup.parent).toBe(scene);
-    expect(scene.parent).toBeNull();
-  });
-
-  /**
-   * Why this test matters:
-   * F2 (2026-07-04 user feedback): objects 100–200 m away popped in late
-   * because the far plane was a hard-coded literal 100 in the camera
-   * constructor. The frustum values are named exported constants (a single
-   * source of truth — live AR and replay both go through
-   * createSceneHierarchy()), and far is 200 m to cover the reported range.
-   * Depth precision stays comfortable: far/near = 2×10⁴ on a 24-bit buffer.
-   */
-  it('camera frustum uses the exported AR_CAMERA_* constants with far = 200 m (F2)', () => {
-    const { camera } = createSceneHierarchy();
-
-    expect(AR_CAMERA_FOV).toBe(70);
-    expect(AR_CAMERA_NEAR).toBe(0.01);
-    expect(AR_CAMERA_FAR).toBe(200);
-    expect(camera.fov).toBe(AR_CAMERA_FOV);
-    expect(camera.near).toBe(AR_CAMERA_NEAR);
-    expect(camera.far).toBe(AR_CAMERA_FAR);
-  });
-
-  /**
-   * Why this test matters:
-   * The arWorldGroup's transform is where the alignment matrix is applied.
-   * We need to verify we can modify it without affecting initial state.
-   */
-  it('arWorldGroup starts with identity transform', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-
-    // Position should be (0,0,0)
-    expect(arWorldGroup.position.x).toBe(0);
-    expect(arWorldGroup.position.y).toBe(0);
-    expect(arWorldGroup.position.z).toBe(0);
-
-    // Rotation should be identity quaternion (0,0,0,1)
-    expect(arWorldGroup.quaternion.x).toBe(0);
-    expect(arWorldGroup.quaternion.y).toBe(0);
-    expect(arWorldGroup.quaternion.z).toBe(0);
-    expect(arWorldGroup.quaternion.w).toBe(1);
-  });
-
-  /**
-   * Why this test matters:
-   * Lighting should be in GPS world space (scene level), not AR space.
-   * This ensures lighting stays consistent as AR frame moves.
-   */
-  it('adds lighting to scene (not arWorldGroup)', () => {
-    const { scene, arWorldGroup } = createSceneHierarchy();
-
-    // Scene should have lights
-    const sceneLights = scene.children.filter(
-      (child) =>
-        child.type === 'AmbientLight' || child.type === 'DirectionalLight'
-    );
-    expect(sceneLights.length).toBeGreaterThanOrEqual(2);
-
-    // arWorldGroup should NOT have lights (only camera)
-    const arLights = arWorldGroup.children.filter(
-      (child) =>
-        child.type === 'AmbientLight' || child.type === 'DirectionalLight'
-    );
-    expect(arLights.length).toBe(0);
-  });
-
-  // -----------------------------------------------------------------------
-  // 6.1: arpose intermediate Object3D
-  // -----------------------------------------------------------------------
-
-  /**
-   * Why this test matters:
-   * The arpose node sits between arWorldGroup and camera so that replay
-   * mode can write recorded odomPosition/odomRotation to it without
-   * touching the camera's local transform. During recording, arpose
-   * stays at identity, making it transparent in the transform chain.
-   */
-  it('returns an arpose Object3D in the hierarchy result', () => {
-    const result = createSceneHierarchy();
-
-    expect(result.arpose).toBeDefined();
-    expect(result.arpose).toBeInstanceOf(Object);
-    expect(result.arpose.name).toBe('ar-pose');
-  });
-
-  /**
-   * Why this test matters:
-   * basisChangeNode must exist as a direct child of arWorldGroup. It holds
-   * the constant WEBXR_TO_NUE matrix so that arWorldGroup's local space is
-   * NUE — objects placed at [1,0,0] in arWorldGroup are 1m North, not East.
-   */
-  it('basisChangeNode (webxr-to-nue) is a direct child of arWorldGroup', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-    const basisChangeNode = arWorldGroup.children.find(
-      (c) => c.name === SCENE_NODE.BASIS_CHANGE
-    );
-
-    expect(basisChangeNode).toBeDefined();
-    expect(basisChangeNode!.parent).toBe(arWorldGroup);
-  });
-
-  /**
-   * Why this test matters:
-   * The basisChangeNode matrix must equal WEBXR_TO_NUE (column-major) and
-   * must have matrixAutoUpdate=false so Three.js never overwrites it from
-   * position/quaternion/scale decomposition. This guarantees the basis
-   * change is permanent and free (no per-frame recomputation).
-   *
-   * WEBXR_TO_NUE column-major elements:
-   *   [0,0,1,0, 0,1,0,0, -1,0,0,0, 0,0,0,1]
-   * Key entries: el[2]=1 (East→Z), el[5]=1 (Up→Up), el[8]=-1 (South→-North)
-   */
-  it('basisChangeNode has WEBXR_TO_NUE matrix frozen (matrixAutoUpdate=false)', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-    const basisChangeNode = arWorldGroup.children.find(
-      (c) => c.name === SCENE_NODE.BASIS_CHANGE
-    )!;
-
-    expect(basisChangeNode.matrixAutoUpdate).toBe(false);
-    const el = basisChangeNode.matrix.elements;
-    // col0: [0,0,1,0] — WebXR X(East) → NUE Z(East)
-    expect(el[0]).toBeCloseTo(0, 10);
-    expect(el[1]).toBeCloseTo(0, 10);
-    expect(el[2]).toBeCloseTo(1, 10);
-    expect(el[3]).toBeCloseTo(0, 10);
-    // col1: [0,1,0,0] — WebXR Y(Up) → NUE Y(Up)
-    expect(el[5]).toBeCloseTo(1, 10);
-    // col2: [-1,0,0,0] — WebXR Z(South) → NUE X(North) negated
-    expect(el[8]).toBeCloseTo(-1, 10);
-    expect(el[9]).toBeCloseTo(0, 10);
-    expect(el[10]).toBeCloseTo(0, 10);
-  });
-
-  /**
-   * Why this test matters:
-   * arpose must be a child of basisChangeNode (not arWorldGroup directly).
-   * Full chain: alignment × WEBXR_TO_NUE × arpose × camera.
-   */
-  it('arpose is a direct child of basisChangeNode, not arWorldGroup', () => {
-    const { arWorldGroup, arpose } = createSceneHierarchy();
-    const basisChangeNode = arWorldGroup.children.find(
-      (c) => c.name === SCENE_NODE.BASIS_CHANGE
-    )!;
-
-    expect(arpose.parent).toBe(basisChangeNode);
-    expect(arWorldGroup.children).not.toContain(arpose);
-  });
-
-  /**
-   * Why this test matters:
-   * Camera must be a child of arpose (not directly of arWorldGroup or basisChangeNode).
-   * Hierarchy: basisChangeNode → arpose → camera.
-   */
-  it('camera is a child of arpose, not arWorldGroup or basisChangeNode directly', () => {
-    const { arWorldGroup, arpose, camera } = createSceneHierarchy();
-    const basisChangeNode = arWorldGroup.children.find(
-      (c) => c.name === SCENE_NODE.BASIS_CHANGE
-    )!;
-
-    expect(camera.parent).toBe(arpose);
-    expect(basisChangeNode.children).toContain(arpose);
-    expect(arWorldGroup.children).not.toContain(arpose);
-    expect(arWorldGroup.children).not.toContain(camera);
-  });
-
-  /**
-   * Why this test matters:
-   * The full hierarchy must be scene → arWorldGroup → basisChangeNode → arpose → camera.
-   * This is the chain through which transforms compose.
-   */
-  it('full hierarchy is scene → arWorldGroup → basisChangeNode → arpose → camera', () => {
-    const { scene, arWorldGroup, arpose, camera } = createSceneHierarchy();
-    const basisChangeNode = arWorldGroup.children.find(
-      (c) => c.name === SCENE_NODE.BASIS_CHANGE
-    )!;
-
-    expect(camera.parent).toBe(arpose);
-    expect(arpose.parent).toBe(basisChangeNode);
-    expect(basisChangeNode.parent).toBe(arWorldGroup);
-    expect(arWorldGroup.parent).toBe(scene);
-    expect(scene.parent).toBeNull();
-  });
-
-  /**
-   * Why this test matters:
-   * arpose must start at identity transform. During recording, WebXR
-   * writes the pose to camera, and an identity arpose is transparent:
-   * arWorldGroup × I × camera = arWorldGroup × camera.
-   */
-  it('arpose starts with identity transform', () => {
-    const { arpose } = createSceneHierarchy();
-
-    expect(arpose.position.x).toBe(0);
-    expect(arpose.position.y).toBe(0);
-    expect(arpose.position.z).toBe(0);
-    expect(arpose.quaternion.x).toBe(0);
-    expect(arpose.quaternion.y).toBe(0);
-    expect(arpose.quaternion.z).toBe(0);
-    expect(arpose.quaternion.w).toBe(1);
-  });
-});
-
 describe('isWebXRSupported', () => {
   /**
    * Why this test matters:
@@ -816,6 +542,19 @@ describe('module state accessors', () => {
   });
 
   /**
+   * Why this test matters:
+   * Before AR is initialized, getRenderer should return null — and a consumer
+   * calling it early is the realistic case, since the reason to want it is to
+   * change settings the framework leaves neutral (tone mapping, output colour
+   * space) or to read `renderer.info.render`. Returning a stale renderer from a
+   * previous session would be worse than null: settings would be applied to an
+   * object nothing draws with, and the symptom is a look that does not change.
+   */
+  it('getRenderer returns null before initialization', () => {
+    expect(getRenderer()).toBeNull();
+  });
+
+  /**
    * Why this test matters: `resetWebXRState()` is the single teardown chokepoint
    * every restart must pass through (initAR throws while a prior session is
    * live). Session-scoped resources that are not per-frame ticks — e.g. the
@@ -835,112 +574,6 @@ describe('module state accessors', () => {
     expect(dispose).toHaveBeenCalledTimes(1);
 
     clearSessionDisposers();
-  });
-
-  /**
-   * Why this test matters:
-   * Before initialization, getArPose should return null so modules
-   * that read it know the arpose node is not yet available.
-   */
-  it('getArPose returns null before initialization', () => {
-    expect(getArPose()).toBeNull();
-  });
-
-  /**
-   * Why this test matters:
-   * Replay mode sets the arpose node via setArPose() so that
-   * store subscribers can update it with recorded odom data.
-   */
-  it('setArPose makes getArPose return the provided object', () => {
-    const mockArPose = new Group();
-    setArPose(mockArPose);
-    expect(getArPose()).toBe(mockArPose);
-  });
-
-  /**
-   * Why this test matters:
-   * resetWebXRState must clear the arpose reference alongside scene,
-   * arWorldGroup, and camera.
-   */
-  it('resetWebXRState clears arpose', () => {
-    const mockArPose = new Group();
-    setArPose(mockArPose);
-    resetWebXRState();
-    expect(getArPose()).toBeNull();
-  });
-
-  /**
-   * Why this test matters:
-   * Replay mode needs to register its own scene with the module-global
-   * getters so that existing visualizers (GpsEventVisualizer,
-   * RefPointVisualizer) which call getScene() receive the replay scene.
-   * Without setScene(), replay mode cannot make visualizers work.
-   * @see docs/2026-02-19-replay-mode.md Risk R1
-   */
-  it('setScene makes getScene return the provided scene', () => {
-    const mockScene = new Scene();
-    setScene(mockScene);
-    expect(getScene()).toBe(mockScene);
-  });
-
-  /**
-   * Why this test matters:
-   * Replay mode needs to register its own arWorldGroup so that
-   * applyAlignmentMatrix() and visualizers that add content to the
-   * AR world group work correctly during replay.
-   * @see docs/2026-02-19-replay-mode.md Risk R1
-   */
-  it('setArWorldGroup makes getArWorldGroup return the provided group', () => {
-    const mockGroup = new Group();
-    setArWorldGroup(mockGroup);
-    expect(getArWorldGroup()).toBe(mockGroup);
-  });
-
-  /**
-   * Why this test matters:
-   * Replay mode needs to register its own camera so that getCamera()
-   * returns the replay camera for modules that read it.
-   * @see docs/2026-02-19-replay-mode.md Risk R1
-   */
-  it('setCamera makes getCamera return the provided camera', () => {
-    const mockCamera = new PerspectiveCamera();
-    setCamera(mockCamera);
-    expect(getCamera()).toBe(mockCamera);
-  });
-
-  /**
-   * Why this test matters:
-   * resetWebXRState must clear setter-provided values too, not just
-   * initAR()-provided values. This ensures no stale replay scene
-   * leaks into a subsequent AR session.
-   */
-  it('resetWebXRState clears values set via setters', () => {
-    const mockScene = new Scene();
-    const mockGroup = new Group();
-    const mockCamera = new PerspectiveCamera();
-    setScene(mockScene);
-    setArWorldGroup(mockGroup);
-    setCamera(mockCamera);
-
-    resetWebXRState();
-
-    expect(getScene()).toBeNull();
-    expect(getArWorldGroup()).toBeNull();
-    expect(getCamera()).toBeNull();
-  });
-
-  /**
-   * Why this test matters:
-   * setScene(null) must be a valid way to explicitly clear the scene,
-   * for cleanup paths that don't use the full resetWebXRState.
-   */
-  it('setScene accepts null to clear the scene', () => {
-    const mockScene = new Scene();
-    setScene(mockScene);
-    expect(getScene()).toBe(mockScene);
-
-    setScene(null);
-    expect(getScene()).toBeNull();
   });
 });
 
@@ -976,175 +609,17 @@ describe('applyAlignmentMatrix', () => {
     expect(() => applyAlignmentMatrix([])).not.toThrow();
   });
 
-  /**
-   * Why this test matters:
-   * applyAlignmentMatrix now sets arWorldGroup.matrix to the alignment only
-   * (no WEBXR_TO_NUE composition). WEBXR_TO_NUE lives permanently in
-   * basisChangeNode. This confirms the simplified implementation.
-   */
-  it('sets arWorldGroup.matrix to alignment only (not composed with WEBXR_TO_NUE)', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-    setArWorldGroup(arWorldGroup);
-
-    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    applyAlignmentMatrix(identity);
-
-    // arWorldGroup.matrix must be exact identity — no WEBXR_TO_NUE folded in
-    const el = arWorldGroup.matrix.elements;
-    expect(el[0]).toBeCloseTo(1, 10); // diagonal
-    expect(el[5]).toBeCloseTo(1, 10);
-    expect(el[10]).toBeCloseTo(1, 10);
-    expect(el[15]).toBeCloseTo(1, 10);
-    expect(el[1]).toBeCloseTo(0, 10); // off-diagonal
-    expect(el[2]).toBeCloseTo(0, 10);
-    expect(el[4]).toBeCloseTo(0, 10);
-    expect(el[8]).toBeCloseTo(0, 10);
-  });
-
-  /**
-   * Why this test matters:
-   * The full chain arWorldGroup × basisChangeNode must still map a WebXR
-   * north position (z=-10) to NUE north (x=10). This verifies that moving
-   * WEBXR_TO_NUE into the scene graph preserves the correct camera mapping.
-   */
-  it('full chain (arWorldGroup × basisChangeNode) maps WebXR north to NUE north', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-    setArWorldGroup(arWorldGroup);
-
-    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    applyAlignmentMatrix(identity);
-
-    const basisChangeNode = arWorldGroup.getObjectByName(
-      SCENE_NODE.BASIS_CHANGE
-    )!;
-    const fullChain = new THREE.Matrix4().multiplyMatrices(
-      arWorldGroup.matrix,
-      basisChangeNode.matrix
-    );
-
-    // WebXR: x=0 (no east), y=0 (ground), z=-10 (north = -Z in WebXR)
-    const webxrPos = new THREE.Vector4(0, 0, -10, 1);
-    const result = webxrPos.applyMatrix4(fullChain);
-
-    // Expected NUE: x=10 (north), y=0, z=0 (no east)
-    expect(result.x).toBeCloseTo(10, 5);
-    expect(result.y).toBeCloseTo(0, 5);
-    expect(result.z).toBeCloseTo(0, 5);
-  });
-
-  /**
-   * Why this test matters:
-   * Walking east in WebXR (x increases) must still produce NUE Z increase
-   * (east) through the full chain, confirming end-to-end correctness.
-   */
-  it('full chain (arWorldGroup × basisChangeNode) maps WebXR east to NUE Z-east', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-    setArWorldGroup(arWorldGroup);
-
-    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    applyAlignmentMatrix(identity);
-
-    const basisChangeNode = arWorldGroup.getObjectByName(
-      SCENE_NODE.BASIS_CHANGE
-    )!;
-    const fullChain = new THREE.Matrix4().multiplyMatrices(
-      arWorldGroup.matrix,
-      basisChangeNode.matrix
-    );
-
-    const webxrPos = new THREE.Vector4(5, 0, 0, 1);
-    const result = webxrPos.applyMatrix4(fullChain);
-
-    // WebXR x=5 (east) → NUE z=5 (east)
-    expect(result.x).toBeCloseTo(0, 5);
-    expect(result.y).toBeCloseTo(0, 5);
-    expect(result.z).toBeCloseTo(5, 5);
-  });
-});
-
-describe('nuePositionToWebXR', () => {
-  /**
-   * Why this test matters:
-   * nuePositionToWebXR is the inverse of the WEBXR_TO_NUE transform applied
-   * in applyAlignmentMatrix. Replay mode needs this to set arpose in WebXR
-   * space so (alignment × W2N) × arpose_WebXR = alignment × odom_NUE.
-   */
-  it('converts NUE [north, up, east] to WebXR [east, up, -north]', () => {
-    const nue = [10, 2, 5]; // north=10, up=2, east=5
-    const webxr = nuePositionToWebXR(nue);
-
-    // WebXR: x=east=5, y=up=2, z=south=-north=-10
-    expect(webxr[0]).toBe(5);
-    expect(webxr[1]).toBe(2);
-    expect(webxr[2]).toBe(-10);
-  });
-
-  /**
-   * Why this test matters:
-   * Round-trip: WebXR→NUE (in extractOdomPosition) then NUE→WebXR should
-   * recover the original WebXR position.
-   */
-  it('is the inverse of extractOdomPosition (round-trip)', () => {
-    // Simulate extractOdomPosition: WebXR [3, 7, -11] → NUE [11, 7, 3]
-    const webxrOriginal = [3, 7, -11];
-    const nue = [-(webxrOriginal[2] ?? 0), webxrOriginal[1], webxrOriginal[0]]; // extractOdomPosition logic
-    const webxrRecovered = nuePositionToWebXR(nue);
-
-    expect(webxrRecovered[0]).toBeCloseTo(webxrOriginal[0], 10);
-    expect(webxrRecovered[1]).toBeCloseTo(webxrOriginal[1], 10);
-    expect(webxrRecovered[2]).toBeCloseTo(webxrOriginal[2], 10);
-  });
-
-  /**
-   * Why this test matters:
-   * Verifies that applying the composed arWorldGroup matrix to a round-tripped
-   * WebXR position yields the same result as directly applying alignment to NUE.
-   */
-  it('composes correctly with applyAlignmentMatrix for replay', () => {
-    const { arWorldGroup } = createSceneHierarchy();
-    setArWorldGroup(arWorldGroup);
-
-    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    applyAlignmentMatrix(identity);
-
-    // odomPosition in NUE: north=10, up=0, east=5
-    const odomNUE = [10, 0, 5];
-    // Convert to WebXR for arpose (arpose lives in WebXR space below basisChangeNode)
-    const webxrPos = nuePositionToWebXR(odomNUE);
-    // Apply the full chain: arWorldGroup (alignment) × basisChangeNode (WEBXR_TO_NUE)
-    const basisChangeNode = arWorldGroup.getObjectByName(
-      SCENE_NODE.BASIS_CHANGE
-    )!;
-    const fullChain = new THREE.Matrix4().multiplyMatrices(
-      arWorldGroup.matrix,
-      basisChangeNode.matrix
-    );
-    const v = new THREE.Vector4(webxrPos[0], webxrPos[1], webxrPos[2], 1);
-    v.applyMatrix4(fullChain);
-
-    // Should recover NUE position
-    expect(v.x).toBeCloseTo(odomNUE[0], 5);
-    expect(v.y).toBeCloseTo(odomNUE[1], 5);
-    expect(v.z).toBeCloseTo(odomNUE[2], 5);
-  });
+  // NOTE: the behavioural applyAlignmentMatrix tests (alignment written to
+  // the live arWorldGroup, full-chain WebXR→NUE mapping, replay composition
+  // with the library's nueToWebXR) live in webxr-session.alignment.test.ts — they
+  // seed the module arWorldGroup through the real initAR() path now that the
+  // replay-mode injection setters (setArWorldGroup et al.) are deleted
+  // (surface-reduction step 2).
 });
 
 describe('image capture functions', () => {
   beforeEach(() => {
     resetWebXRState();
-  });
-
-  /**
-   * Why this test matters:
-   * setImageCaptureCallback should be callable before AR is initialized
-   */
-  it('setImageCaptureCallback does not throw before AR init', () => {
-    const onCaptured = vi.fn();
-    const getRotation = () => 0;
-
-    expect(() =>
-      setImageCaptureCallback(onCaptured, getRotation)
-    ).not.toThrow();
   });
 
   /**
@@ -1157,7 +632,8 @@ describe('image capture functions', () => {
 
   /**
    * Why this test matters:
-   * startImageCapture should gracefully handle missing callbacks
+   * startImageCapture should gracefully handle a session initialized without
+   * the `imageCapture` callbacks group (the slots stay null).
    */
   it('startImageCapture does not throw when callbacks not set', () => {
     // Just test it doesn't throw
@@ -1219,76 +695,9 @@ describe('image capture functions', () => {
   });
 });
 
-describe('tracking callbacks', () => {
-  beforeEach(() => {
-    resetWebXRState();
-  });
-
-  /**
-   * Why this test matters:
-   * setTrackingCallbacks should be callable before AR is initialized
-   */
-  it('setTrackingCallbacks does not throw before AR init', () => {
-    const onRestarted = vi.fn();
-    expect(() => setTrackingCallbacks(onRestarted)).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
-   * Field Test Readiness Issue #3 - setTrackingLostCallback allows
-   * the main module to be notified when AR tracking is lost.
-   */
-  it('setTrackingLostCallback does not throw before AR init', () => {
-    const onLost = vi.fn();
-    expect(() => setTrackingLostCallback(onLost)).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
-   * After resetWebXRState, the tracking lost callback should be cleared.
-   */
-  it('resetWebXRState clears tracking lost callback', () => {
-    const onLost = vi.fn();
-    setTrackingLostCallback(onLost);
-    resetWebXRState();
-    // Callback should be cleared - we can verify by setting a new one
-    expect(() => setTrackingLostCallback(vi.fn())).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
-   * setTrackingRecoveredCallback allows the app to be notified when
-   * tracking recovers seamlessly (Case 1: same coordinate frame),
-   * e.g. to clear the "⚠️ LOST" UI warning.
-   */
-  it('setTrackingRecoveredCallback does not throw before AR init', () => {
-    const onRecovered = vi.fn();
-    expect(() => setTrackingRecoveredCallback(onRecovered)).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
-   * After resetWebXRState, the tracking recovered callback should be cleared.
-   */
-  it('resetWebXRState clears tracking recovered callback', () => {
-    setTrackingRecoveredCallback(vi.fn());
-    resetWebXRState();
-    expect(() => setTrackingRecoveredCallback(vi.fn())).not.toThrow();
-  });
-});
-
 describe('depth capture functions', () => {
   beforeEach(() => {
     resetWebXRState();
-  });
-
-  /**
-   * Why this test matters:
-   * setDepthCaptureCallback should be callable before AR is initialized
-   */
-  it('setDepthCaptureCallback does not throw before AR init', () => {
-    const onCaptured = vi.fn();
-    expect(() => setDepthCaptureCallback(onCaptured)).not.toThrow();
   });
 
   /**
@@ -1387,19 +796,9 @@ describe('camera frame capture (B2)', () => {
 
   /**
    * Why this test matters:
-   * setCameraFrameCallback must be callable before AR is initialized (it only
-   * stashes the callback; the source is created in initAR), mirroring
-   * setDepthCaptureCallback.
-   */
-  it('setCameraFrameCallback does not throw before AR init', () => {
-    expect(() => setCameraFrameCallback(vi.fn())).not.toThrow();
-    expect(() => setCameraFrameCallback(null)).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
    * startCameraFrameCapture must gracefully no-op when the frame source was
-   * never created (callback not set before initAR), not throw.
+   * never created (the `cameraFrame` callbacks group was not passed to
+   * initAR), not throw.
    */
   it('startCameraFrameCapture does not throw when source not initialized', () => {
     expect(() => startCameraFrameCapture()).not.toThrow();
@@ -1427,77 +826,14 @@ describe('camera frame capture (B2)', () => {
   });
 });
 
-describe('frame callback', () => {
-  beforeEach(() => {
-    resetWebXRState();
-  });
-
-  /**
-   * Why this test matters:
-   * setFrameCallback should be callable before AR is initialized.
-   * This allows consumers to register callbacks during setup.
-   */
-  it('setFrameCallback does not throw before AR init', () => {
-    const callback = vi.fn();
-    expect(() => setFrameCallback(callback)).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
-   * Setting callback to null should be safe and not throw.
-   * This is used to clear callbacks when no longer needed.
-   */
-  it('setFrameCallback accepts null to clear callback', () => {
-    const callback = vi.fn();
-    setFrameCallback(callback);
-    expect(() => setFrameCallback(null)).not.toThrow();
-  });
-
-  /**
-   * Why this test matters:
-   * resetWebXRState should clear the frame callback to prevent
-   * stale callbacks from being invoked after state reset.
-   */
-  it('resetWebXRState clears the frame callback', () => {
-    const callback = vi.fn();
-    setFrameCallback(callback);
-    resetWebXRState();
-    // After reset, setting a new callback should work (proves old was cleared)
-    const newCallback = vi.fn();
-    expect(() => setFrameCallback(newCallback)).not.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// CSS3D renderer manager getter (Approach E)
-// ---------------------------------------------------------------------------
-
-describe('getLiveCss3dManager', () => {
-  beforeEach(() => {
-    resetWebXRState();
-  });
-
-  /**
-   * Why this test matters:
-   * Before initAR() is called, the CSS3D manager should be null.
-   * initAR() requires WebXR and can't run in jsdom, so we verify
-   * the getter returns null in the default state.
-   */
-  it('returns null before AR initialization', () => {
-    expect(getLiveCss3dManager()).toBeNull();
-  });
-
-  /**
-   * Why this test matters:
-   * resetWebXRState must dispose and null out the CSS3D manager
-   * to prevent memory leaks and stale DOM overlays between sessions.
-   */
-  it('resetWebXRState clears the CSS3D manager', () => {
-    // Manager starts as null; reset should keep it null and not throw
-    resetWebXRState();
-    expect(getLiveCss3dManager()).toBeNull();
-  });
-});
+// NOTE: the getLiveCss3dManager tests that lived here were deleted together
+// with the getter (surface-reduction step 3 — zero consumers). They only ever
+// observed the getter's null default (initAR never ran in this file, so the
+// manager was never non-null) and thus pinned no lifecycle behaviour. The
+// CSS3D manager lifecycle is now pinned OBSERVABLY in
+// webxr-session.session-end.test.ts: initAR (real path, mocked renderer)
+// appends the CSS3D overlay element when `enableCss3dRenderer` is on, and
+// session teardown removes it from the DOM.
 
 // ---------------------------------------------------------------------------
 // extractResetTransformData — distinguishes missing vs null vs present
@@ -1611,10 +947,13 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
     // The resetWebXRState function must call setAnimationLoop(null),
-    // renderer.dispose(), and remove the domElement before nulling.
+    // renderer.dispose(), and remove the domElement before dropping the
+    // reference. Stage 3 of the ArSession refactor replaced the field-by-field
+    // "renderer = null" reset with the wholesale handle replacement, so the
+    // slice now ends at that replacement line — assertions unchanged.
     const resetBlock = source.slice(
       source.indexOf('function resetWebXRState'),
-      source.indexOf('renderer = null;')
+      source.indexOf('activeSession = defaultArSessionHandle();')
     );
     expect(resetBlock).toContain('setAnimationLoop(null)');
     expect(resetBlock).toContain('renderer.dispose()');
@@ -1641,7 +980,7 @@ describe('DOM hardcoding audit regressions', () => {
     );
     const endBlock = source.slice(
       source.indexOf('function endARSession'),
-      source.indexOf('function setImageCaptureCallback')
+      source.indexOf('function startImageCapture')
     );
     // Must still end the actual XR session — resetWebXRState() only nulls
     // the reference, it never calls XRSession.end().
@@ -1651,29 +990,12 @@ describe('DOM hardcoding audit regressions', () => {
     expect(endBlock).toContain('resetWebXRState()');
   });
 
-  /**
-   * Why this test matters:
-   * This is the behavioural proof of the leak the delegation fixes. Before
-   * delegating to resetWebXRState(), endARSession() left the scene-graph
-   * references (scene, camera, arWorldGroup, arPose) dangling, so a fresh
-   * session could observe stale objects via getScene()/getCamera()/etc.
-   * We seed those references through the public setters (the same surface
-   * replay mode uses) because initAR() cannot run under jsdom.
-   */
-  it('endARSession clears scene-graph references so they do not leak into the next session', async () => {
-    resetWebXRState();
-    setScene(new Scene());
-    setCamera(new PerspectiveCamera());
-    setArWorldGroup(new Group());
-    setArPose(new THREE.Object3D());
-
-    await endARSession();
-
-    expect(getScene()).toBeNull();
-    expect(getCamera()).toBeNull();
-    expect(getArWorldGroup()).toBeNull();
-    expect(getArPose()).toBeNull();
-  });
+  // NOTE: the behavioural leak proof ("endARSession clears scene-graph
+  // references") used to seed the module refs through the replay-mode
+  // injection setters, which were deleted (surface-reduction step 2). The
+  // same leak class is now pinned through the real initAR() path: the
+  // session-end tests (webxr-session.session-end.test.ts) assert
+  // getScene()/getCamera()/getArWorldGroup() are null after both end paths.
 
   /**
    * Why this test matters:
@@ -1693,8 +1015,11 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
 
+    // Stage 0 of the ArSession refactor moved the isolation options onto the
+    // per-session handle (`activeSession.crashIsolation`) — the assertion pins
+    // the same gate, at its new spelling.
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCss3dRenderer)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer)'
     );
     expect(source).toContain('createCss3dRendererManager');
   });
@@ -1707,11 +1032,14 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
 
+    // Same Stage 0 handle move as above — gates unchanged, spelling updated.
+    // (Stage 3 moved the CSS3D manager onto the handle's scene-graph cluster,
+    // read via a `css3d` destructure in onXRFrame.)
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCameraTextureAcquisition)'
+      'if (activeSession.crashIsolation.enableCameraTextureAcquisition)'
     );
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCss3dRenderer && css3dManager)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer && css3d)'
     );
   });
 });
@@ -1729,8 +1057,11 @@ describe('camera-frame capture-size default (WS-C on-device sweep)', () => {
     expect(DEFAULT_CAMERA_FRAME_CAPTURE_SIZE).toBe(1024);
   });
 
-  it('resetWebXRState restores the live capture size to the tuned default', () => {
-    resetWebXRState();
-    expect(getCameraFrameCaptureSize()).toBe(DEFAULT_CAMERA_FRAME_CAPTURE_SIZE);
-  });
+  // NOTE: the companion test "resetWebXRState restores the live capture size
+  // to the tuned default" was deleted with the getCameraFrameCaptureSize()
+  // getter (surface-reduction step 3 — zero consumers). It could never fail:
+  // a non-default size is only settable via startCameraFrameCapture() on a
+  // LIVE cameraFrameSource, which this jsdom file cannot create, so the test
+  // asserted default-in/default-out. The reset of the internal slot is one of
+  // the ~30 resets pinned collectively by the session-end teardown tests.
 });

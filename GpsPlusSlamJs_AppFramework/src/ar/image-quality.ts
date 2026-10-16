@@ -20,10 +20,44 @@
  *    black/empty frame; an absolute cutoff is safe because "black is black"
  *    regardless of scene texture (§5).
  *
- * @see GpsPlusSlamJs_Docs/docs/2026-06-24-image-quality-gate-plan.md
+ * @see GpsPlusSlamJs_Docs/docs/2026-06-24-1057-image-quality-gate-plan.md
  * @see ./capture-motion-gate.ts — the motion gate this builds on (same shape:
  *   a shared config type + a small stateful window + a pure decision).
  */
+
+import { lowerMedian } from '../utils/median.js';
+import { validateOptionFields } from '../utils/validate-option-fields.js';
+
+/**
+ * Selectable sharpness metrics for the gate's blur check. Both are pure
+ * grayscale scorers with identical defensive contracts; the gate's RELATIVE
+ * rule (`score < k · median(recent)`) is metric-agnostic, so the same
+ * `blurRelativeThreshold` slider drives either. Benchmarked against the
+ * hand-labeled recording 2026-07-11 (variance-of-Laplacian best at "clearly
+ * blurry vs rest", the energy ratio best at "sharp vs degraded") — see
+ * GpsPlusSlamJs_Docs/docs/2026-07-12-0823-blur-metric-toggle-plan.md.
+ */
+/**
+ * All valid blur-metric ids, the default (VoL) first — and **the source of
+ * truth for {@link BlurMetricId}**, which is derived from it.
+ *
+ * Const first, type derived, because this list is a RUNTIME validator in two
+ * places: `validateQualityFilterConfig` below, and the recorder's
+ * `settings-modal.ts`, both of which drop a persisted `blurMetric` that is not
+ * a member. While it was written as `readonly BlurMetricId[]`, an INCOMPLETE
+ * list still type-checked, so adding a third metric to the union would have
+ * compiled everywhere — and then been silently discarded from every user's
+ * saved settings, falling back to the default. Derived this way, adding a
+ * metric to the const is the only way to add one at all.
+ *
+ * Order is meaningful: the first entry is the default.
+ */
+export const BLUR_METRIC_IDS = [
+  'variance-of-laplacian',
+  'high-frequency-energy-ratio',
+] as const;
+
+export type BlurMetricId = (typeof BLUR_METRIC_IDS)[number];
 
 /**
  * User-/consumer-facing configuration for the image-quality gate. Shared by both
@@ -57,23 +91,119 @@ export interface QualityFilterConfig {
    * motion gate's `maxWaitMs`). A sensible value is ~2× the capture interval.
    */
   maxWaitMs: number;
+  /**
+   * Which sharpness metric the blur check scores frames with. **Optional**
+   * for backward compatibility with configs persisted before the toggle
+   * existed: `undefined` means `'variance-of-laplacian'` (the original
+   * behavior) — resolve via {@link blurMetricScorer}, never by reading this
+   * field directly.
+   */
+  blurMetric?: BlurMetricId;
 }
 
 /**
- * Default image-quality configuration. **Disabled by default** (plan §10): the
- * relative blur threshold is unvalidated, and a mis-tuned gate silently dropping
- * good frames for every consumer app is worse than the motion gate's low-risk
- * default-on. Flip to `true` once the thresholds are field-tuned. The numeric
- * values are PLACEHOLDERS pending on-device tuning (record measured values in
- * implementation-progress.md). `maxWaitMs` of 4000 ms is 2× the default 2000 ms
- * image interval.
+ * Default image-quality configuration. **Enabled at k = 0.8 since 2026-08-20
+ * (owner decision).** The thresholds are no longer placeholders: they come from
+ * a benchmark against 156 hand-labelled frames (51 blurry / 63 blurry-a-bit /
+ * 42 sharp) from `2026-07-11_12-44-13utc`, replayed through this gate across
+ * k = 0.10–1.20 — see
+ * `gps-plus-slam/GpsPlusSlamJs_Investigation/docs/2026-07-12-0059-image-blur-benchmark-findings-and-followups.md`.
+ *
+ * What that benchmark measured, and what it did not:
+ *
+ * - **k = 0.8 rejects ~30 % of frames at ~0.98 precision** against the
+ *   "degraded vs sharp" boundary — it almost never rejects a sharp frame — and
+ *   catches 59 % of the clearly-blurry ones. k = 0.5 (the previous default) was
+ *   safer still (precision 1.0) but caught only ~20 %, which the findings doc
+ *   describes as fixing "little on its own". Above k ≈ 0.85 precision decays
+ *   fast, which is why the gate is not pushed further.
+ * - **The retry BENEFIT is unmeasured.** A replay only sees frames that were
+ *   captured, so "30 % rejected" is known and "the replacement was sharper" is
+ *   not. `maxWaitMs` (4000 ms, 2× the default 2000 ms image interval) bounds
+ *   the cost, and the never-good fallback still saves a frame rather than
+ *   starving the interval.
+ * - **The labelled scene is INDOOR**, and this framework's domain is outdoors.
+ *   Promotion was previously blocked on a second labelled recording; the owner
+ *   accepted single-scene tuning on 2026-08-20 rather than keep a measured,
+ *   near-costless improvement unused. If outdoor frames score systematically
+ *   lower, the reject rate rises above 30 % and the practical symptom is a
+ *   reduced capture rate — adjustable from the recorder's existing sliders.
  */
 export const DEFAULT_QUALITY_FILTER: QualityFilterConfig = {
-  enabled: false,
-  blurRelativeThreshold: 0.5,
+  enabled: true,
+  blurRelativeThreshold: 0.8,
   minMeanLuminance: 10,
   maxWaitMs: 4000,
+  blurMetric: 'variance-of-laplacian',
 };
+
+/**
+ * Valid ranges for the {@link QualityFilterConfig} thresholds — bounds derived
+ * from what each number MEANS to this gate, so they live with the gate rather
+ * than with whichever app persists a config for it.
+ *
+ * `blurRelativeThreshold` (`k` in `sharpness < k·median`) is clamped to
+ * 0.05–0.95: it is a fraction of the recent sharpness median, so it must sit
+ * strictly inside (0, 1) — at ~0 the blur check never rejects, near 1 it
+ * rejects almost everything. `minMeanLuminance` (the absolute black cutoff on a
+ * 0–255 luma scale) is clamped to 0–128: 0 disables the black check, and a
+ * cutoff above mid-grey would reject normally-lit frames. `maxWaitMs` mirrors
+ * the motion gate's range (0.5–20 s) so the never-good fallback can always
+ * fire. `step` is the granularity a settings slider should use for the value.
+ */
+export const QUALITY_FILTER_CONSTRAINTS = {
+  blurRelativeThreshold: { min: 0.05, max: 0.95, step: 0.05 },
+  minMeanLuminance: { min: 0, max: 128, step: 1 },
+  maxWaitMs: { min: 500, max: 20000, step: 500 },
+} as const;
+
+/**
+ * Validate and normalize a persisted {@link QualityFilterConfig}.
+ *
+ * `enabled` is boolean-or-default; the three thresholds are clamped to
+ * {@link QUALITY_FILTER_CONSTRAINTS} with non-finite values falling back to the
+ * default (a stored `NaN` is `typeof 'number'` and would survive a bare clamp).
+ * A missing/nullish group default-fills entirely, so a config persisted before
+ * the gate existed loads with the CURRENT shipped defaults rather than
+ * crashing. Note what that means since 2026-08-20: those defaults now have the
+ * gate **enabled** at k = 0.8, so an old stored config inherits the gate rather
+ * than inheriting the off state it was written under. That is intended — the
+ * threshold is corpus-tuned and the alternative is a silent population of
+ * installs that never gets the improvement — but it is a behaviour change for
+ * a persisted config, not merely a new default for new ones. `blurMetric` is membership-validated against {@link BLUR_METRIC_IDS}
+ * with an explicit `'variance-of-laplacian'` fallback, because the field is
+ * OPTIONAL — a config predating the metric toggle must resolve to the original
+ * behavior (2026-07-12 blur-metric-toggle plan).
+ */
+export function validateQualityFilterConfig(
+  options: Partial<QualityFilterConfig> | null | undefined
+): QualityFilterConfig {
+  return validateOptionFields(options, DEFAULT_QUALITY_FILTER, {
+    enabled: { kind: 'bool' },
+    blurRelativeThreshold: {
+      kind: 'num',
+      constraint: QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold,
+    },
+    minMeanLuminance: {
+      kind: 'num',
+      constraint: QUALITY_FILTER_CONSTRAINTS.minMeanLuminance,
+    },
+    maxWaitMs: {
+      kind: 'num',
+      constraint: QUALITY_FILTER_CONSTRAINTS.maxWaitMs,
+    },
+    // Declared last so the validated object serializes in
+    // DEFAULT_QUALITY_FILTER's key order (persisted JSON stays byte-comparable
+    // across save→validate).
+    blurMetric: {
+      kind: 'custom',
+      resolve: (opts, fallback) =>
+        BLUR_METRIC_IDS.includes(opts.blurMetric as BlurMetricId)
+          ? opts.blurMetric
+          : (fallback ?? 'variance-of-laplacian'),
+    },
+  });
+}
 
 /** Default number of recent (non-black) sharpness scores the gate keeps. */
 export const DEFAULT_SHARPNESS_HISTORY_SIZE = 15;
@@ -170,6 +300,187 @@ export function meanLuminance(rgba: Uint8Array | Uint8ClampedArray): number {
   return sum / pixels;
 }
 
+/**
+ * Frequency-domain focus measure: the fraction of non-DC spectral energy at
+ * normalized radial frequency ≥ `cutoff` (default 0.3), computed by FFT over
+ * the centered largest power-of-two crop (needs ≥ 8×8, else returns 0).
+ * In [0, 1]; higher ⇒ sharper. Unlike {@link sharpnessScore} it is invariant
+ * to brightness shift AND contrast scale (it is a ratio). Ported from the
+ * investigation benchmark (2026-07-12 toggle plan) where it won the
+ * "sharp vs degraded" boundary (AUC 0.838 vs 0.750).
+ *
+ * Defensive contract identical to {@link sharpnessScore}: non-integer or
+ * < 3×3 dims, or a buffer shorter than `width·height`, return 0.
+ */
+export function highFrequencyEnergyRatio(
+  gray: Uint8Array | Uint8ClampedArray | readonly number[],
+  width: number,
+  height: number,
+  cutoff = 0.3
+): number {
+  if (!hasFftCrop(gray, width, height)) return 0;
+  const pw = largestPow2AtMost(width);
+  const ph = largestPow2AtMost(height);
+
+  const offX = Math.floor((width - pw) / 2);
+  const offY = Math.floor((height - ph) / 2);
+  const re = new Float64Array(pw * ph);
+  const im = new Float64Array(pw * ph);
+  for (let y = 0; y < ph; y++) {
+    const srcRow = (y + offY) * width + offX;
+    for (let x = 0; x < pw; x++) {
+      re[y * pw + x] = gray[srcRow + x]!;
+    }
+  }
+  fft2dInPlace(re, im, pw, ph);
+  return highEnergyFraction(re, im, pw, ph, cutoff);
+}
+
+/** Same input guard as sharpnessScore, plus the FFT's ≥ 8×8 pow2-crop need. */
+function hasFftCrop(
+  gray: Uint8Array | Uint8ClampedArray | readonly number[],
+  width: number,
+  height: number
+): boolean {
+  return (
+    Number.isInteger(width) &&
+    Number.isInteger(height) &&
+    width >= 8 &&
+    height >= 8 &&
+    gray.length >= width * height &&
+    largestPow2AtMost(width) >= 8 &&
+    largestPow2AtMost(height) >= 8
+  );
+}
+
+/** Largest power of two ≤ n (n ≥ 1). */
+function largestPow2AtMost(n: number): number {
+  let p = 1;
+  while (p * 2 <= n) p *= 2;
+  return p;
+}
+
+/**
+ * In-place iterative radix-2 FFT (decimation-in-time). `re`/`im` length must
+ * be a power of two (guaranteed by the caller's crop).
+ */
+function fftInPlace(re: Float64Array, im: Float64Array): void {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i]!;
+      re[i] = re[j]!;
+      re[j] = tr;
+      const ti = im[i]!;
+      im[i] = im[j]!;
+      im[j] = ti;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len;
+    const wRe = Math.cos(ang);
+    const wIm = Math.sin(ang);
+    for (let start = 0; start < n; start += len) {
+      let curRe = 1;
+      let curIm = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const a = start + k;
+        const b = a + len / 2;
+        const vRe = re[b]! * curRe - im[b]! * curIm;
+        const vIm = re[b]! * curIm + im[b]! * curRe;
+        re[b] = re[a]! - vRe;
+        im[b] = im[a]! - vIm;
+        re[a] = re[a]! + vRe;
+        im[a] = im[a]! + vIm;
+        const nextRe = curRe * wRe - curIm * wIm;
+        curIm = curRe * wIm + curIm * wRe;
+        curRe = nextRe;
+      }
+    }
+  }
+}
+
+/** 2D FFT over a pw×ph buffer: rows in place, then columns via scratch. */
+function fft2dInPlace(
+  re: Float64Array,
+  im: Float64Array,
+  pw: number,
+  ph: number
+): void {
+  for (let y = 0; y < ph; y++) {
+    fftInPlace(
+      re.subarray(y * pw, (y + 1) * pw),
+      im.subarray(y * pw, (y + 1) * pw)
+    );
+  }
+  const colRe = new Float64Array(ph);
+  const colIm = new Float64Array(ph);
+  for (let x = 0; x < pw; x++) {
+    for (let y = 0; y < ph; y++) {
+      colRe[y] = re[y * pw + x]!;
+      colIm[y] = im[y * pw + x]!;
+    }
+    fftInPlace(colRe, colIm);
+    for (let y = 0; y < ph; y++) {
+      re[y * pw + x] = colRe[y]!;
+      im[y * pw + x] = colIm[y]!;
+    }
+  }
+}
+
+/**
+ * Fraction of non-DC spectral energy at normalized radial frequency ≥
+ * `cutoff` (radius normalized so the diagonal Nyquist bin is exactly 1).
+ * The DC bin carries brightness, not sharpness — excluded, which is what
+ * makes the ratio exposure-invariant.
+ */
+function highEnergyFraction(
+  re: Float64Array,
+  im: Float64Array,
+  pw: number,
+  ph: number,
+  cutoff: number
+): number {
+  let total = 0;
+  let high = 0;
+  for (let ky = 0; ky < ph; ky++) {
+    const fy = ky <= ph / 2 ? ky : ky - ph;
+    const ny = fy / (ph / 2);
+    for (let kx = 0; kx < pw; kx++) {
+      if (kx === 0 && ky === 0) continue;
+      const fx = kx <= pw / 2 ? kx : kx - pw;
+      const nx = fx / (pw / 2);
+      const i = ky * pw + kx;
+      const energy = re[i]! * re[i]! + im[i]! * im[i]!;
+      total += energy;
+      if (Math.hypot(nx, ny) / Math.SQRT2 >= cutoff) high += energy;
+    }
+  }
+  return total > 0 ? high / total : 0;
+}
+
+/**
+ * Resolve a {@link BlurMetricId} to its scoring function. `undefined` or an
+ * unknown id (e.g. from a persisted config written by a newer/older app
+ * version) resolves to {@link sharpnessScore} — the pre-toggle behavior.
+ * The (untestable) recorder worker calls this so the mapping stays here,
+ * where tests can pin it.
+ */
+export function blurMetricScorer(
+  metric: BlurMetricId | undefined
+): (
+  gray: Uint8Array | Uint8ClampedArray | readonly number[],
+  width: number,
+  height: number
+) => number {
+  return metric === 'high-frequency-energy-ratio'
+    ? highFrequencyEnergyRatio
+    : sharpnessScore;
+}
+
 /** Reason a frame was rejected by the quality gate, or `null` when accepted. */
 export type QualityRejectReason = 'black' | 'blurry';
 
@@ -183,16 +494,6 @@ export interface QualityVerdict {
   readonly sharpness: number;
   /** The frame's mean luminance (for logging/tuning). */
   readonly meanLuminance: number;
-}
-
-/**
- * Lower-middle median (matches the project's other `medianOf` helpers, e.g.
- * `qr-pose-aggregation.ts`). Caller guarantees a non-empty array.
- */
-function medianOf(values: readonly number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor((sorted.length - 1) / 2);
-  return sorted[mid] as number;
 }
 
 /**
@@ -258,7 +559,8 @@ export class ImageQualityGate {
     // 2. Blur — relative to the established baseline (cold start accepts).
     let blurry = false;
     if (this.history.length >= this.minSamples) {
-      const threshold = config.blurRelativeThreshold * medianOf(this.history);
+      const threshold =
+        config.blurRelativeThreshold * lowerMedian(this.history);
       if (sharpness < threshold) blurry = true;
     }
 

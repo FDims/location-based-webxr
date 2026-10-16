@@ -9,7 +9,7 @@
  * naming. The math is unchanged; only the public type/function names were
  * generalised so the framework can serve any geo-anchored consumer.
  *
- * @see docs/2026-03-08-ref-point-naming-investigation.md §6
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-08-ref-point-naming-investigation.md §6
  */
 
 import {
@@ -81,7 +81,7 @@ export function gpsPathToCoverageCells(path: readonly LatLngLike[]): string[] {
  * truncate the hex-string id: resolution is encoded in the high bits with
  * trailing `f` padding, so slicing yields INVALID cells, not parents (verified;
  * see the D1 gotcha in
- * docs/2026-06-14-map-centric-recording-browser-and-h3-index-user-feedback.md).
+ * docs/2026-06-14-1048-map-centric-recording-browser-and-h3-index-user-feedback.md).
  *
  * `targetRes` is clamped to `[0, H3_RESOLUTION]` because `cellToParent` throws
  * when asked for a FINER resolution than the cell, and res 11 is the finest

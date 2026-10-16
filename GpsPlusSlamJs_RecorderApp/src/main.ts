@@ -205,6 +205,18 @@ import {
 import { gpsPathToCoverageCells } from 'gps-plus-slam-app-framework/geo';
 import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
+import { createMeasurementPointHandlers } from './measurement-points/measurement-point-handlers';
+import { MeasurementPointVisualizer } from './visualization/measurement-point-visualizer';
+import { wireMeasurementPointSubscribers } from './visualization/wire-measurement-point-subscribers';
+import {
+  createMeasurementUI,
+  type MeasurementUIInstance,
+} from './ui/measurement-ui';
+import {
+  selectMeasurementDraft,
+  selectProvisionalMeasurement,
+} from './state/measurement-points-slice';
+import type { Vector3 } from 'gps-plus-slam-app-framework/core';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   loadRecordingOptions,
@@ -389,6 +401,65 @@ const refPointHandlers = createRefPointHandlers({
   getStore: () => store,
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
 });
+
+// Measurement Point handlers — wired with replay guard (FIX 2)
+const measurementPointHandlers = createMeasurementPointHandlers({
+  getStore: () => store,
+  getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
+  showError,
+  showToast,
+  isReplayMode: () => replayHandlers.getIsReplayMode(),
+});
+
+// Measurement UI — created lazily when the AR session starts (Phase 4).
+// Disposed on session end / store swap.
+let measurementUI: MeasurementUIInstance | null = null;
+let measurementPointVisualizer: MeasurementPointVisualizer | null = null;
+let unsubscribeMeasurementPoints: (() => void) | null = null;
+
+/**
+ * Integrated "Mark Ref Point" flow.
+ *
+ * If the measurement system has an active, confirmable triangulated draft,
+ * the ref point is created at the triangulated 3D position and the measurement
+ * is also persisted. Otherwise, falls back to the original behavior
+ * (ref point at the camera's current position).
+ */
+async function integratedMarkRefPoint(
+  options?: {
+    forceNew?: boolean;
+  },
+  confirmationMode?: 'quality' | 'override'
+): Promise<void> {
+  const state = store.getState();
+  const draft = selectMeasurementDraft(state);
+  const provisional = selectProvisionalMeasurement(state);
+
+  // A solved point can be saved even when quality is below the recommended
+  // threshold; the UI labels this action "Save anyway" and shows the warning.
+  if (provisional?.point && state.measurementPoints.pendingRays.length >= 1) {
+    const overridePosition: Vector3 = provisional.point;
+    if (!draft.canConfirm) {
+      log.warn(
+        'Integrated mark: saving a low-quality triangulated measurement',
+        draft.lastQualityScore
+      );
+    }
+    log.info(
+      `Integrated mark: using triangulated point [${overridePosition.map((v: number) => v.toFixed(2)).join(', ')}]`
+    );
+
+    // Persist the measurement directly. The legacy reference-point workflow
+    // has its own naming picker and must not block measurement saving.
+    await measurementPointHandlers.handleConfirmPoint(
+      folderManager.getCurrentScenarioName(),
+      confirmationMode
+    );
+  } else {
+    // No active measurement — original behavior (ref point at camera)
+    await refPointHandlers.handleMarkRefPoint(options);
+  }
+}
 
 // Folder manager — encapsulates folder selection, save location, scenario management
 // (Finding #7 decomposition Step 4: extracted from main.ts to storage/folder-manager.ts)
@@ -732,6 +803,7 @@ function wireLoopClosureCapture(): void {
  * Reset main module state.
  * Exported for testing purposes to ensure test isolation.
  */
+// eslint-disable-next-line complexity
 export function resetMainState(): void {
   if (mapOverlay) {
     mapOverlay.dispose();
@@ -801,6 +873,18 @@ export function resetMainState(): void {
   destroyConfirmDialog();
   folderManager.reset();
   replayHandlers.reset();
+  // Phase 4: Dispose measurement UI and 3D visualization on session cleanup
+  measurementUI?.dispose();
+  measurementUI = null;
+
+  if (unsubscribeMeasurementPoints) {
+    unsubscribeMeasurementPoints();
+    unsubscribeMeasurementPoints = null;
+  }
+  if (measurementPointVisualizer) {
+    measurementPointVisualizer.dispose();
+    measurementPointVisualizer = null;
+  }
   setFolderSelected(false);
   setSaveLocationSelected(false);
 }
@@ -1133,11 +1217,28 @@ async function main(): Promise<void> {
     onOpenFolder: () => folderManager.handleOpenFolder(),
     onChooseSaveLocation: () => folderManager.handleChooseSaveLocation(),
     onEnterAR: handleEnterAR,
-    onStartRecording: () => recordingSessionHandlers.handleStartRecording(),
-    onStopRecording: () => recordingSessionHandlers.handleStopRecording(),
-    onMarkRefPoint: () => refPointHandlers.handleMarkRefPoint(),
-    onMarkNewRefPoint: () =>
-      refPointHandlers.handleMarkRefPoint({ forceNew: true }),
+    onStartRecording: async () => {
+      await recordingSessionHandlers.handleStartRecording();
+      // Starting a recording swaps the Redux store. Rebind the measurement HUD
+      // to that new store instead of leaving it subscribed to AR_READY state.
+      measurementUI?.dispose();
+      measurementUI = createMeasurementUI({
+        container: document.getElementById('app') as HTMLElement,
+        arCanvas: document.getElementById('app') as HTMLElement,
+        handlers: measurementPointHandlers,
+        store,
+        getScenarioId: () => folderManager.getCurrentScenarioName(),
+        onConfirmIntegrated: (mode) => integratedMarkRefPoint(undefined, mode),
+      });
+      measurementUI.show();
+    },
+    onStopRecording: async () => {
+      measurementUI?.dispose();
+      measurementUI = null;
+      await recordingSessionHandlers.handleStopRecording();
+    },
+    onMarkRefPoint: () => integratedMarkRefPoint(),
+    onMarkNewRefPoint: () => integratedMarkRefPoint({ forceNew: true }),
     onToggleMap: handleToggleMap,
     onMapZoomIn: handleMapZoomIn,
     onMapZoomOut: handleMapZoomOut,
@@ -1219,6 +1320,19 @@ async function main(): Promise<void> {
       onMapToggle: () => replayHandlers.handleReplayMapToggle(),
       onMapZoomIn: () => replayHandlers.handleReplayMapZoomIn(),
       onMapZoomOut: () => replayHandlers.handleReplayMapZoomOut(),
+      onRestart: () => void replayHandlers.handleReplayRestart(),
+      onSeek: (actionIndex: number) =>
+        void replayHandlers.handleReplaySeek(actionIndex),
+      onStepForward: () => {
+        const idx = replayHandlers.getCurrentActionIndex();
+        void replayHandlers.handleReplaySeek(idx + 1);
+      },
+      onStepBackward: () => {
+        const idx = replayHandlers.getCurrentActionIndex();
+        if (idx > 0) {
+          void replayHandlers.handleReplaySeek(idx - 1);
+        }
+      },
     });
     updateStatus('Replay Mode — Open a recordings folder');
     // In replay mode the recordings folder is the PRIMARY action (you browse
@@ -1697,6 +1811,21 @@ async function handleEnterAR(): Promise<void> {
       }
     }
 
+    // Measurement point visualizer
+    const measScene = getScene();
+    if (arWorldGroup && measScene) {
+      unsubscribeMeasurementPoints?.();
+      measurementPointVisualizer?.dispose();
+      measurementPointVisualizer = new MeasurementPointVisualizer(
+        arWorldGroup,
+        measScene
+      );
+      unsubscribeMeasurementPoints = wireMeasurementPointSubscribers(
+        storeRef,
+        measurementPointVisualizer
+      );
+    }
+
     // Issue #14: Map overlay is created lazily on first toggle (not here)
     // Register per-frame callback for smooth map position updates and follower tracking
     // This is called every XR frame (~60+ Hz) rather than on GPS events (~1 Hz)
@@ -1746,6 +1875,10 @@ async function handleEnterAR(): Promise<void> {
 
     // Issue 7 Phase 2: Push AR screen state for back-button navigation
     pushScreenState('ar');
+
+    // Measurement UI is mounted only after Start Recording. The specification
+    // defines measurement marking as a recording-time workflow; disposing it
+    // here also prevents AR_READY taps from creating rays.
   } catch (err) {
     log.error('AR init failed:', err);
     // Field Test Readiness Issue #4: Provide specific error messages
@@ -1892,13 +2025,12 @@ function handleToggleMap(): void {
 
   mapOverlay.toggle();
   if (mapOverlay.isVisible()) {
-    // 2026-07-06 round-4 live-map fix: refresh AFTER toggle() — the overlay
-    // creates its inner Leaflet map only inside show(), so a refresh before
-    // toggle() always ran against a null map and drew nothing (green prior /
-    // red captured, same renderer as the summary map). Re-run on every
-    // re-show too: phases without store events (e.g. AR_READY has no GPS
-    // watch) would otherwise never trigger the wirer's subscriber.
+    // 2026-07-06 round-4 live-map fix: refresh AFTER toggle()
     refPointViews?.refreshMapMarkers();
+    // Dispatch a resize event slightly after to fix Leaflet gray/white map tile bug
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
   }
   log.info(`Map overlay ${mapOverlay.isVisible() ? 'shown' : 'hidden'}`);
 }

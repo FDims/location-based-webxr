@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>POI model gallery — OSM affordance demo</title>
+    <!-- The demo's OTHER Vite entry, and it needs the icon for the same reason
+         `index.html` does: without it a browser requests `/favicon.ico` and
+         logs a 404. Same data-URI icon, so the two entries cannot drift. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E"
+      type="image/svg+xml"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+        background: #11131a;
+        color: #e6e8ef;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100dvh;
+      }
+      header {
+        padding: 0.6rem 0.9rem;
+        border-bottom: 1px solid #2a2f3d;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: baseline;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0;
+      }
+      #gallery-status,
+      a {
+        color: #9aa3b8;
+        font-size: 0.8rem;
+      }
+      #gallery {
+        position: relative;
+        min-height: 0;
+      }
+      #gallery canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      THE CONTACT SHEET DEC-R4-14 DECLINED AND F28 ASKED FOR (W7, DEC-R5-5).
+
+      Its own page rather than a button in the demo: the models are pure data
+      from `gps-plus-slam-osm`, so this needs no store, no worker and no network,
+      and keeping it out of the live scene keeps the draw-call readout and the
+      e2e pixel proxies measuring what they were written to measure.
+
+      Reached at /gallery.html — deliberately not linked from the demo header,
+      which the same round's feedback already calls too busy.
+    -->
+    <header>
+      <h1>POI model gallery</h1>
+      <span id="gallery-status">loading…</span>
+      <a href="./index.html">← back to the demo</a>
+    </header>
+    <div id="gallery"></div>
+    <script type="module" src="/src/gallery-main.ts"></script>
+  </body>
+</html>

@@ -27,7 +27,8 @@ import {
 } from 'gps-plus-slam-app-framework/state/gps-event-coordinator';
 import { showError, updateStatus } from '../ui/hud';
 import { showToast, TOAST_DURATION_ERROR } from '../ui/toast';
-import type { GpsPoint, RawGpsPoint } from '../state/recorder-store';
+import type { GpsPoint } from 'gps-plus-slam-app-framework/core';
+import type { RawGpsPoint } from 'gps-plus-slam-app-framework/state';
 import {
   addRefPointEntry,
   resetRefPoints,
@@ -40,11 +41,7 @@ import {
   findNearbyGeoAnchor,
 } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 import { webxrToNUE } from 'gps-plus-slam-app-framework/core';
-import type {
-  Vector3,
-  Quaternion,
-  Matrix4,
-} from 'gps-plus-slam-app-framework/core';
+import type { Vector3, Quaternion } from 'gps-plus-slam-app-framework/core';
 import type { RecorderStore } from '../state/recorder-store';
 
 const log = createLogger('RefPointHandlers');
@@ -71,7 +68,12 @@ interface NearbyRefPointInfo {
 export interface RefPointHandlers {
   // Primary handler. When forceNew is true, bypass re-observation and
   // show the picker for creating a new ref point even when near a known one.
-  handleMarkRefPoint(options?: { forceNew?: boolean }): Promise<void>;
+  // When overrideArPosition is provided, the ref point is anchored at that
+  // 3D coordinate instead of the camera's current position (measurement integration).
+  handleMarkRefPoint(options?: {
+    forceNew?: boolean;
+    overrideArPosition?: Vector3;
+  }): Promise<void>;
 
   // Proximity check for live button label + neighbor-cell detection
   checkNearbyRefPoint(lat: number, lng: number): NearbyRefPointInfo | undefined;
@@ -98,6 +100,20 @@ export function createRefPointHandlers(
   const lastReObservationTimestamp = new Map<string, number>();
 
   // --- Internal helpers ---
+
+  /**
+   * Mirror of the framework persistence middleware's `readIsRecording`
+   * (persistence-middleware.ts): the gate the `addRefPointEntry` dispatch
+   * below is subject to. Missing slice ⇒ false, exactly like the gate, so
+   * this predicts precisely whether a dispatched action would reach the
+   * recording's `actions/`.
+   */
+  function isRecordingActive(): boolean {
+    const state = deps.getStore().getState() as unknown as {
+      recording?: { isRecording?: boolean };
+    };
+    return state.recording?.isRecording ?? false;
+  }
 
   function validateRefPointPrerequisites(): {
     arPose: NonNullable<ReturnType<typeof getCurrentArPose>>;
@@ -149,10 +165,8 @@ export function createRefPointHandlers(
     odomRotation: Quaternion,
     gpsPoint: GpsPoint,
     timestamp: number,
-    _alignmentMatrix: Matrix4 | null | undefined,
     fusedGpsPoint:
-      | { latitude: number; longitude: number; altitude?: number }
-      | undefined
+      { latitude: number; longitude: number; altitude?: number } | undefined
   ): void {
     // Extract raw sensor fields from state-side GpsPoint for the action payload.
     // Derived fields (coordinates, weight, zeroRef) are recomputed by the
@@ -218,28 +232,18 @@ export function createRefPointHandlers(
     }
   }
 
-  function visualizeRefPoint(
-    _refPointId: string,
-    _odomPosition: Vector3,
-    _odomRotation: Quaternion,
-    _lastGpsPoint: GpsPoint,
-    _timestamp: number,
-    _fusedGpsPoint?: { latitude: number; longitude: number; altitude?: number }
-  ): void {
-    // No-op as of Step 5.7a-2: the red current-session sphere is now
-    // driven exclusively by `wireRefPointSubscribers`, which subscribes
-    // to `selectRefPointEntries` over the V2 slice. (The previous
-    // `ref-point-mark-listener` middleware was deleted along with the
-    // parallel `gpsData/markReferencePoint` dispatch in 5.7a-1.)
-    // Keeping the function as a documented seam in case future visual
-    // side effects (e.g., animation, audio cue) need to attach to the
-    // live-mark flow only.
-  }
+  // NOTE: the former `visualizeRefPoint` no-op seam was removed 2026-07-10
+  // (quality-review D-2). The red current-session sphere is driven
+  // exclusively by `wireRefPointSubscribers` subscribing to
+  // `selectRefPointEntries` over the V2 slice (since Step 5.7a-2); a future
+  // live-mark-only side effect (animation, audio cue) should hook into the
+  // mark flow directly rather than reviving a 6-argument no-op.
 
   // --- Main handler ---
 
   async function handleMarkRefPoint(options?: {
     forceNew?: boolean;
+    overrideArPosition?: Vector3;
   }): Promise<void> {
     // Guard: ignore if picker is already open (prevents overwriting currentResolver)
     if (isRefPointPickerVisible()) {
@@ -317,10 +321,11 @@ export function createRefPointHandlers(
           `Re-observation of ref point: ${refPointId} (${refPointName})`
         );
       } else {
-        // New ref point: show picker for optional display name only.
-        // No suggestion list — scenario IDs are H3 hex strings (meaningless to users)
-        // and imported names refer to distant locations (no nearby match).
-        const pickerResult = await showRefPointPicker([]);
+        // New ref point: prompt for a display name only. (The prompt's
+        // former suggestion list was removed 2026-09-04 — scenario IDs are H3
+        // hex strings, meaningless to users, and imported names refer to
+        // distant locations, so it had nothing to show.)
+        const pickerResult = await showRefPointPicker();
         if (!pickerResult) {
           log.info('Reference point marking cancelled');
           return;
@@ -334,13 +339,15 @@ export function createRefPointHandlers(
       const timestamp = Date.now();
 
       // Extract odometry data once from AR pose (used by dispatch, persist, visualize)
-      const odomPosition = extractOdomPosition(arPose);
+      // When overrideArPosition is provided (measurement triangulation), use it
+      // as the ref point's 3D position instead of the camera's current location.
+      const odomPosition: Vector3 =
+        options?.overrideArPosition ?? extractOdomPosition(arPose);
       const odomRotation = extractOdomRotation(arPose);
 
       // Compute fused GPS if alignment matrix is available
       let fusedGpsPoint:
-        | { latitude: number; longitude: number; altitude?: number }
-        | undefined;
+        { latitude: number; longitude: number; altitude?: number } | undefined;
       const state = deps.getStore().getState();
       const alignmentMatrix = state.gpsData?.gpsEvents?.alignmentMatrix;
       const zeroRef = state.gpsData?.zero;
@@ -357,17 +364,30 @@ export function createRefPointHandlers(
         };
       }
 
-      // Dispatch action to library
-      dispatchRefPointAction(
-        refPointId,
-        refPointName,
-        odomPosition,
-        odomRotation,
-        lastGpsPoint,
-        timestamp,
-        alignmentMatrix,
-        fusedGpsPoint
-      );
+      // The recording can end while this flow awaits (the new-point picker
+      // can stay open across Stop or a system session end) — root cause of
+      // the 2026-07-11 zip-1 lost "A3" action (indoor-loop enablement,
+      // implementation summary §3.5): the persistence middleware drops
+      // post-stop dispatches, so the action can never reach the recording,
+      // while the OPFS write below still succeeds and the toast claimed
+      // plain success. Skip the dead dispatch, keep the durable
+      // scenario-level observation, and tell the truth in the toast.
+      const recordingActive = isRecordingActive();
+      if (recordingActive) {
+        dispatchRefPointAction(
+          refPointId,
+          refPointName,
+          odomPosition,
+          odomRotation,
+          lastGpsPoint,
+          timestamp,
+          fusedGpsPoint
+        );
+      } else {
+        log.warn(
+          `Ref point "${refPointName}" (${refPointId}) marked after the recording ended — action not persisted, scenario observation only`
+        );
+      }
 
       const isNewPoint = !nearbyMatch;
 
@@ -397,16 +417,6 @@ export function createRefPointHandlers(
         );
       }
 
-      // Visualize in scene
-      visualizeRefPoint(
-        refPointId,
-        odomPosition,
-        odomRotation,
-        lastGpsPoint,
-        timestamp,
-        fusedGpsPoint
-      );
-
       updateStatus(`Marked reference point: ${refPointId}`);
 
       // Confirmation toast — reflects the durable end state, fired only after the
@@ -417,7 +427,14 @@ export function createRefPointHandlers(
       // (Finding 3, 2026-04-29).
       if (isNewPoint) {
         if (persistOk) {
-          showToast(`Marked "${refPointName}"`, { severity: 'info' });
+          // The stop-window variant must not claim plain success: the mark
+          // is durable in the scenario but absent from the (ended) recording.
+          showToast(
+            recordingActive
+              ? `Marked "${refPointName}"`
+              : `Marked "${refPointName}" — recording already ended, saved to scenario only`,
+            { severity: recordingActive ? 'info' : 'warning' }
+          );
         } else {
           // Revert the in-progress "Saving…" state with an explicit failure
           // toast (persistRefPointObservation also drives the HUD error
@@ -429,7 +446,12 @@ export function createRefPointHandlers(
           });
         }
       } else if (persistOk) {
-        showToast(`Re-observed "${refPointName}"`, { severity: 'info' });
+        showToast(
+          recordingActive
+            ? `Re-observed "${refPointName}"`
+            : `Re-observed "${refPointName}" — recording already ended, saved to scenario only`,
+          { severity: recordingActive ? 'info' : 'warning' }
+        );
       }
 
       // Record re-observation timestamp for cooldown (Aachen audit Issue 3)

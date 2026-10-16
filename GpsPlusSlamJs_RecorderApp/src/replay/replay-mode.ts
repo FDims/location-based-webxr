@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Replay Mode Orchestrator
  *
  * Wires together all replay building blocks from Iterations 1-5 into
@@ -23,6 +23,7 @@ import {
   ReplayEngine,
   type ReplayAction,
   type ReplayState,
+  extractActionTimestamp,
 } from 'gps-plus-slam-app-framework/state/replay-engine';
 import {
   initReplayScene,
@@ -62,6 +63,7 @@ import {
   createStatsOverlay,
   type StatsOverlayHandle,
 } from '../ui/stats-overlay';
+import { MeasurementPointVisualizer } from '../visualization/measurement-point-visualizer';
 import * as THREE from 'three';
 
 const log = createLogger('ReplayMode');
@@ -140,8 +142,61 @@ export async function startReplayMode(
   // current schema, and exposes a memoised final state — replay only needs
   // the migrated action list, which it forwards to the ReplayEngine.
   const recording = await loadRecording(zipData);
-  const actions: ReplayAction[] = recording.actions.map((e) => e.action);
+  let actions: ReplayAction[] = recording.actions.map((e) => e.action);
   log.info(`Loaded ${actions.length} actions from zip`);
+
+  // --- Synthetic Timestamp Injection ---
+  // To enable fluid, frame-by-frame replay, we interpolate timestamps for actions
+  // that don't natively have one. Since ReplayEngine hardcodes which action types
+  // have timestamps (via extractActionTimestamp), we wrap non-timestamped actions
+  // in a pseudo-gps event. We then intercept them at dispatch.
+  actions = (function interpolateActions(origActions: ReplayAction[]) {
+    const tsArray: (number | null)[] = origActions.map(extractActionTimestamp);
+
+    // Fill nulls with interpolated values
+    for (let i = 0; i < tsArray.length; i++) {
+      if (tsArray[i] !== null) continue;
+
+      // Find previous known ts
+      let prevIdx = i - 1;
+      while (prevIdx >= 0 && tsArray[prevIdx] === null) prevIdx--;
+      const prevTs = prevIdx >= 0 ? tsArray[prevIdx]! : null;
+
+      // Find next known ts
+      let nextIdx = i + 1;
+      while (nextIdx < tsArray.length && tsArray[nextIdx] === null) nextIdx++;
+      const nextTs = nextIdx < tsArray.length ? tsArray[nextIdx]! : null;
+
+      if (prevTs !== null && nextTs !== null) {
+        // Interpolate between prev and next
+        const fraction = (i - prevIdx) / (nextIdx - prevIdx);
+        tsArray[i] = prevTs + fraction * (nextTs - prevTs);
+      } else if (prevTs !== null) {
+        // Extrapolate forward (33ms per action ~30fps)
+        tsArray[i] = prevTs + (i - prevIdx) * 33;
+      } else if (nextTs !== null) {
+        // Extrapolate backward
+        tsArray[i] = nextTs - (nextIdx - i) * 33;
+      } else {
+        // No timestamps at all, just space by 33ms
+        tsArray[i] = i * 33;
+      }
+    }
+
+    return origActions.map((action, i) => {
+      if (extractActionTimestamp(action) !== null) {
+        return action; // Leave natively timestamped actions alone
+      }
+      // Wrap in a pseudo-gps event that extractActionTimestamp WILL parse
+      return {
+        type: 'gpsData/recordGpsEvent',
+        payload: {
+          __realAction: action,
+          gpsPoint: { timestamp: tsArray[i] },
+        },
+      };
+    });
+  })(actions);
 
   // Create store with NullStorageBackend (no persistence side effects).
   //
@@ -161,6 +216,16 @@ export async function startReplayMode(
     enableCompassRotationPrior: false,
     enableCompassWebXRConsistency: false,
   });
+
+  // Intercept dispatch to unwrap our pseudo-gps events before the reducers see them
+  const originalDispatch = store.dispatch;
+  store.dispatch = ((action: Record<string, unknown>) => {
+    const payload = action.payload as Record<string, unknown> | undefined;
+    if (payload && payload.__realAction) {
+      return originalDispatch(payload.__realAction as ReplayAction);
+    }
+    return originalDispatch(action as unknown as ReplayAction);
+  }) as typeof store.dispatch;
 
   // Initialize Three.js replay scene (no WebXR)
   const replaySceneState = initReplayScene(config.container);
@@ -280,27 +345,38 @@ export async function startReplayMode(
     );
   }
 
-  // Perf stats overlay (visualization.statsOverlay — Step 0 of the 2026-07-03
-  // long-session fps plan; the one visualization toggle that ALSO applies to
-  // replay, since replay frame time matters for the same investigation). The
-  // replay scene's render loop is module-private in the framework, so the
-  // panels are advanced by their own rAF loop — rAF fires once per browser
-  // frame, so the measured cadence equals the replay render cadence.
-  // Best-effort like the visualizers above.
+  // Perf stats overlay and Measurement Points visualizer
+  // Both need a frame loop. The replay scene's render loop is module-private,
+  // so we drive them with our own rAF loop.
   let statsOverlay: StatsOverlayHandle | null = null;
-  let statsRafId: number | null = null;
+  let measurementPointVisualizer: MeasurementPointVisualizer | null = null;
+  let replayFrameLoopId: number | null = null;
+
   try {
     if (loadRecordingOptions().visualization.statsOverlay) {
       statsOverlay = createStatsOverlay(config.container);
-      const statsTick = (): void => {
-        statsOverlay?.update();
-        statsRafId = requestAnimationFrame(statsTick);
-      };
-      statsRafId = requestAnimationFrame(statsTick);
     }
   } catch (err) {
     log.warn('Stats overlay skipped; replay continues without it', err);
   }
+
+  try {
+    measurementPointVisualizer = new MeasurementPointVisualizer(
+      replaySceneState.arWorldGroup,
+      replaySceneState.scene
+    );
+  } catch (err) {
+    log.warn('Measurement visualizer skipped', err);
+  }
+
+  // Unified replay frame loop
+  const storeRefGeneral = createStoreRef(store);
+  const replayTick = (): void => {
+    statsOverlay?.update();
+    measurementPointVisualizer?.update(storeRefGeneral.get().getState());
+    replayFrameLoopId = requestAnimationFrame(replayTick);
+  };
+  replayFrameLoopId = requestAnimationFrame(replayTick);
 
   // Get the alignment lerper (Issue 4) — store subscribers route alignment
   // updates through the lerper for smooth interpolation instead of snapping.
@@ -448,11 +524,12 @@ export async function startReplayMode(
       occupancyCubesVisualizer?.dispose();
       occluderSinkHandle?.dispose();
       occluderSinkHandle = null;
-      if (statsRafId !== null) {
-        cancelAnimationFrame(statsRafId);
-        statsRafId = null;
+      if (replayFrameLoopId !== null) {
+        cancelAnimationFrame(replayFrameLoopId);
+        replayFrameLoopId = null;
       }
       statsOverlay?.dispose();
+      measurementPointVisualizer?.dispose();
       disposeReplayScene();
       log.info('Replay mode disposed');
     },

@@ -9,22 +9,29 @@
  * `2026-05-13-ecs-migration-plan.md` for the design rationale and the
  * rules new `FrameUpdate` bodies must follow (pure function of `dt` plus
  * selectors; no direct Redux dispatch from inside a tick).
+ *
+ * THE MECHANICS LIVE IN `createIsolatedRegistry`, not here. The snapshot
+ * semantics (a register/unregister during a tick defers to the next frame, and
+ * the snapshot is cached between registry changes so 60–90 Hz costs no
+ * allocation) and the per-callback isolation are shared with `xr-frame-loop`
+ * and `session-disposers`, which were structurally identical modules until the
+ * shape was extracted. This file is now the frame loop's NAME and lifetime;
+ * the behaviour is pinned once, in `isolated-registry.test.ts`.
  */
 
+import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('FrameLoop');
 
 export type FrameUpdate = (dt: number, elapsed: number) => void;
 
-const updates = new Set<FrameUpdate>();
-/**
- * Cached iteration snapshot of {@link updates}, invalidated on every registry
- * mutation. The snapshot SEMANTICS (a register/unregister during a tick defers
- * to the next frame) are unchanged — caching only avoids re-allocating an
- * identical array at 60–90 Hz between (rare) registry changes (PR #67 review).
- */
-let snapshot: readonly FrameUpdate[] | null = null;
+const registry = createIsolatedRegistry<[number, number]>({
+  // The sink is passed rather than defaulted so failures keep reporting under
+  // THIS registry's logger name; the primitive imports no logger of its own.
+  onError: (error) =>
+    log.error('A registered FrameUpdate threw; continuing the loop', error),
+});
 
 /**
  * Register a per-frame callback. Returns an unregister function.
@@ -33,40 +40,27 @@ let snapshot: readonly FrameUpdate[] | null = null;
  * (it remains a single entry in the underlying `Set`).
  */
 export function registerFrameUpdate(fn: FrameUpdate): () => void {
-  updates.add(fn);
-  snapshot = null;
-  return () => {
-    updates.delete(fn);
-    snapshot = null;
-  };
+  return registry.register(fn);
 }
 
 /**
  * Invoke all registered callbacks. Called by the WebXR session's
  * `onXRFrame` once per frame with the XR-derived `dt` (seconds since the
- * previous frame; 0 on the first frame after a reset) and `elapsed`
- * (seconds since the session started).
+ * previous frame; 0 on the first frame after a reset) and `elapsed`.
  *
- * The set is snapshotted before iterating so that
- * `registerFrameUpdate` / unregister calls made by a handler during the
- * same frame are deferred to the next tick. Iterating the live `Set`
- * would otherwise skip a not-yet-visited entry that an earlier handler
- * unregistered — a hard-to-debug source of non-determinism.
+ * **`elapsed` is PAGE-relative, not session-relative** — it is the raw
+ * `XRFrame` timestamp in seconds, and that clock starts at page load rather
+ * than at `requestSession`. Entering AR a minute in yields a first `elapsed`
+ * near 60, not near 0. The wording this replaced said "seconds since the
+ * session started", and a consumer that believed it opened its first averaging
+ * window at zero and read a wildly wrong first sample.
  *
- * Each callback is invoked in its own `try/catch` so a throwing handler is
- * isolated: it cannot abort the remaining callbacks nor propagate up through
- * `onXRFrame` and kill the scene render for the whole frame. Failures are
- * logged and the loop continues — mirrored by `runXrFrameUpdates`.
+ * A throwing handler is isolated: it cannot abort the remaining callbacks nor
+ * propagate up through `onXRFrame` and kill the scene render for the whole
+ * frame.
  */
 export function runFrameUpdates(dt: number, elapsed: number): void {
-  const fns = snapshot ?? (snapshot = Array.from(updates));
-  for (const fn of fns) {
-    try {
-      fn(dt, elapsed);
-    } catch (error) {
-      log.error('A registered FrameUpdate threw; continuing the loop', error);
-    }
-  }
+  registry.run(dt, elapsed);
 }
 
 /**
@@ -75,6 +69,5 @@ export function runFrameUpdates(dt: number, elapsed: number): void {
  * session are dropped along with their owning components).
  */
 export function clearFrameUpdates(): void {
-  updates.clear();
-  snapshot = null;
+  registry.clear();
 }

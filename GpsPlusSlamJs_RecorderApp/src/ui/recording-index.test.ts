@@ -13,7 +13,7 @@
  * whole folder index.
  *
  * @see ./recording-index.ts
- * @see GpsPlusSlamJs_Docs/docs/2026-06-14-map-centric-recording-browser-and-h3-index-user-feedback.md (D2)
+ * @see GpsPlusSlamJs_Docs/docs/2026-06-14-1048-map-centric-recording-browser-and-h3-index-user-feedback.md (D2)
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -30,7 +30,7 @@ import {
 import {
   discoverScenariosFromZipMetadata,
   type SessionEntry,
-} from './session-browser';
+} from '../storage/recording-discovery';
 
 /** A file handle whose getFile() must never be called (asserts the fast path). */
 function throwingFileHandle(filename: string): FileSystemFileHandle {

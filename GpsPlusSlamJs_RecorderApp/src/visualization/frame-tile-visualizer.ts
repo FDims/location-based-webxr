@@ -21,7 +21,7 @@
  * (`arWorldGroup`, which receives the alignment matrix). Parenting at
  * the scene root instead leaves tiles East/North axis-swapped and
  * detached from alignment — see
- * `GpsPlusSlamJs_Docs/docs/2026-06-12-followup-frame-tile-visualizer-frame-check.md`
+ * `GpsPlusSlamJs_Docs/docs/2026-06-12-1628-frame-tile-visualizer-frame-check-followup.md`
  * and the hit-test-reticle / occupancy-cube entries in lessons-learned.
  * (Step 5.7a-2 deleted the legacy `framesInScene` slice +
  * `add-2d-image-listener` mirror — the selector is now the sole source.)
@@ -261,9 +261,7 @@ function bitmapDim(
   axis: 'width' | 'height'
 ): number | undefined {
   const image = texture.image as
-    | { width?: unknown; height?: unknown }
-    | null
-    | undefined;
+    { width?: unknown; height?: unknown } | null | undefined;
   if (!image) return undefined;
   const value = image[axis];
   return typeof value === 'number' && Number.isFinite(value) && value > 0

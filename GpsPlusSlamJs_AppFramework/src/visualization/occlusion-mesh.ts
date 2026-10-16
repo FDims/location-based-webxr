@@ -6,8 +6,8 @@
  * `depthWrite = true`), drawn before virtual content (low `renderOrder`) so real
  * geometry the camera saw earlier hides virtual objects placed behind it —
  * including out-of-view surfaces a single-frame live depth occluder cannot
- * remember (2026-06-13-occupancy-mesh-options-plan.md §4; complements the live
- * occluder in 2026-06-14-webxr-depth-occlusion-plan.md).
+ * remember (2026-06-13-0004-occupancy-mesh-options-plan.md §4; complements the live
+ * occluder in 2026-06-14-0009-webxr-depth-occlusion-plan.md).
  *
  * Reusable across consumer apps (AnchorStarter / MinimalExample want occlusion
  * too); the recorder only owns the off-by-default toggle + scene wiring.
@@ -34,11 +34,45 @@ import {
 } from '../ar/occupancy-mesher.js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis.js';
 import type { Vector3 } from 'gps-plus-slam-js';
-import type { OccluderDebugStyle } from '../state/recording-options.js';
+
+/**
+ * Debug-visualization style for the **persistent occluder** mesh (2026-07-02
+ * debug-viz-styles plan) — which visible debug skin(s) `OcclusionMesh` renders
+ * on top of the invisible depth-only occluder:
+ * - `'off'` — no debug rendering (the shipped default; occlusion is invisible).
+ * - `'matcap'` — the original shiny semi-transparent cyan skin.
+ * - `'depth-shaded'` — matcap + camera-distance fade + white fresnel rim, so
+ *   overlapping near/far surfaces read as separate shells.
+ * - `'wireframe'` — the raw triangulation as GL lines (mesh-structure
+ *   inspection: triangle density, mesher seams, degenerate spots).
+ * - `'depth-shaded-wireframe'` — both of the above composed.
+ *
+ * Owned here since the 2026-07-11 G-1 move (this module is the consumer; it
+ * previously lived in the recorder settings catalog). The values array is
+ * exported so the recorder's `occluderDebugStyle` validator can enum-check
+ * persisted values; the settings `<select>` options are hardcoded in the
+ * recorder's `index.html`.
+ */
+export const OCCLUDER_DEBUG_STYLES = [
+  'off',
+  'matcap',
+  'depth-shaded',
+  'wireframe',
+  'depth-shaded-wireframe',
+] as const;
+export type OccluderDebugStyle = (typeof OCCLUDER_DEBUG_STYLES)[number];
 
 const MESH_NAME = 'occupancy-occluder';
 const DEBUG_MESH_NAME = 'occupancy-occluder-debug';
 const DEBUG_WIREFRAME_MESH_NAME = 'occupancy-occluder-debug-wireframe';
+
+/**
+ * Mesher used when the caller names none. `'greedy'` merges coplanar faces for
+ * the fewest triangles at the same occluded volume — free, because the occluder
+ * never renders colour. Changing it changes what a no-options `OcclusionMesh`
+ * draws, including the framework's own replay session.
+ */
+const DEFAULT_MESH_MODE: MeshMode = 'greedy';
 
 /** Default render order — well before virtual content (which is ≥ 0). */
 const DEFAULT_RENDER_ORDER = -1;
@@ -91,7 +125,16 @@ export const OCCLUDER_DEPTH_SHADE = {
  *  single-color cyan identity while clearly separating far from near. */
 const FADE_TARGET_RGB = [0.03, 0.07, 0.12] as const;
 
-/** GLSL `smoothstep` (clamped Hermite), mirrored exactly for the TS curves. */
+/**
+ * GLSL `smoothstep` (clamped Hermite), mirrored exactly for the TS curves.
+ *
+ * DELIBERATELY NOT THE SAME FUNCTION as `GpsPlusSlamJs_OsmDemo`'s
+ * `easing.ts`, which is the one-argument form on `[0, 1]`. This one takes two
+ * edges and clamps, because its whole job is to match the shader beside it line
+ * for line; folding the two together would make one of them read wrongly for
+ * its own context. Recorded here so the duplicate-helper guard's exemption for
+ * this name has its reason next to the code (DEC-H3, 2026-08-24).
+ */
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
@@ -200,18 +243,18 @@ function createOccluderDebugMatcap(): THREE.DataTexture {
 
 export interface OcclusionMeshOptions {
   /**
-   * Merge coplanar faces (fewer triangles, same occluded volume). Default
-   * true — the occluder is invisible, so the coarser triangulation is free.
-   * Ignored when {@link OcclusionMeshOptions.mode} is set.
-   */
-  readonly greedy?: boolean;
-  /**
-   * Mesher strategy (additive opt-in; 2026-06-30 occluder-tuning, F2). When set
-   * it takes precedence over {@link greedy}. `'smooth'` selects the surface-nets
-   * mesher that hugs the measured per-cell centroids — pass a `getCellPoint`
-   * provider to {@link OcclusionMesh.update} for it to read. Left **unset by
-   * default** so existing behaviour (greedy cubes) is byte-for-byte unchanged
-   * until the smooth occluder is confirmed on-device.
+   * Mesher strategy. Defaults to {@link DEFAULT_MESH_MODE} (`'greedy'` — coplanar
+   * faces merged; the occluder is invisible, so the coarser triangulation is
+   * free). `'smooth'` selects the surface-nets mesher that hugs the measured
+   * per-cell centroids — pass a `getCellPoint` provider to
+   * {@link OcclusionMesh.update} for it to read.
+   *
+   * This replaced a legacy `greedy?: boolean` that sat beside it and was chosen
+   * between by a ternary (removed 2026-08-21). The boolean had **zero**
+   * production callers — the recorder and the physics demo both always pass a
+   * `mode`, and the framework's replay session passes no options at all — which
+   * is the same reason the identical boolean shim was deleted one layer down,
+   * from `meshOccupiedCells`, on 2026-07-10.
    */
   readonly mode?: MeshMode;
   /**
@@ -229,8 +272,8 @@ export interface OcclusionMeshOptions {
  */
 export class OcclusionMesh {
   private readonly arSpaceNode: THREE.Object3D;
-  private readonly greedy: boolean;
-  private readonly mode: MeshMode | undefined;
+  /** Always resolved: `options.mode ?? DEFAULT_MESH_MODE`, never undefined. */
+  private readonly mode: MeshMode;
   private readonly material: THREE.MeshBasicMaterial;
   private readonly mesh: THREE.Mesh;
   private geometry: THREE.BufferGeometry;
@@ -257,8 +300,7 @@ export class OcclusionMesh {
    */
   constructor(arSpaceNode: THREE.Object3D, options: OcclusionMeshOptions = {}) {
     this.arSpaceNode = arSpaceNode;
-    this.greedy = options.greedy ?? true;
-    this.mode = options.mode;
+    this.mode = options.mode ?? DEFAULT_MESH_MODE;
     this.geometry = new THREE.BufferGeometry();
     // Invisible depth-writer: contributes only to the depth buffer, so virtual
     // content's normal depth test hides fragments behind the real surface.
@@ -288,6 +330,33 @@ export class OcclusionMesh {
   }
 
   /**
+   * The underlying `THREE.Mesh` (the depth-only occluder geometry), for a
+   * pointer-raycast layer to target the real occluder surface (2026-07-15
+   * replay-harness Part B). The mesh's `colorWrite:false` invisibility does NOT
+   * affect `THREE.Raycaster`, and `frustumCulled:false` is fine for raycasting.
+   * Treat it as read-only — re-mesh via {@link update} / restyle via
+   * {@link setDebugStyle} instead of mutating the returned object.
+   */
+  getMesh(): THREE.Mesh {
+    return this.mesh;
+  }
+
+  /**
+   * Show or hide the WHOLE occluder — the depth-only mesh AND any active debug
+   * skins. Hiding stops the depth mesh writing depth, so a co-located visualizer
+   * (e.g. the occupancy cubes at the same surface) is no longer occluded by the
+   * otherwise-invisible occluder. Independent of {@link setDebugStyle}: a later
+   * `setDebugStyle` re-adds skins as visible, so re-apply `setVisible` after a
+   * style change if you need them hidden (a mesh-view controller does exactly this).
+   */
+  setVisible(visible: boolean): void {
+    if (this.disposed) return;
+    this.mesh.visible = visible;
+    if (this.shadedSkin) this.shadedSkin.visible = visible;
+    if (this.wireframeSkin) this.wireframeSkin.visible = visible;
+  }
+
+  /**
    * Re-mesh from a fresh occupied-cell snapshot. Pass
    * `grid.getOccupiedCells(occupancy.minConfidence)` so the occluder shares the
    * same noise floor as the cubes and the COLMAP export.
@@ -303,9 +372,13 @@ export class OcclusionMesh {
     getCellPoint?: (cell: GridCell) => Vector3 | null
   ): void {
     if (this.disposed) return;
-    const meshOptions: MeshOccupiedCellsOptions = this.mode
-      ? { mode: this.mode, getCellPoint }
-      : { greedy: this.greedy };
+    // `getCellPoint` is passed unconditionally: the centroid-consuming modes
+    // read it, and the others document that they ignore it (pinned by the
+    // "ignores getCellPoint on the default mesher" test).
+    const meshOptions: MeshOccupiedCellsOptions = {
+      mode: this.mode,
+      getCellPoint,
+    };
     const { positions, indices, aabbs } = meshOccupiedCells(
       cells,
       cellSizeM,
@@ -435,17 +508,6 @@ export class OcclusionMesh {
       this.arSpaceNode.remove(this.wireframeSkin);
       this.wireframeSkin = null;
     }
-  }
-
-  /**
-   * Toggle the matcap debug rendering of the occluder mesh.
-   *
-   * @deprecated Superseded by {@link setDebugStyle} (2026-07-02) — this is a
-   * thin wrapper mapping `enabled ? 'matcap' : 'off'`, kept so existing
-   * consumers of the boolean API keep working unchanged.
-   */
-  setDebugVisualization(enabled: boolean): void {
-    this.setDebugStyle(enabled ? 'matcap' : 'off');
   }
 
   /** A debug skin mesh sharing the occluder's geometry, transform and culling

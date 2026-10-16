@@ -1,0 +1,683 @@
+/**
+ * The demo's main-thread ↔ worker contract, as data.
+ *
+ * WHY A WORKER AT ALL. Everything expensive in this demo ran on the UI thread:
+ * an Overpass response measured at ~21 MB of JSON to parse, a 19-chunk scoring
+ * pass, a mesh build, and (since the terrain extent grew) ~55 000 DEM samples.
+ * `gps-plus-slam-osm` was designed for this from the start — it documents itself
+ * as worker-safe in six places, its public types are deliberately
+ * structured-cloneable, and its mesh output is `Float32Array` specifically so it
+ * can **transfer** rather than copy — but no consumer had ever exercised any of
+ * it. This is the first one, so treat every claim here as newly tested rather
+ * than long-established.
+ *
+ * WHY THE PROTOCOL IS ITS OWN MODULE. It is the one part of the boundary that is
+ * pure data and can be checked without a worker, a browser or a GPU. The client
+ * (`rpc-client.ts`) is tested against an in-process fake transport, and the
+ * worker entry (`demo-worker.ts`) is the only file that needs a real one.
+ *
+ * WHAT MUST NOT BE PUT IN HERE. Anything non-cloneable: class instances,
+ * functions, `Map`/`Set` of non-cloneable values, getters. A `Heightfield`
+ * exposes a **method** (`heightAt`), so it cannot cross — the transferable form
+ * carries the posts plus the geometry needed to rebuild the sampler on the other
+ * side. Getting this wrong throws `DataCloneError` at runtime and never at
+ * compile time, which is why `worker-round-trip.test.ts` exists.
+ *
+ * @see protocol.ts.md
+ */
+
+import type {
+  MeshChunk,
+  CellExplanation,
+  RacingProviderStats,
+  GeoEvent,
+  LatLng,
+  MeshData,
+  PoiMarker,
+  TreePlacement,
+} from "gps-plus-slam-osm";
+
+import type { RoutePoint } from "../agent-route.js";
+import type { DemoSnapshot } from "../demo-pipeline.js";
+import type { WorkerStageTimings } from "../click-timings.js";
+import type { GeoEventStats } from "../geo-event-stats.js";
+import type { HeightfieldData } from "../heightfield.js";
+
+/**
+ * A built mesh plus the counters the status line reports.
+ *
+ * Trees cross as `TreePlacement` — the package's own ENU form — rather than as
+ * scene coordinates. The ENU→scene reflection is a real trap (`+y` north becomes
+ * `-z` north, and getting it wrong renders a forest 100 m from the buildings it
+ * stands beside), but the package's own `packInstances` applies it — and that is
+ * where its test lives. Converting here would drag the reflection into a module
+ * that must not import `three` and would separate it from its test for no gain.
+ */
+export interface TransferableMesh {
+  /**
+   * Buildings, batched into spatial CHUNKS rather than one merged mesh (W20).
+   *
+   * three frustum-culls per `Object3D`, so one mesh spanning a 2.8 km tile is
+   * all-or-nothing: distance and frustum culling were unavailable by
+   * construction, which is what R4-16 saw as geometry kilometres away still
+   * being drawn. A list of chunks is a list of things that can be culled.
+   */
+  readonly buildings: readonly MeshChunk[];
+  readonly trees: readonly TreePlacement[];
+  /**
+   * Ground areas, CHUNKED like the buildings and for the same reason (W20).
+   *
+   * This said "one merged mesh" until PR #239, which is what it was before W20:
+   * a working set has hundreds of small areas and a draw call each would
+   * dominate the frame, so they were merged into one. W20 reversed exactly that
+   * rationale — one mesh is one cull unit, so a merged tile could not be culled
+   * at all. Chunks trade a handful of draw calls back for the ability to drop
+   * the ones off screen.
+   */
+  readonly plates: readonly MeshChunk[];
+  readonly plateCount: number;
+  /**
+   * POI markers (W12), as placements for the same reason trees are.
+   *
+   * They carry `feature`, `kind` and `label` as well as a position, because a
+   * marker the app cannot name is a dot — and naming it is the entire feature.
+   * Deriving the label again on this side from tags the worker still holds would
+   * be a second source of truth for what a POI is called.
+   */
+  readonly poi: readonly PoiMarker[];
+  /**
+   * Roads (W13), CHUNKED like the plates and for the same reason (W20).
+   *
+   * Also said "one merged mesh" until PR #239. See `plates` above: merging was
+   * right when a draw call per way was the cost that mattered, and wrong once
+   * the cost that mattered was drawing a kilometre of road behind the camera.
+   */
+  readonly roads: readonly MeshChunk[];
+  readonly roadCount: number;
+  /**
+   * The below-surface features' outlines, in ENU, packed x,y per point.
+   *
+   * HERE RATHER THAN IN THE SNAPSHOT because the frame lives in the worker, as
+   * it does for every other piece of scene geometry. A page converting lat/lng
+   * for itself would need a second copy of the frame — and `recentre`
+   * invalidates every ENU coordinate, so that copy goes stale exactly when the
+   * user moves.
+   *
+   * EMPTY UNLESS THE LAYER IS ON. Like the cell array, this is a diagnostic that
+   * is off by default and should not be built or transferred for nobody.
+   */
+  readonly underground: readonly Float32Array[];
+  /**
+   * Merged affordance regions as slabs (W14), one entry per region.
+   *
+   * ONE ENTRY PER REGION, and NOT chunked like the plates and the roads. The
+   * reason is the colour: every region is drawn in the shade of its own
+   * `medianScore`, so batching them would need per-vertex colours computed
+   * against a scale the worker does not have. There are a handful of regions per
+   * working set, not hundreds, so a draw call each is affordable — but note
+   * that means a very large region is still one uncullable object (F27).
+   *
+   * The score rides along UNCOLOURED on purpose — see `region-slabs.ts.md`.
+   */
+  readonly regions: readonly RegionSlabData[];
+  readonly volumes: number;
+  readonly parts: number;
+  readonly guessedHeights: number;
+  readonly approximateRoofs: number;
+  /**
+   * Solid barriers drawn (DEC-R11-2).
+   *
+   * **Counted because DEC-R11-11 gave up the other way of checking.** Barriers
+   * draw with the buildings, with no toggle and no distinct colour, so there is
+   * no way to isolate them on screen — the count is what tells a walled site
+   * apart from one where the barrier builder silently produced nothing.
+   */
+  readonly barriers: number;
+}
+
+/**
+ * One region's slab, with the score the main thread colours it by.
+ *
+ * Not exported: it is reachable as `TransferableMesh["regions"][number]`, which
+ * is how every other consumer in this demo names a member of a transferred
+ * array, and knip is right that a second public name earns nothing.
+ */
+interface RegionSlabData {
+  readonly medianScore: number;
+  /** So a click on the slab resolves back to the region it draws (DEC-R7b-3a). */
+  readonly id: string;
+  readonly mesh: MeshData;
+}
+
+/** What the worker reports once its rule table is loaded. */
+interface InitResult {
+  readonly categories: readonly string[];
+  readonly tier: string;
+  readonly degradedBecause?: string;
+}
+
+/**
+ * What one pass contributes to the geometry (W6, finding R3-3).
+ *
+ * AN EXPLICIT `kind` RATHER THAN AN OPTIONAL `mesh`. Progressive scoring runs
+ * three passes per click and only the region slabs change between them — the
+ * buildings, trees, POI markers, roads and plates are identical, because they
+ * depend on the features, the terrain and the ENU frame origin, none of which a
+ * widening ring touches. Rebuilding the whole city three times was most of the
+ * per-click cost the round-3 notes reported as "the calculation just takes
+ * longer".
+ *
+ * An optional field would read as "sometimes missing"; this is "deliberately not
+ * resent", and a consumer that fails to handle it should fail at compile time
+ * rather than draw nothing.
+ */
+export type MeshUpdate =
+  | { readonly kind: "full"; readonly mesh: TransferableMesh }
+  | {
+      readonly kind: "regions";
+      readonly regions: readonly RegionSlabData[];
+      /**
+       * The below-surface outlines, carried on the CHEAP reply as well.
+       *
+       * They belong here for the same reason the region slabs do: both change
+       * without the features, the terrain or the frame origin changing, so a
+       * reply that omitted them would leave the layer empty until something
+       * unrelated forced a full rebuild. Toggling the layer does exactly that —
+       * it refreshes at the SAME position, which is precisely when
+       * `needsFullBuild` says no.
+       */
+      readonly underground: readonly Float32Array[];
+    };
+
+/** One finished data cycle. */
+export interface UpdateResult {
+  readonly snapshot: DemoSnapshot;
+  readonly mesh: MeshUpdate;
+  /**
+   * Stages 6–7 and the worker's own wall clock.
+   *
+   * **Beside the snapshot rather than on it**, because `DemoPipeline.update`
+   * builds the snapshot before either stage has happened — the terrain join and
+   * the mesh build are the handler's work, not the pipeline's. Putting them on
+   * the snapshot would mean mutating it after the fact, and the point of the
+   * split is that each object records what its own producer measured.
+   */
+  readonly workerTimings: WorkerStageTimings;
+}
+
+export interface TerrainResult {
+  /**
+   * `undefined` when the ground stays FLAT — never a sea-level field.
+   *
+   * `HeightfieldData` rather than `Heightfield`: the latter exposes `heightAt` as
+   * a **method**, and structured clone drops methods silently, leaving an object
+   * that looks right until the first call. The main thread rebuilds the sampler
+   * with `heightfieldFrom`.
+   */
+  readonly field: HeightfieldData | undefined;
+  /** One phrase for the status line, never empty. */
+  readonly note: string;
+  /**
+   * The worker provider's own `sourceId` — e.g. `mapterhorn+terrarium`.
+   *
+   * ON THE RESULT, NOT A CONSTANT SHARED WITH THE PAGE, so the label the AR
+   * readout renders can only ever describe the provider that actually sampled
+   * this field: a constant imported on both sides would keep agreeing with
+   * itself after the worker's wiring changed. Composed, never per-sample —
+   * the `ElevationProvider` seam carries no per-position provenance (see
+   * `dem-provider.ts`).
+   */
+  readonly demSourceId: string;
+  /**
+   * Which source the field in this result came from, plus how the race has
+   * been going — a snapshot of the provider's `stats`, taken when this result
+   * was built.
+   *
+   * CHANGED WITH THE RACE (2026-08-19). This used to be three position counts
+   * — primary-answered, fallback-answered, unanswered — and the HUD rendered
+   * the primary's share of them. That share was only meaningful because
+   * `fallbackProvider` guaranteed the two sources answered DISJOINT positions;
+   * under a race both answer every position, so the ratio stops partitioning
+   * anything and the percentage becomes arithmetically undefined rather than
+   * merely stale. `servedBy` names the source the current field came from,
+   * which is what stays true and is what a reader actually wants.
+   *
+   * Optional so a worker (or test fake) that predates the stats keeps its
+   * behaviour — the HUD falls back to the composed id alone.
+   */
+  readonly demStats?: RacingProviderStats;
+  /**
+   * Whether a better DEM answer is still in flight for this field.
+   *
+   * THE TRIGGER FOR `terrainUpgrade`, and without it the race is a silent
+   * no-op: the loser lands after this reply is sent, and nothing else would
+   * ever tell the page to ask. Absent or `false` means the published heights
+   * are already the best available and no follow-up call is needed.
+   */
+  readonly upgradePending?: boolean;
+  /**
+   * Posts in this field holding an INVENTED height — the mean of whatever
+   * answered in their batch — rather than a measured one.
+   *
+   * REPORTED BUT NOT YET SHOWN ANYWHERE, and that is deliberate rather than an
+   * oversight. Nothing distinguished an invented post from a measured one in
+   * the data or in any readout, which is how a permanent wrong height could sit
+   * unnoticed; carrying the count across the boundary is what makes it
+   * observable at all. Putting it on screen is a separate decision, and the
+   * twelfth testing session asked for LESS diagnostic text rather than more —
+   * so the surface is filed rather than assumed.
+   */
+  readonly meanFilledPosts?: number;
+  /**
+   * Whether this field arrived too late for the mesh already on screen (F1d).
+   *
+   * **A WORKER DECISION CARRIED ON THE REPLY, not a fact the page could
+   * derive.** Two of its three inputs — the terrain stamp, and what the
+   * standing mesh was built against — are worker module state that nothing
+   * else crosses the boundary. A page-side copy of them would be a second
+   * source of truth for "what is the geometry standing on", which is the
+   * divergence `worker/terrain-gate.ts` exists to prevent.
+   *
+   * **It rides this reply rather than a push**, because the protocol is
+   * strictly request/reply keyed on `id` (`isWorkerReply` rejects anything
+   * without one), and a new envelope type is real surface to add for a
+   * boolean that already has a message going the right way.
+   *
+   * `true` means "please refresh"; the page still declines while a refresh is
+   * in flight. See `worker/terrain-arrival.ts` for why the decision is biased
+   * so heavily towards staying quiet — a spurious `true` aborts a live 15–90 s
+   * Overpass fetch, which is worse than the stall it was written to fix.
+   *
+   * Optional so a fake worker in a test that predates it keeps its behaviour.
+   */
+  readonly meshOutdated?: boolean;
+  /**
+   * Where the window was sampled, in the scene's frame — **reported even when
+   * `field` is `undefined`.**
+   *
+   * A failed load still has to say WHERE it was asked to look. The ground plane
+   * follows this centre, and the plane is finite: it reaches `TERRAIN_EXTENT_M`
+   * and stops. Leaving it where it was during an outage means a user who walks
+   * past that ends up off the edge of it with no ground beneath them — and the
+   * 5 km re-anchor threshold puts that well inside one anchor. Raised in review
+   * on #269, where the code returned early instead: that fixed the appearance
+   * (moving a flat plane is invisible) and missed the coverage.
+   */
+  readonly centreEnu: { readonly x: number; readonly y: number };
+}
+
+/** Payload shape per request kind, and the result each one produces. */
+export interface WorkerCalls {
+  readonly init: {
+    readonly request: Record<string, never>;
+    readonly result: InitResult;
+  };
+  readonly update: {
+    readonly request: {
+      readonly position: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored.
+       *
+       * **SEPARATE FROM `position`, and that separation is the point.** The
+       * frame used to be derived from `position` on every publish, so every
+       * vertex in the scene moved whenever the user did — which no AR content
+       * can live with, because the framework's own origin is set once per
+       * session and never again.
+       *
+       * `position` still says where the user is and therefore what to fetch and
+       * what to clip to; this says what the coordinates MEAN. Conflating them
+       * is the defect. See `scene-anchor.ts`.
+       *
+       * Omitted falls back to `position`, so a caller that has not adopted an
+       * anchor yet behaves exactly as before.
+       */
+      readonly frameOrigin?: LatLng;
+      /**
+       * The datum this mesh must be built against — the geoid undulation for
+       * AR, omitted for the desktop view.
+       *
+       * **NOT a duplicate of `terrain`'s field of the same name; it is the
+       * REQUEST side of the same fact** (2026-08-14). The terrain call says
+       * "sample a field with this datum"; this says "do not build until the
+       * held field HAS it". Without it the mesh build cannot tell an AR field
+       * from a desktop one, and since AR entry does not move the user, the
+       * gate saw an unchanged position and let the build proceed on ground
+       * measured from a different zero — ~99 m out at Cologne.
+       *
+       * Omitted behaves exactly as before, so a caller that has not adopted AR
+       * is unaffected.
+       */
+      readonly geoidUndulationM?: number;
+      readonly category: string;
+      /**
+       * Rings of chunks to score (W16). Omitted means the first pass's radius.
+       *
+       * The progressive path is repeated `update` calls with a growing radius
+       * rather than one call that streams — the RPC is request/response, and a
+       * streaming reply would need a second channel plus its own ordering and
+       * abort semantics. Repeated calls get all of that from `latestOnly` for
+       * free, and a superseded ring is simply a call that never happens.
+       */
+      readonly radius?: number;
+      /**
+       * Whether the cell array travels back (round 10, stage B).
+       *
+       * Omitted means yes, so nothing that does not opt out changes. The demo
+       * passes `false` whenever the `cells` layer is off -- the default -- and
+       * the page then reads `observedMax`, `aboveThresholdCount` and
+       * `cellCount` instead of deriving them
+       * from ~24 000 cells it does not draw.
+       */
+      readonly includeCells?: boolean;
+      /**
+       * Whether the underground outlines are built and transferred.
+       *
+       * Omitted means NO, unlike `includeCells` — this layer has never been on
+       * by default, so nothing existing expects the data.
+       */
+      readonly includeUnderground?: boolean;
+      /**
+       * Epoch ms at which the page POSTED this call — `nowEpochMs()`.
+       *
+       * The one field in this protocol that exists to be compared across the
+       * boundary. The handler subtracts it from its own `nowEpochMs()` to get
+       * the queue wait, which is otherwise invisible: it is neither in the
+       * worker's own clock nor separable from the clone on the page side.
+       */
+      readonly postedAtEpochMs?: number;
+    };
+    readonly result: UpdateResult;
+  };
+  /**
+   * The affordance grid's buffers (W8, R4-13).
+   *
+   * WHY THIS IS A CALL RATHER THAN PART OF `update`. The grid depends on
+   * presentation state — the category, the threshold, the heat scale and the
+   * below-threshold switch — and three of those change with NO new snapshot
+   * behind them. Folding it into `update` would make a checkbox trigger a
+   * refetch; a call of its own makes it exactly as expensive as it needs to be.
+   *
+   * WHY IT MOVED OFF THE MAIN THREAD AT ALL. `buildCellMesh` calls
+   * `cellToBoundary` once per drawn cell — an H3 library call, thousands of
+   * times, on the thread that also has to stay responsive — and then fills three
+   * typed arrays. It is pure arithmetic over cell ids and the output is
+   * transferable, so it is the one piece of R4-13's "could this happen in the
+   * background" that genuinely could.
+   *
+   * The CELLS come with the request rather than being read from the worker's own
+   * scoring state, and that is deliberate: the demo draws the snapshot it holds,
+   * and a grid built from whatever the worker happened to score last would be a
+   * second source of truth for what is on screen.
+   */
+  readonly cellMesh: {
+    readonly request: {
+      readonly cells: readonly {
+        readonly cell: string;
+        readonly score: number;
+      }[];
+      readonly centre: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored.
+       *
+       * The grid is the fourth thing built through `meshOptions`, and it was
+       * missed when the frame was fixed — so the cell overlay stayed anchored on
+       * the user while the buildings underneath it moved to the scene's anchor.
+       * Optional and falling back to `centre`, exactly as the `update` and
+       * `terrain` requests are.
+       */
+      readonly frameOrigin?: LatLng;
+      readonly threshold: number;
+      readonly scale: { readonly threshold: number; readonly max: number };
+      readonly showBelowThreshold: boolean;
+      /**
+       * The look preset’s two geometry axes (§3, DEC-R6-9).
+       *
+       * Only the two that change the VERTEX BUFFERS cross the boundary.
+       * Opacity, fog and the lift are material and transform settings the view
+       * applies on its own, and sending them here would make every cosmetic
+       * keypress wait on a worker republish.
+       */
+      readonly extrude?: boolean;
+      readonly heightByScore?: boolean;
+    };
+    readonly result: TransferableCellMesh;
+  };
+  readonly explain: {
+    readonly request: { readonly cell: string; readonly category: string };
+    /** `undefined` when the cell is not in the current snapshot. */
+    readonly result: CellExplanation | undefined;
+  };
+  /**
+   * The geo-event for a moment and a place (round 9).
+   *
+   * IT RUNS IN THE WORKER, and it has to: the index is private inside
+   * DemoPipeline inside the worker, the climb reads it through SYNCHRONOUS
+   * callbacks that cannot cross a structured clone, and the ensure step needs
+   * the same fetch machinery updates use. Only the finished result crosses.
+   */
+  readonly geoEvent: {
+    readonly request: {
+      readonly position: LatLng;
+      readonly category: string;
+      /**
+       * Epoch ms. Passed in so a test can pin a quarter-hour — and, since W6,
+       * so the user can: the picker sends the instant it was given rather than
+       * "now".
+       */
+      readonly now: number;
+      /**
+       * The C#'s handover window, in minutes. Defaults to the production five.
+       *
+       * **THE PICKER SENDS ZERO, and that is the whole reason this crosses the
+       * boundary.** The overlap models "I am arriving now, do not send me to a
+       * spawn that is about to move", so it is applied BEFORE the rounding —
+       * which means asking for exactly 18:00 resolves to 18:15. That is right
+       * for a live search and wrong for an explicit pick, where "show me 18:00"
+       * is a request for that slot. Without this the dialog would answer every
+       * question with the quarter after the one asked.
+       */
+      readonly overlapMinutes?: number;
+    };
+    /**
+     * The event AND what finding it cost (W7).
+     *
+     * A PAIR RATHER THAN JUST THE EVENT, because the cost is only observable
+     * here: the counters live on the index and the phase timings on the pipeline,
+     * both private inside the worker. Returning them is what makes DEC-G7's
+     * "benchmark first" possible without a second RPC that would measure a
+     * different search.
+     */
+    readonly result: {
+      readonly event: GeoEvent;
+      readonly stats: GeoEventStats;
+    };
+  };
+  /**
+   * A walkable route between two positions (stage 4, DEC-R11-16).
+   *
+   * IT RUNS IN THE WORKER, and it has to, for the same reason `geoEvent` does
+   * one line up. `ObstacleIndex` exposes `obstaclesIn` as a **method** and holds
+   * `Map`s, so it cannot be structured-cloned — the same trap this file's header
+   * describes for `Heightfield.heightAt`. The index therefore cannot cross, and
+   * the route is computed on the side that holds it. A click is a round trip.
+   *
+   * **AND IT RUNS SYNCHRONOUSLY.** `findStatePath` is a plain loop and a worker
+   * handles one message at a time, so a route request delays the next `update`
+   * — i.e. the publish. `agent-route.ts`'s expansion cap is therefore a
+   * publish-latency bound as well as a freeze bound, which is an argument for
+   * keeping it rather than raising it when a route turns out to be too long.
+   * For the same reason an `abort` cannot preempt one: the search never yields
+   * to check the signal, so a second click queues behind the first.
+   */
+  readonly planRoute: {
+    readonly request: {
+      /** Where the agent is standing now. */
+      readonly from: LatLng;
+      /** Where the user clicked. */
+      readonly to: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored — what the ground heights MEAN.
+       *
+       * REQUIRED, unlike the optional `frameOrigin` on the older calls. Those
+       * default to their own `position`/`centre` so a caller predating the fixed
+       * origin keeps its behaviour; nothing predates this one, and a route
+       * silently planned in a frame the scene is not drawn in would put the
+       * polyline somewhere the agent is not.
+       */
+      readonly frameOrigin: LatLng;
+    };
+    /**
+     * The route, or `undefined` when there is none.
+     *
+     * `undefined` deliberately merges "no route exists" with "the search hit its
+     * cap" — see `agent-route.ts`. A UI has nothing to do with the difference,
+     * and both mean "the agent is not going there".
+     */
+    readonly result: readonly RoutePoint[] | undefined;
+  };
+  readonly terrain: {
+    readonly request: {
+      /** Where the user is — what the sampled window is FOR. */
+      readonly centre: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored — what the heights MEAN.
+       *
+       * Optional, falling back to `centre`, so a caller that has not adopted an
+       * anchor keeps the pre-5B behaviour rather than silently getting a frame
+       * it did not ask for. `main.ts` always sends it.
+       */
+      readonly frameOrigin?: LatLng;
+      readonly extentM: number;
+      readonly spacingM: number;
+      /**
+       * Geoid undulation `N` at the frame origin, metres — AR mode only.
+       *
+       * **Present means "give me ABSOLUTE heights against the ellipsoid";
+       * absent means the desktop behaviour** (relief against the window
+       * centre). It is a plain number rather than a `GeoidModel` because a
+       * model is a function and functions do not survive a structured clone —
+       * the page samples it once at the origin and sends the value, which is
+       * uniform to ~5 cm across a city since `N` varies about 1 m per 100 km.
+       *
+       * See `terrain-field.ts`'s `absoluteDatum` for why AR cannot use the
+       * window-centre datum: the window follows the user, so that datum moves
+       * mid-session and takes the whole scene's Y baseline with it.
+       */
+      readonly geoidUndulationM?: number;
+    };
+    readonly result: TerrainResult;
+  };
+  /**
+   * "The better DEM has landed — apply it and tell me."
+   *
+   * WHY A SECOND RPC AND NOT A PUSH. The loser of the DEM race settles AFTER
+   * the `terrain` reply has already been sent, and there is no unsolicited
+   * worker→page channel to announce it on: the protocol is strictly
+   * request/reply keyed on `id` and {@link isWorkerReply} rejects anything
+   * without an `id`/`ok` pair. Adding a push envelope would be real protocol
+   * surface for one boolean. So the page ASKS, and it knows to ask because
+   * {@link TerrainResult.upgradePending} told it to.
+   *
+   * WHY NOT REUSE `terrain`. That call starts a fresh load and would cancel
+   * the very request whose result we are waiting for.
+   *
+   * The result is the same shape as `terrain`'s, so the page's existing
+   * handling — including the `meshOutdated` rebuild — is reused rather than
+   * duplicated. It resolves immediately when nothing is pending, so a
+   * speculative ask cannot hang.
+   */
+  readonly terrainUpgrade: {
+    readonly request: {
+      /** The window to re-describe once the upgrade has been applied. */
+      readonly centre: LatLng;
+      readonly frameOrigin?: LatLng;
+      readonly extentM: number;
+      readonly spacingM: number;
+      readonly geoidUndulationM?: number;
+    };
+    readonly result: TerrainResult;
+  };
+}
+
+/**
+ * The grid, as buffers.
+ *
+ * Structurally `CellMesh` minus nothing — it is re-declared here rather than
+ * imported so `protocol.ts` stays the single statement of what crosses the
+ * boundary, and so a field added to `CellMesh` that is NOT transferable fails
+ * here rather than at runtime.
+ */
+/* NOT exported: nothing outside this file names it — the demo side works in
+ * `CellMesh`, which this is the transferable statement of. Exporting it would be
+ * a second name for the same shape, and knip is right to say so. */
+interface TransferableCellMesh {
+  readonly cells: readonly string[];
+  readonly positions: Float32Array;
+  readonly colors: Float32Array;
+  /** Per-vertex normals carrying the faked rim bevel (DEC-S2). */
+  readonly normals: Float32Array;
+  readonly indices: Uint32Array;
+  readonly cellForTriangle: readonly string[];
+  readonly linePositions: Float32Array;
+  readonly lineColors: Float32Array;
+}
+
+export type WorkerCallKind = keyof WorkerCalls;
+
+/** What the main thread posts. `abort` carries the id it is cancelling. */
+export type WorkerEnvelope =
+  | {
+      readonly id: number;
+      readonly kind: WorkerCallKind;
+      readonly payload: unknown;
+    }
+  | { readonly id: number; readonly kind: "abort"; readonly target: number };
+
+/**
+ * What the worker posts back.
+ *
+ * Deliberately a discriminated result rather than a thrown error: an exception
+ * inside a worker does not reject anything on the main thread, so a failure that
+ * is not turned into a message is a promise that never settles. A hung demo is
+ * strictly worse than a reported failure, and it is the default outcome if this
+ * shape is not respected.
+ */
+export type WorkerReply =
+  | { readonly id: number; readonly ok: true; readonly value: unknown }
+  | { readonly id: number; readonly ok: false; readonly message: string };
+
+/** True for a value shaped like a reply. Guards the `message` event. */
+export function isWorkerReply(value: unknown): value is WorkerReply {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<WorkerReply>;
+  if (typeof candidate.id !== "number") return false;
+  return typeof candidate.ok === "boolean";
+}
+
+/** Every kind the worker accepts, as a runtime-checkable set. */
+const CALL_KINDS = new Set<string>([
+  "init",
+  "update",
+  "explain",
+  "geoEvent",
+  "terrain",
+  "cellMesh",
+  "planRoute",
+] satisfies WorkerCallKind[]);
+
+/**
+ * True for a value shaped like a request. Guards the worker's `message` event.
+ *
+ * The `satisfies` above is what keeps this honest: adding a kind to
+ * {@link WorkerCalls} without adding it here would be a request the worker
+ * silently ignores — a promise that never settles rather than a type error — so
+ * the set is checked against the union at compile time.
+ */
+export function isWorkerEnvelope(value: unknown): value is WorkerEnvelope {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<WorkerEnvelope & { target: unknown }>;
+  if (typeof candidate.id !== "number") return false;
+  if (typeof candidate.kind !== "string") return false;
+  if (candidate.kind === "abort") return typeof candidate.target === "number";
+  return CALL_KINDS.has(candidate.kind);
+}

@@ -15,7 +15,7 @@ when to commit the new pose using a configurable mode flag.
 
 See the alignment-frame bug doc for why the inverse is required and how
 the regression was found:
-[2026-05-31-gps-anchor-alignment-frame-bug.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
+[2026-05-31-gps-anchor-alignment-frame-bug.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
 
 This is the JS port of the C# `GpsAnchor` / `GpsAnchorForNonEcsGos`
 sibling pair, merged into one component because in the JS scene-graph
@@ -23,7 +23,7 @@ world they only differ by the steady-state commit policy.
 
 For the design rationale, state machine, threshold formulas, and
 parenting rules see the dedicated port plan:
-[2026-05-13-gps-anchor-port-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md).
+[2026-05-13-gps-anchor-port-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md).
 
 ## Status
 
@@ -31,10 +31,12 @@ This file currently implements **sub-steps 2 (bootstrap phase),
 3 (steady-state `'snap-every-tick'` + distance-scaled threshold gate),
 4 (`'snap-when-offscreen'` mode gate, with a one-time initial-placement
 exemption for `skipBootstrap` anchors), and 5 (re-bootstrap on external
-move)** of the port plan. Floor-Y correction (sub-step 6) is deferred
-until the depth raycaster (Item 6 in the C# survey) lands; the
-`floorY?: () => number | null` constructor seam is reserved but not yet
-consulted.
+move)** of the port plan. Floor-Y correction (sub-step 6) is not
+implemented. The `floorY`, `angleThresholdInDegrees` and
+`heightAboveGround` options that used to be accepted for it were never read
+and were removed 2026-09-04 (simplify loop; a MAJOR by semver, shipped in 1.24.0 - a MINOR by
+owner decision, in lock-step with `gps-plus-slam-js` 1.24.0): an accepted-but-ignored option is a promise the code does not
+keep, and no consumer passed any of the three.
 
 ## Public API
 
@@ -45,11 +47,15 @@ consulted.
 - `interface GpsAnchorOptions` — required: `object3D`, `arWorldGroup`,
   `camera`, `gpsPoint`, `getAlignmentMatrix`, `getGpsZeroRef`,
   `getCurrentGpsPoint`. Optional: `skipBootstrap`, `onBootstrapComplete`,
-  `mode`, `floorY`,
-  `distanceThreshold` (default 2 m), `angleThresholdInDegrees`
-  (default 15°), `targetPosRefreshRateInSec` (default 3 s),
+  `mode`,
+  `distanceThreshold` (default 2 m),
   `secondsToAccumulateGpsPose` (default 7 samples at 1 Hz),
-  `settlingSeconds` (default 0), `heightAboveGround`.
+  `settlingSeconds` (default 0).
+  (The declared-but-never-wired `targetPosRefreshRateInSec` option was
+  removed 2026-07-10, quality-review E-3 — the steady-state target is now
+  cached on the `(zeroRef, alignmentMatrix, gpsPoint)` reference identities,
+  so the geo trig + inversion run only when an input actually changes,
+  with no refresh timer needed.)
 - `createGpsAnchor(options) → GpsAnchor` — the factory.
 - `interface GpsAnchor` — `phase`, `isFullyAnchored`, `gpsPoint`,
   `markMovedExternally()`, `setGpsPoint(point)`, `dispose()`.
@@ -109,7 +115,7 @@ object as an `@internal` testing seam in lieu of pumping the global
   (instantly). A previous per-anchor lerp (`lerpCorrections` /
   `correctionLerpRate`, D1′) was removed once alignment was lerped at
   `arWorldGroup` — see
-  `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-05-gps-anchor-frame-architecture-bug-and-plan.md`.
+  `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-05-0650-gps-anchor-frame-architecture-bug-and-plan.md`.
 - **`snap-when-offscreen` corrections fire only off-screen — except the first
   placement**: a correction is suppressed while the object is inside the camera
   frustum, so the user never sees a jump. The lone exception is the **one-time
@@ -123,7 +129,7 @@ object as an `@internal` testing seam in lieu of pumping the global
   that the whole frame rides one lerped `arWorldGroup.matrix`, a large jump is
   absorbed smoothly for the entire view, so a per-anchor on-screen snap only
   manufactured the AnchorStarter cache-hit hard-jump — see
-  `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-anchor-starter-cachehit-jump-investigation.md`.
+  `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md`.
 
 ## Examples
 
@@ -203,12 +209,12 @@ See [gps-anchor.test.ts](gps-anchor.test.ts). Coverage:
 
 ## Related docs
 
-- [port plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
+- [port plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
   full design, sub-step list, test matrix.
 - [`frustum-visibility.ts`](frustum-visibility.ts.md) — supplies
   `isObjectInCameraFrustum` for the upcoming `'snap-when-offscreen'`
   steady state.
 - [`ar/frame-loop.ts`](../ar/frame-loop.ts.md) — the registry the
   anchor self-registers with.
-- [`sync-gps-anchored-meshes.ts`](../../../../GpsPlusSlamJs_RecorderApp/src/visualization/sync-gps-anchored-meshes.ts.md) —
+- [`sync-gps-anchored-meshes.ts`](../../../GpsPlusSlamJs_RecorderApp/src/visualization/sync-gps-anchored-meshes.ts.md) —
   the bulk counterpart for many-spheres-one-geometry use cases.

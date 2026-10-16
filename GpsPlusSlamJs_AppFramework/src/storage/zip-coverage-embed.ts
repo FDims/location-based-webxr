@@ -8,28 +8,27 @@
  * indexes instantly on every future open in this app *and any other reader*
  * (the portability the user asked for; O3 — in-zip rewrite).
  *
- * It is a pure transform `(zip, cells, resolution) -> zip`: it reads every entry
- * and re-emits a new zip identical to the input except that `session.json` gains
- * `h3Cells` + `h3Resolution`. It never mutates anything in place — the caller
- * (the RecorderApp backfill) owns the safe write-then-verify-then-overwrite
- * protocol around it.
+ * It is a pure transform `(zip, cells, resolution) -> zip`: it reads
+ * `session.json`, decides whether there is anything to do, and re-emits the
+ * archive through `rebuildZipWithEntries` (the package's ONE re-emit loop,
+ * DEC-H3 — this module used to carry its own copy). It never mutates
+ * anything in place — the caller (the RecorderApp backfill) owns the safe
+ * write-then-verify-then-overwrite protocol around it — and it keeps its
+ * skip-and-return-input semantics on top of the rebuild's throw: a backfill
+ * over many recordings wants "left untouched", not an exception per file.
  *
  * @see ./zip-coverage-embed.ts.md
- * @see GpsPlusSlamJs_Docs/docs/2026-06-14-followup-progressive-map-browser-indexing-and-backfill.md (B3)
+ * @see GpsPlusSlamJs_Docs/docs/2026-06-14-1924-progressive-map-browser-indexing-and-backfill-followup.md (B3)
  */
 
 import {
   BlobReader,
-  BlobWriter,
-  TextReader,
   TextWriter,
-  Uint8ArrayReader,
-  Uint8ArrayWriter,
   ZipReader,
-  ZipWriter,
   type FileEntry,
 } from '@zip.js/zip.js';
 import { createLogger } from '../utils/logger';
+import { rebuildZipWithEntries } from './zip-rebuild.js';
 
 const log = createLogger('ZipCoverageEmbed');
 
@@ -47,15 +46,16 @@ const log = createLogger('ZipCoverageEmbed');
  * it never emits a partial zip. Callers can detect a skip via reference
  * equality (`result === zip`).
  *
- * Built on `@zip.js/zip.js` (the same library as the exporter) in store mode, so
- * every non-`session.json` entry is re-emitted with byte-identical uncompressed
- * content.
+ * Built on `rebuildZipWithEntries` (store mode), so every non-`session.json`
+ * entry is re-emitted with byte-identical uncompressed content.
  */
 export async function embedCoverageInSessionJson(
   zip: Blob,
   h3Cells: string[],
   h3Resolution: number
 ): Promise<Blob> {
+  let sessionName: string;
+  let session: Record<string, unknown>;
   const reader = new ZipReader(new BlobReader(zip));
   try {
     const entries = await reader.getEntries();
@@ -66,44 +66,37 @@ export async function embedCoverageInSessionJson(
       log.warn('No session.json found; leaving zip untouched');
       return zip;
     }
-
-    let session: Record<string, unknown>;
+    sessionName = sessionEntry.filename;
     try {
-      const text = await sessionEntry.getData(new TextWriter());
-      session = JSON.parse(text) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(
+        await sessionEntry.getData(new TextWriter())
+      );
+      // `JSON.parse` succeeds on `null`, `3` and `"text"`, and this
+      // function promises to return the input untouched on ANY unexpected
+      // read - a backfill over many recordings wants that rather than an
+      // exception per file. Reading `.h3Cells` off a non-object threw
+      // from outside every `try` here, so one odd recording aborted the
+      // whole backfill (PR #444 review).
+      //
+      // Merging into a non-object would also be destructive: the spread
+      // would produce a fresh object and overwrite whatever the file
+      // actually held.
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        // Arrays included, and a test of this caught that they were not:
+        // `typeof [] === 'object'`, so an array passed the first check and
+        // then `{ ...[1, 2], h3Cells }` produced `{ 0: 1, 1: 2, ... }` -
+        // a rewritten file, which is the destructive half of this bug
+        // rather than the throwing half.
+        log.warn('session.json is not an object; leaving zip untouched');
+        return zip;
+      }
+      session = parsed as Record<string, unknown>;
     } catch (err) {
       log.warn('session.json unparseable; leaving zip untouched', err);
-      return zip;
-    }
-
-    // Idempotent: a zip that already carries coverage is returned unchanged.
-    if (session.h3Cells !== undefined) {
-      return zip;
-    }
-
-    const merged = { ...session, h3Cells, h3Resolution };
-    const writer = new ZipWriter(new BlobWriter('application/zip'), {
-      level: 0,
-    });
-    try {
-      for (const entry of entries) {
-        if (entry.directory || !entry.getData) {
-          continue;
-        }
-        if (entry === sessionEntry) {
-          await writer.add(
-            entry.filename,
-            new TextReader(JSON.stringify(merged))
-          );
-        } else {
-          const bytes = await entry.getData(new Uint8ArrayWriter());
-          await writer.add(entry.filename, new Uint8ArrayReader(bytes));
-        }
-      }
-      return await writer.close();
-    } catch (err) {
-      // Never leave a partial: abandon the half-built zip, keep the original.
-      log.warn('Failed to re-emit zip; leaving original untouched', err);
       return zip;
     }
   } catch (err) {
@@ -111,5 +104,21 @@ export async function embedCoverageInSessionJson(
     return zip;
   } finally {
     await reader.close();
+  }
+
+  // Idempotent: a zip that already carries coverage is returned unchanged.
+  if (session.h3Cells !== undefined) {
+    return zip;
+  }
+
+  const merged = { ...session, h3Cells, h3Resolution };
+  try {
+    return await rebuildZipWithEntries(zip, [
+      { path: sessionName, data: JSON.stringify(merged) },
+    ]);
+  } catch (err) {
+    // Never leave a partial: the rebuild abandoned its output, keep the original.
+    log.warn('Failed to re-emit zip; leaving original untouched', err);
+    return zip;
   }
 }

@@ -3,7 +3,7 @@
 ## Purpose
 
 Phase A of the tracking-quality / GPS↔SLAM convergence reporter described in
-[docs/2026-05-16-tracking-quality-metrics-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md).
+[docs/2026-05-16-tracking-quality-metrics-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md).
 Computes a single `TrackingQualityReport` from already-public Redux state
 (`gpsData`, `tracking`, `recording`) plus a small auxiliary slice
 (`trackingQuality`) that buffers the last N alignment matrices.
@@ -88,15 +88,27 @@ receive — copies are taken before sorting or sliding-window operations.
   `reportUpdated` (and re-render the HUD) at frame rate. The gate compares
   against the last _dispatched_ report, so slow real drift still triggers an
   update once it crosses a tolerance — it cannot accumulate indefinitely.
+- **Pose-action phase gate (quality-review E-1, 2026-07-10):** on
+  `tracking/poseReceived`/`poseLost` the listener skips the whole O(history)
+  recompute (incl. `computeCoverage`'s walk + sort) when the tracking phase
+  is unchanged since the last pose-action recompute AND a report already
+  exists — the phase is the only report input pose actions carry. Phase
+  transitions and the first pose after a reset always recompute (pinned by
+  tests). This also makes the §4.8 holdoff genuinely per-observation (below).
 - Reset triggers (`recording/startSession`, `tracking/resetTracking`) clear
   both the matrix buffer, the cached report, and the `degradedConsecutiveCount`.
 - §4.8 hysteresis: the `ok → degraded` transition is held off for
   `degradedHoldoff` (default 3) consecutive sub-threshold observations.
   `degraded → ok` is immediate. `ar-lost` bypasses holdoff entirely.
+  (Before E-1 the counter actually advanced per FRAME, collapsing the
+  holdoff to ~50 ms; the pose-action phase gate restored the documented
+  per-observation cadence.)
 - §4.8b EMA-smoothed convergence (Finding 4): the convergence sub-score
   reported by `computeTrackingQualityReport` is blended with the previously
   persisted `smoothedConvergence` using `α = convergenceEmaAlpha`
-  (default `0.3`). On the first observation (`smoothedConvergence === null`)
+  (default `0.25` — re-tuned from `0.3` with E-1, since the EMA now advances
+  per observation instead of per frame; the F4 indoor-corpus range < 0.2
+  acceptance still holds). On the first observation (`smoothedConvergence === null`)
   the filter is seeded with the raw value. The listener middleware
   dispatches `smoothedConvergenceUpdated` after every aggregator pass so
   the next pass can blend against the latest value. `α = 1.0` disables
@@ -155,16 +167,26 @@ store.subscribe(() => {
 ## Tests
 
 - Co-located unit tests: [tracking-quality.test.ts](tracking-quality.test.ts) —
-  53 tests covering pure helpers, slice reducers, the aggregator
+  covering pure helpers, slice reducers, the aggregator
   state-machine, anti-validation cases from plan §6, the listener
   middleware contract, corpus-derived defaults regression (§11 (d)), and
   §4.8 hysteresis (§11 (f)).
+- Field-recording integration:
+  [tracking-quality.field-recordings.test.ts](tracking-quality.field-recordings.test.ts)
+  replays two real recorded sessions (outdoor walking, indoor stationary)
+  through a production-shaped store and asserts findings F1/F4/F6. It skips
+  gracefully when the gitignored recordings are absent. **Its threshold
+  assertions are derived from `DEFAULT_TRACKING_QUALITY_OPTIONS`, never
+  hardcoded** (`TRANSLATION_FAIL_M`, `ROTATION_FAIL_DEG` = warn × 4) — a
+  hardcoded literal there went stale once when the upstream alignment improved
+  and the fixture's measured value moved; see the
+  [F6 recalibration followup](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-27-2210-tracking-quality-f6-recalibration-followup.md).
 - Corpus sweep (Phase A (c)): exercised in the downstream analysis
   harness — 5 tests replaying the full recording corpus (§6.1 sweep,
   compass perturbation, anti-validation).
 
 ## Related docs
 
-- Plan: [2026-05-16-tracking-quality-metrics-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md)
-- Rotation conventions: [2026-04-08-rotation-convention-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-08-rotation-convention-plan.md)
+- Plan: [2026-05-16-tracking-quality-metrics-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md)
+- Rotation conventions: [2026-04-08-rotation-convention-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-08-rotation-convention-plan.md)
 - Tracking slice: [tracking-slice.ts.md](tracking-slice.ts.md)

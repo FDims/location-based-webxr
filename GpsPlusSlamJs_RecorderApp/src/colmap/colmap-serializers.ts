@@ -2,7 +2,7 @@
  * COLMAP `sparse/0/` Text Serializers
  *
  * Pure string builders for the three COLMAP model files (export plan Iter 2,
- * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-13-colmap-export-plan.md §5):
+ * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-13-1205-colmap-export-plan.md §5):
  *  - `cameras.txt` — one shared `PINHOLE` camera.
  *  - `images.txt`  — two lines per image: the world-to-camera pose, then an
  *    EMPTY keypoint line (we have no 2D feature detections — plan Q1/§2.2).
@@ -146,5 +146,8 @@ function fmtInt(n: number): string {
 
 /** Round + clamp a color channel to an integer 0–255. */
 function clampByte(n: number): number {
+  // Math.round(NaN) is NaN and min/max propagate it, so a non-finite channel
+  // used to reach the file as the text "NaN" (simplify loop, 2026-09-04).
+  if (!Number.isFinite(n)) return n > 0 ? 255 : 0;
   return Math.min(255, Math.max(0, Math.round(n)));
 }

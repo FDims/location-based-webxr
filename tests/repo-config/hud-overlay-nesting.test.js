@@ -15,7 +15,7 @@
 //
 // A new app added to this repo should be appended to APP_OVERLAY_CONTRACTS so
 // it inherits the same protection. See
-// GpsPlusSlamJs_Docs/docs/2026-06-05-cross-app-alignment-smoothing-hud-stacking-and-recorder-setup-ux-user-feedback.md
+// GpsPlusSlamJs_Docs/docs/2026-06-05-0534-cross-app-alignment-smoothing-hud-stacking-and-recorder-setup-ux-user-feedback.md
 // (Finding 3 / Decision D3) and the AppFramework README "DOM-Overlay / HUD
 // stacking convention".
 //
@@ -63,6 +63,24 @@ const APP_OVERLAY_CONTRACTS = [
     htmlPath: 'GpsPlusSlamJs_QrTrackingDemo/index.html',
     containerId: 'app',
     overlayIds: ['overlay'],
+  },
+  {
+    name: 'PhysicsDemo',
+    htmlPath: 'GpsPlusSlamJs_PhysicsDemo/index.html',
+    containerId: 'app',
+    overlayIds: ['overlay'],
+  },
+  {
+    name: 'WayfindingHudDemo',
+    htmlPath: 'GpsPlusSlamJs_WayfindingHudDemo/index.html',
+    containerId: 'app',
+    overlayIds: ['overlay'],
+  },
+  {
+    name: 'TourViewer',
+    htmlPath: 'GpsPlusSlamJs_TourViewer/index.html',
+    containerId: 'ar-root',
+    overlayIds: ['ar-status', 'enter-ar', 'setup-panel', 'scan-escape'],
   },
 ];
 
@@ -166,15 +184,45 @@ function appsMissingContracts(discovered, registered) {
  * single function name. The framework itself never imports its own package
  * name, so this also excludes it.
  */
+/**
+ * Does this source text actually IMPORT the framework?
+ *
+ * A bare `includes('gps-plus-slam-app-framework')` used to answer this, and it
+ * was wrong in the direction that costs the most: a file that merely NAMES the
+ * package — in a comment explaining why the package deliberately is not a
+ * dependency, which is exactly the comment someone writes — made its whole app
+ * look like an AR app and failed the coverage guard below with a message about
+ * a missing overlay contract. That happened for real on 2026-08-24.
+ *
+ * So the match is anchored to the syntax that constitutes a dependency:
+ * `from '…'`, a side-effect `import '…'`, a dynamic `import('…')`, or
+ * `require('…')` — with comments stripped first, because prose that QUOTES an
+ * import line would satisfy syntax anchoring alone, and with the specifier
+ * required to be the exact package name (optionally with a `/` subpath), so a
+ * lookalike package cannot classify its importer as an AR app.
+ */
+export function textImportsFramework(source) {
+  // Comments stripped first: the regex below is anchored to import SYNTAX,
+  // but prose that QUOTES an import line ("we deliberately don't import
+  // '…'") still satisfies it. Same approach as `ar-entry-wiring.test.ts` —
+  // "so a mention in prose cannot satisfy a guard".
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  // The specifier must be the exact package name, or the name plus a `/`
+  // subpath — a lookalike (`…-mock`, `not-…`) is a different dependency.
+  return /(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"]gps-plus-slam-app-framework(?:\/[^'"]*)?['"]/.test(
+    code,
+  );
+}
+
 function srcImportsFramework(appDir) {
   const srcDir = join(appDir, 'src');
   if (!existsSync(srcDir)) return false;
   return readdirSync(srcDir, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile() && /\.(ts|tsx|js|jsx|mts|cts)$/.test(e.name))
     .some((e) =>
-      readFileSync(join(e.parentPath, e.name), 'utf8').includes(
-        'gps-plus-slam-app-framework',
-      ),
+      textImportsFramework(readFileSync(join(e.parentPath, e.name), 'utf8')),
     );
 }
 
@@ -189,12 +237,37 @@ function srcImportsFramework(appDir) {
  * @param {string} root repo root
  * @returns {string[]}
  */
+/**
+ * Apps that import the framework but never start a WebXR session.
+ *
+ * The discovery signal above is "imports `gps-plus-slam-app-framework`", chosen
+ * because AR apps boot their session through several different entry points and
+ * matching the package name is more robust than matching one function name.
+ * That signal has one false positive: an app can import a framework subpath for
+ * something with no AR in it at all.
+ *
+ * `GpsPlusSlamJs_OsmDemo` is that case — it imports `.../osm-bridge` purely for
+ * the OPFS blob store, and its two views are a Leaflet map and a plain WebGL
+ * canvas. There is no `initAR`, no `domOverlay`, and therefore no nesting
+ * contract to state; inventing a container id so the guard passes would put a
+ * false claim in the registry.
+ *
+ * **Adding to this list is a deliberate assertion that an app has no DOM
+ * overlay.** It is kept tiny and explicit for that reason — the guard's whole
+ * value is that a real AR app cannot be added without noticing.
+ */
+// TourViewer left this list when M2 gave it a real initAR container — an app
+// must never sit in both registries, because this one permanently exempts it
+// from the coverage guard (PR #359 review).
+const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
+
 function discoverArAppHtmlPaths(root) {
   return readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .filter(
       (name) =>
+        !NON_AR_APPS.has(name) &&
         existsSync(join(root, name, 'index.html')) &&
         existsSync(join(root, name, 'package.json')) &&
         srcImportsFramework(join(root, name)),
@@ -236,11 +309,79 @@ describe('overlay-contract coverage guard', () => {
     });
   });
 
+  describe('textImportsFramework', () => {
+    // WHY THIS MATTERS: the discovery rule decides which apps the coverage
+    // guard demands an overlay contract from. Before 2026-08-24 it matched the
+    // package name anywhere in a file, so a COMMENT saying the package is
+    // deliberately not a dependency turned that app into an AR app and failed
+    // the guard with an unrelated message. Both directions are pinned here.
+    it('matches real import forms', () => {
+      for (const source of [
+        `import { x } from 'gps-plus-slam-app-framework/utils/escape-html';`,
+        `import "gps-plus-slam-app-framework";`,
+        `const m = await import('gps-plus-slam-app-framework/ar');`,
+        `const m = require("gps-plus-slam-app-framework");`,
+      ]) {
+        expect(textImportsFramework(source)).toBe(true);
+      }
+    });
+
+    it('does not match the package name in prose', () => {
+      expect(
+        textImportsFramework(
+          '// Landing does not depend on gps-plus-slam-app-framework, and\n' +
+            '// adding that edge to a marketing site is the worse trade.',
+        ),
+      ).toBe(false);
+    });
+
+    it('does not match an import QUOTED inside a comment', () => {
+      // The 2026-08-24 incident's other shape: prose that quotes the import
+      // line satisfies a regex anchored to import syntax. Comments are
+      // stripped before matching — the idiom `ar-entry-wiring.test.ts` uses
+      // "so a mention in prose cannot satisfy a guard". Found by claude[bot]
+      // review on PR #351.
+      for (const source of [
+        `// we deliberately don't import "gps-plus-slam-app-framework" here`,
+        `// the alternative was import('gps-plus-slam-app-framework/utils/escape-html')`,
+        `/* import { x } from 'gps-plus-slam-app-framework'; */`,
+      ]) {
+        expect(textImportsFramework(source)).toBe(false);
+      }
+    });
+
+    it('does not match a package whose name merely contains the framework name', () => {
+      // `[^'"]*` matched any specifier CONTAINING the name, so a lookalike
+      // package classified its importer as an AR app. Only the exact name, or
+      // the exact name plus a `/` subpath, is a framework dependency.
+      for (const source of [
+        `import 'gps-plus-slam-app-framework-mock';`,
+        `import { y } from "not-gps-plus-slam-app-framework";`,
+      ]) {
+        expect(textImportsFramework(source)).toBe(false);
+      }
+    });
+  });
+
   it('discovers the known AR apps (so the guard is not vacuous)', () => {
     const discovered = discoverArAppHtmlPaths(repoRoot);
     expect(discovered).toContain('GpsPlusSlamJs_QrTrackingDemo/index.html');
     expect(discovered).toContain('GpsPlusSlamJs_RecorderApp/index.html');
     expect(discovered.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('excludes apps that import the framework WITHOUT starting a session', () => {
+    // The OSM demo imports `.../osm-bridge` for the OPFS blob store and shows a
+    // Leaflet map plus a plain WebGL canvas — no initAR, no domOverlay, so no
+    // nesting contract exists to state. Registering a contrived container id
+    // would put a false claim in the registry; excluding it explicitly says the
+    // true thing. This test exists so the exclusion cannot rot into a hole:
+    // if the demo ever DOES start an AR session, this is where to look.
+    const discovered = discoverArAppHtmlPaths(repoRoot);
+    expect(discovered).not.toContain('GpsPlusSlamJs_OsmDemo/index.html');
+    expect(existsSync(join(repoRoot, 'GpsPlusSlamJs_OsmDemo/index.html'))).toBe(
+      true,
+    );
   });
 
   it('every AR app (workspace pkg + index.html + framework import) has an overlay contract', () => {

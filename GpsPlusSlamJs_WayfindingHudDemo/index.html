@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>gps-plus-slam — wayfinding HUD demo</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - which is why there are so few of them.
+    -->
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      /* What stays app-owned: the page ground (the camera feed in AR, a
+         near-black stand-in before it), the AR / simulator mount, the
+         overlay's stacking, and three behavioural rules: the sliders'
+         touch-action, the status text's line breaks (a formatting contract
+         of the status string) and the instruction list's indent (lists
+         have no atom - adoption plan §7). Everything visible is the design
+         system's - the atoms and the start / bottom compositions in
+         design.css (adoption plan M5). A rule that styles an element here
+         would win over the system silently, so none is added lightly. */
+      html,
+      body {
+        height: 100%;
+        background: #111;
+        overflow: hidden;
+      }
+      /* The simulator / AR scene mounts its canvas here. */
+      #app {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+      }
+      #overlay > * {
+        pointer-events: auto;
+      }
+      /* Range sliders in a panel that is swiped past on a phone: `pan-y` hands
+         vertical panning back to the page so a downward swipe scrolls (and the
+         browser cancels the slider gesture) instead of dragging the thumb. The
+         value itself is protected by the framework's slider-scroll-guard —
+         CSS cannot undo Blink's jump-to-position write on pointer-down. */
+      input[type="range"] {
+        touch-action: pan-y;
+      }
+      /* The status string carries its own line breaks. */
+      #hud-status {
+        white-space: pre-wrap;
+      }
+      #ar-instructions ol {
+        padding-left: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      #overlay is nested inside #app (the element the AR/simulator scene mounts
+      into) so it composites over the AR camera feed under the WebXR DOM Overlay
+      feature. See the AppFramework README "DOM-Overlay / HUD stacking".
+    -->
+    <div id="app">
+      <div id="overlay">
+        <!-- Mode entry screen: the .start-panel composition. -->
+        <section
+          id="mode-screen"
+          class="start-panel plate"
+          data-testid="mode-screen"
+        >
+          <h1>Wayfinding HUD demo</h1>
+          <p class="prose">
+            Edge arrows point at off-screen targets, rings mark on-screen ones,
+            and everything hides when you arrive — with a hysteresis deadband so
+            nothing flickers. On a phone this runs in AR with tap-to-place
+            waypoints; on the desktop you walk a simulated scene.
+          </p>
+          <button
+            id="start-ar-button"
+            class="btn btn--accent"
+            data-testid="start-ar-button"
+            hidden
+          >
+            Start AR
+          </button>
+          <p id="sim-note" class="hint" data-testid="sim-note">
+            Desktop simulator: <strong>W/A/S/D</strong> or arrow keys to walk,
+            <strong>drag</strong> to look around.
+          </p>
+          <p
+            id="capability-message"
+            class="prose"
+            data-tone="warn"
+            data-testid="capability-message"
+            hidden
+          ></p>
+        </section>
+
+        <!-- HUD status + live controls: the .bottom-panel composition - the
+             status readout, three slider rows, the switch, the AR
+             instructions, the hint flash and a failure-toned error. -->
+        <section
+          id="hud-panel"
+          class="bottom-panel plate"
+          data-testid="hud-panel"
+          hidden
+        >
+          <pre id="hud-status" class="num" data-testid="hud-status"></pre>
+          <div id="hud-controls" class="col">
+            <label class="row">
+              <span class="hint">Hide below</span>
+              <input
+                id="distance-min"
+                class="slider"
+                data-testid="distance-min"
+                type="range"
+                min="0"
+                max="20"
+                step="0.5"
+              />
+              <output
+                id="distance-min-value"
+                class="num"
+                data-testid="distance-min-value"
+              ></output>
+            </label>
+            <label class="row">
+              <span class="hint">Show beyond</span>
+              <input
+                id="distance-max"
+                class="slider"
+                data-testid="distance-max"
+                type="range"
+                min="0"
+                max="30"
+                step="0.5"
+              />
+              <output
+                id="distance-max-value"
+                class="num"
+                data-testid="distance-max-value"
+              ></output>
+            </label>
+            <label class="row">
+              <span class="hint">Indicator size</span>
+              <input
+                id="indicator-scale"
+                class="slider"
+                data-testid="indicator-scale"
+                type="range"
+                min="0.2"
+                max="2"
+                step="0.1"
+              />
+              <output
+                id="indicator-scale-value"
+                class="num"
+                data-testid="indicator-scale-value"
+              ></output>
+            </label>
+            <label class="switch">
+              <input
+                id="image-indicators"
+                data-testid="image-indicators"
+                type="checkbox"
+              />
+              <span class="switch-track"></span>
+              Image indicators
+            </label>
+            <label class="switch">
+              <input
+                id="entrance-animation"
+                data-testid="entrance-animation"
+                type="checkbox"
+                checked
+                disabled
+              />
+              <span class="switch-track"></span>
+              Entrance animation
+            </label>
+          </div>
+          <div
+            id="ar-instructions"
+            class="hint"
+            data-testid="ar-instructions"
+            hidden
+          >
+            <ol>
+              <li>
+                Three example targets appeared around you — the edge arrow
+                points at the one behind you.
+              </li>
+              <li>Tap a surface to place your own waypoint.</li>
+              <li>
+                Walk 3+&nbsp;m away from a target — its on-screen ring and
+                distance label appear.
+              </li>
+              <li>
+                Walk back to a target until its ring disappears: you have
+                arrived.
+              </li>
+            </ol>
+          </div>
+          <p
+            id="ar-hint-flash"
+            class="hint"
+            data-testid="ar-hint-flash"
+            hidden
+          ></p>
+          <p
+            id="error"
+            class="prose"
+            data-tone="warn"
+            data-testid="error"
+            hidden
+          ></p>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

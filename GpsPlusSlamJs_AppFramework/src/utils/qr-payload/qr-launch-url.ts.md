@@ -8,7 +8,7 @@ Generates every strategy the 2026-07-05 payload benchmark validated, costs
 each with the oracle-locked [qr-size-estimator](qr-size-estimator.ts.md),
 and returns the sparsest (fewest QR bits at the chosen EC level; ties go
 to the more human-readable form). Results doc:
-`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-05-qr-payload-compression-benchmark-results.md`.
+`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-05-2027-qr-payload-compression-benchmark-results.md`.
 
 ## Public API
 
@@ -65,6 +65,16 @@ const svg = await QRCode.toString(plan.url, {
   errorCorrectionLevel: 'Q',
 });
 ```
+
+## extraQuery (QR-pose plan 2026-08-25)
+
+- `options.extraQuery` prints extra query params (e.g. the per-code
+  discriminator `{ c: '2' }`) into every candidate BEFORE size estimation,
+  so the estimate and the fits-a-QR guarantee hold for the printed string.
+  The all-caps `/S/` form cannot carry `&`/`=`/lowercase and is dropped
+  whenever extra params are present (an EMPTY extraQuery keeps it) — a
+  payload that only fits via /S/ therefore throws the fits-no-QR TypeError
+  the moment extras are used, by design.
 
 ## Tests
 

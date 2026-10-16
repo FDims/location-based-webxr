@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 import {
   installAnchorStarterFakes,
   bootAnchorStarter,
@@ -9,7 +9,7 @@ import {
  * Tier 1 placement-flow e2e for the persistent-anchor starter.
  *
  * Why this suite matters (see
- * GpsPlusSlamJs_Docs/docs/2026-06-01-anchor-starter-e2e-test-plan.md §6 Tier 1):
+ * GpsPlusSlamJs_Docs/docs/2026-06-01-0447-anchor-starter-e2e-test-plan.md §6 Tier 1):
  * Tier 0 can only prove the desktop capability gate. With the DEV seam faked
  * (real WebXR/GPS are absent in Playwright Chromium), these tests cover the
  * actual application flow a real user walks through: boot → onboarding
@@ -43,7 +43,6 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     // Nothing is saved yet, so the share/reload affordances stay hidden.
     await expect(page.getByTestId("copy-link-button")).toBeHidden();
-    await expect(page.getByTestId("reload-prompt")).toBeHidden();
     await expect(page.getByTestId("start-screen")).toBeHidden();
   });
 
@@ -55,7 +54,10 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     await expect(page.locator("#guidance-title")).toHaveText("Ready");
     await expect(page.locator("#guidance-percent")).toHaveText("100%");
-    await expect(page.locator("#guidance-bar-fill")).toHaveClass("tone-good");
+    await expect(page.locator("#guidance-bar")).toHaveAttribute(
+      "data-tone",
+      "good",
+    );
   });
 
   test("renders a warming-up tracking report as a progress phase", async ({
@@ -73,8 +75,9 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.locator("#guidance-title")).toHaveText("Move around");
     // warming-up percentReady = coverage * 0.6 → 60%.
     await expect(page.locator("#guidance-percent")).toHaveText("60%");
-    await expect(page.locator("#guidance-bar-fill")).toHaveClass(
-      "tone-progress",
+    await expect(page.locator("#guidance-bar")).toHaveAttribute(
+      "data-tone",
+      "progress",
     );
   });
 
@@ -82,12 +85,13 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     page,
   }) => {
     // Regression guard for the "guidance stuck on AR tracking lost" bug. The
-    // framework only forwards per-frame AR poses into the store when BOTH
-    // setTrackingStore AND setTrackingCallbacks are wired before initAR; drop
-    // either and tracking.phase never leaves `initializing`, pinning the
-    // onboarding guidance to "AR tracking lost" forever. The guidance e2e
-    // assertions above fake selectTrackingQuality directly, so they would NOT
-    // catch the missing wiring — this test observes the seam calls themselves.
+    // framework only forwards per-frame AR poses into the store when initAR
+    // receives its `callbacks.tracking` group (store + restart callback
+    // together, since the setter fold); drop the group and tracking.phase
+    // never leaves `initializing`, pinning the onboarding guidance to
+    // "AR tracking lost" forever. The guidance e2e assertions above fake
+    // selectTrackingQuality directly, so they would NOT catch the missing
+    // wiring — this test observes the initAR call the fake intercepts.
     await bootAnchorStarter(page);
 
     const wiring = await page.evaluate(() => ({
@@ -97,6 +101,52 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     expect(wiring.store).toBe(true);
     expect(wiring.callbacks).toBe(true);
+  });
+
+  test("a user-ended session fires the store teardown (recording closed)", async ({
+    page,
+  }) => {
+    // Why this test matters (PR #363/#364 reviews): THREE apps each shipped
+    // a different variant of the same missed DEC-H3 teardown wiring —
+    // AnchorStarter's was that only the start-FAILURE path tore down, so a
+    // session the user ends (back gesture, "Exit AR") left `isRecording`
+    // true and the dead session's odometry↔GPS pairs in the store, blending
+    // into the next entry's alignment solve. Reviewers caught all three by
+    // reading; this drives the REAL onSessionEnd callback the fake initAR
+    // captured, so a fourth variant fails a test instead of relying on luck.
+    // Division of proof, stated so nobody "strengthens" this into a trap:
+    // the framework's ar-session-teardown.test.ts proves the teardown drops
+    // the odometry↔GPS pairs against the real slices. No pair can land in
+    // THIS harness (`getCurrentArPose` is a direct framework import, not a
+    // seam, and there is no XR session), so this spec proves the app half —
+    // the callback is WIRED and actually fires the teardown — via the
+    // recording flag, which is the observable the wiring miss left stuck.
+    await bootAnchorStarter(page);
+
+    const before = await page.evaluate(
+      () =>
+        window.__anchorStarterTest.trackingStore?.getState().recording
+          .isRecording,
+    );
+    expect(before).toBe(true); // non-vacuous: a session is actually open
+
+    const after = await page.evaluate(() => {
+      const t = window.__anchorStarterTest;
+      t.fireSessionEnd?.({ reason: "user" });
+      return {
+        wired: typeof t.fireSessionEnd === "function",
+        isRecording: t.trackingStore?.getState().recording.isRecording,
+      };
+    });
+    expect(after.wired).toBe(true);
+    expect(after.isRecording).toBe(false);
+
+    // The DEVICE-and-DOM half (PR #366 review): the store-only teardown left
+    // the start screen hidden forever — a dead end with GPS polling still
+    // running. The rollback must restore the way back in.
+    await expect(page.getByTestId("start-screen")).toBeVisible();
+    await expect(page.getByTestId("start-button")).toBeEnabled();
+    await expect(page.getByTestId("placement")).toBeHidden();
   });
 
   test("saves the anchor and surfaces the share/reload affordances", async ({
@@ -115,7 +165,6 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
       "Saved into the page link",
     );
     await expect(page.getByTestId("copy-link-button")).toBeVisible();
-    await expect(page.getByTestId("reload-prompt")).toBeVisible();
   });
 
   test("writes the anchor into the ?show= URL param on place", async ({
@@ -172,6 +221,77 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
       scale: 1,
       rotationDeg: 0,
     });
+  });
+
+  test("starts the wayfinding HUD for the placed anchor (F2)", async ({
+    page,
+  }) => {
+    // Why this matters: the wayfinding HUD is the F2 "guide me to the anchor"
+    // feature. It must be wired for the freshly placed anchor with the
+    // camera, a target getter, and the distance deadband — dropping any of
+    // these silently disables the guidance on real devices.
+    await bootAnchorStarter(page);
+    await pushGpsFix(page, SAMPLE_FIX);
+
+    await page.getByTestId("place-button").click();
+    await expect(page.getByTestId("place-button")).toHaveText("Saved ✓");
+
+    const hudCalls = await page.evaluate(
+      () => window.__anchorStarterTest.wayfindingHudCalls,
+    );
+    expect(hudCalls.length).toBe(1);
+    expect(hudCalls[0]).toEqual({
+      hasCamera: true,
+      hasGetTargets: true,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+    });
+  });
+
+  test("starts the wayfinding HUD on the ?show= cache-hit boot (F2 user story)", async ({
+    page,
+  }) => {
+    // The F2 story: open a shared link and the HUD guides you to the anchor
+    // from afar. The cache-hit boot spawns the anchor from the URL — the HUD
+    // must ride along with the same deadband as the cache-miss path.
+    await bootAnchorStarter(page);
+    await pushGpsFix(page, SAMPLE_FIX);
+    await page.getByTestId("place-button").click();
+    await expect(page.getByTestId("place-button")).toHaveText("Saved ✓");
+
+    const savedUrl = page.url();
+    await page.goto(savedUrl); // addInitScript re-runs: hud calls reset
+    await page.getByTestId("start-button").click();
+    await expect(page.getByTestId("placement")).toBeVisible();
+    await expect(page.getByTestId("banner")).toContainText(
+      "Your saved anchor is shown",
+    );
+
+    const hudCalls = await page.evaluate(
+      () => window.__anchorStarterTest.wayfindingHudCalls,
+    );
+    expect(hudCalls.length).toBe(1);
+    expect(hudCalls[0].hasGetTargets).toBe(true);
+  });
+
+  test("does not start the wayfinding HUD when anchor creation fails", async ({
+    page,
+  }) => {
+    // The HUD belongs to a successfully spawned anchor; a failed placement
+    // must not leave a HUD polling a marker that was rolled back.
+    await bootAnchorStarter(page);
+    await pushGpsFix(page, SAMPLE_FIX);
+
+    await page.evaluate(() => {
+      window.__anchorStarterTest.failCreateAnchor = true;
+    });
+    await page.getByTestId("place-button").click();
+    await expect(page.getByTestId("error")).not.toBeEmpty();
+
+    const hudCalls = await page.evaluate(
+      () => window.__anchorStarterTest.wayfindingHudCalls,
+    );
+    expect(hudCalls.length).toBe(0);
   });
 
   test("blocks placement with the point-at-the-ground hint when no surface is under the reticle", async ({

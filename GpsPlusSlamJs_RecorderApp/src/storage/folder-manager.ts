@@ -5,11 +5,19 @@
  * OPFS scenario caching, extracted from main.ts (Finding #7 — main.ts
  * decomposition, Step 4).
  *
- * The factory pattern allows main.ts to inject dependencies that change
- * over the app lifecycle (replay mode state, ref point handlers, etc.).
+ * `FolderManagerDeps` injects exactly two kinds of dependency, and nothing
+ * else belongs in it:
+ *   1. State that changes over the app lifecycle and is owned elsewhere —
+ *      the live store, replay-mode state, the replay zip cache.
+ *   2. UI effects this storage module may not import: dependency-cruiser's
+ *      `no-storage-importing-ui` forbids storage → ui, so every status line,
+ *      toast and dropdown update arrives as a callback.
  *
- * All other dependencies (external-file-storage, session-browser, UI) are
- * imported directly — the same modules they were imported from in main.ts.
+ * Everything else is imported directly. In particular the folder/zip SCAN is
+ * a plain import (`recording-discovery`) — it used to arrive as three
+ * callbacks purely because that module was misfiled under `ui/`, which also
+ * forced a structural copy of `SessionEntry` here. Both are gone since the
+ * 2026-07-30 move; do not reintroduce a callback for something importable.
  */
 
 import {
@@ -33,12 +41,20 @@ import {
 import { indexRefPointDefinitionsFromFolder } from '../storage/ref-point-recovery';
 import { mergeSiblingRefPoints } from '../storage/ref-point-merge';
 import {
+  listScenariosFromFolder,
+  extractScenarioNamesFromZips,
+  discoverScenariosFromZipMetadata,
+  type SessionEntry,
+} from './recording-discovery';
+import {
   isH3Index,
   h3CellsMatch,
 } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
-import { setCurrentScenarioName } from '../state/recorder-store';
+import { setCurrentScenarioName } from '../state/scenario-slice';
 import { setImportedRefPointEntries } from '../state/ref-points-slice';
+import { loadAllMeasurementPoints } from '../storage/measurement-point-loader';
+import { hydrateMeasurementPoints } from '../state/measurement-points-slice';
 import type { RecorderStore } from '../state/recorder-store';
 
 const log = createLogger('FolderManager');
@@ -62,13 +78,6 @@ function isCellCovered(id: string, acceptedIds: readonly string[]): boolean {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** Structural equivalent of SessionEntry from ui/session-browser (avoids cross-layer import). */
-interface SessionEntryLike {
-  filename: string;
-  fileHandle: FileSystemFileHandle;
-  date: Date | null;
-}
 
 /**
  * Terminal outcome of the eager ref-point indexing pass started by a folder
@@ -96,7 +105,7 @@ export interface FolderManagerDeps {
   /** Check if the app is in replay mode (owned by replayHandlers). */
   getIsReplayMode: () => boolean;
   /** Cache zip→scenario mapping for replay (owned by replayHandlers). */
-  setReplayZipScenariosCache: (cache: Map<string, SessionEntryLike[]>) => void;
+  setReplayZipScenariosCache: (cache: Map<string, SessionEntry[]>) => void;
   /** Access the current store instance (may change between recordings). */
   getStore: () => RecorderStore;
   /** UI: show error toast/banner. */
@@ -105,8 +114,6 @@ export interface FolderManagerDeps {
   updateStatus: (msg: string) => void;
   /** UI: populate scenario dropdown. */
   populateScenarios: (scenarios: string[]) => void;
-  /** UI: mark folder as selected in the HUD. */
-  setFolderSelected: (selected: boolean) => void;
   /** UI: mark save location as selected in the HUD. */
   setSaveLocationSelected: (selected: boolean) => void;
   /**
@@ -116,21 +123,6 @@ export interface FolderManagerDeps {
   setFolderImportExpanded: (expanded: boolean, hint?: string) => void;
   /** UI: revalidate the Enter AR button state. */
   validateEnterButton: () => void;
-  /** UI: list scenario sub-directories from a folder handle. */
-  listScenariosFromFolder: (
-    handle: FileSystemDirectoryHandle
-  ) => Promise<string[]>;
-  /** UI: extract scenario names from zips in a folder. */
-  extractScenarioNamesFromZips: (
-    handle: FileSystemDirectoryHandle
-  ) => Promise<string[]>;
-  /** UI: discover scenario→session mappings from zip metadata. */
-  discoverScenariosFromZipMetadata: (
-    handle: FileSystemDirectoryHandle
-  ) => Promise<{
-    scenarioSessions: Map<string, SessionEntryLike[]>;
-    scenarioNames: string[];
-  }>;
   /** UI: populate replay scenario list. */
   populateReplayScenarios: (scenarios: string[]) => void;
   /**
@@ -231,8 +223,8 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     if (deps.getIsReplayMode()) {
       try {
         const [dirScenarios, zipDiscovery] = await Promise.all([
-          deps.listScenariosFromFolder(folderHandle),
-          deps.discoverScenariosFromZipMetadata(folderHandle),
+          listScenariosFromFolder(folderHandle),
+          discoverScenariosFromZipMetadata(folderHandle),
         ]);
         deps.setReplayZipScenariosCache(zipDiscovery.scenarioSessions);
         const allScenarios = [
@@ -260,8 +252,8 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     // ref-point import runs right after as the eager indexing pass below.
     try {
       const [folderScenarios, zipScenarios] = await Promise.all([
-        deps.listScenariosFromFolder(folderHandle),
-        deps.extractScenarioNamesFromZips(folderHandle),
+        listScenariosFromFolder(folderHandle),
+        extractScenarioNamesFromZips(folderHandle),
       ]);
       const allScenarios = [
         ...new Set([
@@ -281,7 +273,6 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
       const msg = `✅ ${result.folderName}${scenarioLabel ? ` (${scenarioLabel})` : ''}`;
       log.info(msg);
       deps.updateFolderStatus(msg);
-      deps.setFolderSelected(true);
       deps.validateEnterButton();
     } catch (err) {
       log.error('Unexpected error during folder scan:', err);
@@ -636,6 +627,18 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     // what feeds it. The previous deps.mapOverlay.addPriorMarkers call was
     // dead code: it ran at scenario-selection time, before the lazily
     // created overlay ever existed.
+
+    // FIX 5: Load measurement points alongside ref points and hydrate
+    // the Redux slice. Deduplication is handled by the reducer.
+    try {
+      const measurementPoints = await loadAllMeasurementPoints(handle);
+      if (measurementPoints.length > 0) {
+        deps.getStore().dispatch(hydrateMeasurementPoints(measurementPoints));
+        log.info(`Hydrated ${measurementPoints.length} measurement points from OPFS`);
+      }
+    } catch (mpErr) {
+      log.warn('Failed to load measurement points:', mpErr);
+    }
 
     return {
       refPointCount: refPointDefs.length,

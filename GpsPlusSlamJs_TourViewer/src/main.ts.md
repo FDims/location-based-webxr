@@ -1,0 +1,75 @@
+# main.ts
+
+## Purpose
+
+The composition root (flows plan M6, executing the simplification plan's
+M-1): looks the DOM up once, creates the store, the AR controller and the
+seams, creates the ONE explicit session object (DEC-T6) and the late-bound
+hooks, and wires the five concerns in dependency order. No behaviour lives
+here; the e2e suite drives the composed page.
+
+## Public API
+
+None (app entry point). The `data-testid` contract the e2e suite drives is
+listed in `index.html.md`. The concerns and their modules:
+
+- `print-panel.ts` - the print section (`wirePrintPanel`).
+- `mode.ts` - the mode from the launch URL (`viewerModeFromSearch`).
+- `wizard.ts` - the creator's guided setup: the steps, the starter zip,
+  the "open as a visitor" link (`wireWizard`).
+- `visitor-screen.ts` - the visitor's consent screen and the location
+  gate (`wireVisitorScreen`).
+- `creator-setup.ts` - the creator's AR setup panel: measuring, finish
+  (the zip rebuild), the download (`wireCreatorSetup`).
+- `viewer-placement.ts` - the viewer pipeline and the photo placement
+  (`createViewerPlacement`).
+- `ar-entry.ts` - the AR entry, the runtime start/end, the status line
+  renderer (`wireArEntry`).
+- `archive-open.ts` - the open path, the gallery, the stats, the Storage
+  section, the `?qr=` boot (`wireArchiveOpen`).
+- `tour-viewer-session.ts` - the session object, the store factory and
+  the hooks contract they share.
+
+## Invariants & assumptions
+
+- **The page must boot without `localStorage`.** The wizard's step store is
+  read through `stepStoreOrUndefined()` (a try/catch around the getter):
+  with site data blocked the getter throws, and a throw at this top level
+  would blank the page for a visitor who had just scanned a code. Without
+  a store there is no step persistence and nothing else changes. The last
+  opened link is prefilled into `#link` for a creator when the input is
+  empty.
+
+- **Wiring order is dependency order:** print → wizard → visitor screen →
+  author → viewer → AR entry → archive open. Each module hands its
+  cross-module entry points to the `hooks` object (`renderArStatus`,
+  `renderArEntry`, `renderAuthorReadout`,
+  `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `presentTourForPrint`), and callers read the hooks at call time - which
+  is what keeps the modules free of import cycles (`check:cycles` is in
+  the gate). A hook read before its owner is wired is the no-op from
+  `createUnwiredHooks()`, never a throw.
+- The mode (`?qr=` present = visitor, else creator; DEC-N1) is read once
+  at boot (switching = reload); `?nocache=1` or a
+  browser without the Cache API means no cache store (the Storage section
+  hides).
+- The cache is `BoundedLocalCacheStore(CacheApiStore, 5)`; Drive links go
+  through the site worker's proxy (`DRIVE_PROXY_BASE_URL`, absolute on
+  purpose - production is same-origin, dev servers are on the worker's
+  CORS allowlist).
+- `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` (the
+  DOM-overlay root; `tests/repo-config/hud-overlay-nesting.test.js`).
+- The `?qr=` boot's rejection reaches the error box: a printed code is the
+  one flow with no retry.
+
+## Examples
+
+`/?qr=https%3A%2F%2Fexample.com%2Ftour.zip` opens the archive on load;
+pasting the same URL into the input does the same interactively.
+
+## Tests
+
+Driven end-to-end by `playwright-tests/*.spec.js` (streaming, fallback,
+cache-hit revisit, clear cache, error paths, the faked-AR boot of both
+modes, the print panel, the ready-triggered placement). The modules'
+sidecars name the unit tests beneath each concern.

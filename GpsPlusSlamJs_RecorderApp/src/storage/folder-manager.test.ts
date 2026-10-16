@@ -21,6 +21,11 @@ import {
   type FolderManagerDeps,
   type FolderManager,
 } from './folder-manager';
+import {
+  listScenariosFromFolder,
+  extractScenarioNamesFromZips,
+  discoverScenariosFromZipMetadata,
+} from './recording-discovery';
 import type { RecorderStore } from '../state/recorder-store';
 
 // --- Mock all direct dependencies ---
@@ -32,8 +37,15 @@ vi.mock('./external-file-storage', () => ({
   getReadFolderHandle: vi.fn(),
 }));
 
-vi.mock('../storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
+// The folder/zip scan. Mocked as a module like every other direct storage
+// dependency above — until 2026-07-30 these three arrived as injected
+// callbacks instead, purely because the module was misfiled under `ui/` and
+// dependency-cruiser forbids storage → ui. Defaults are (re)installed in
+// beforeEach, individual tests override with vi.mocked(...).
+vi.mock('./recording-discovery', () => ({
+  listScenariosFromFolder: vi.fn(),
+  extractScenarioNamesFromZips: vi.fn(),
+  discoverScenariosFromZipMetadata: vi.fn(),
 }));
 
 vi.mock('./scenario-storage', () => ({
@@ -71,12 +83,6 @@ vi.mock('gps-plus-slam-app-framework/geo/h3-proximity', () => ({
   // tests override h3CellsMatch to simulate gridDisk neighbor overlap.
   isH3Index: vi.fn(() => true),
   h3CellsMatch: vi.fn((a: string, b: string) => a === b),
-}));
-
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {
-    displayPriorRefPoints: vi.fn(),
-  },
 }));
 
 vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
@@ -160,22 +166,9 @@ function createDefaultDeps(
     showError: vi.fn(),
     updateStatus: vi.fn(),
     populateScenarios: vi.fn(),
-    setFolderSelected: vi.fn(),
     setSaveLocationSelected: vi.fn(),
     setFolderImportExpanded: vi.fn(),
     validateEnterButton: vi.fn(),
-    listScenariosFromFolder: vi
-      .fn<FolderManagerDeps['listScenariosFromFolder']>()
-      .mockResolvedValue([]),
-    extractScenarioNamesFromZips: vi
-      .fn<FolderManagerDeps['extractScenarioNamesFromZips']>()
-      .mockResolvedValue([]),
-    discoverScenariosFromZipMetadata: vi
-      .fn<FolderManagerDeps['discoverScenariosFromZipMetadata']>()
-      .mockResolvedValue({
-        scenarioSessions: new Map(),
-        scenarioNames: [],
-      }),
     populateReplayScenarios: vi.fn(),
     updateFolderStatus: vi.fn(),
     updateSaveStatus: vi.fn(),
@@ -202,6 +195,16 @@ describe('createFolderManager', () => {
     // Reset mockReturnValue for isExternalStorageSupported
     // (vi.clearAllMocks does NOT reset mockReturnValue/mockResolvedValue)
     vi.mocked(isExternalStorageSupported).mockReturnValue(true);
+
+    // Empty-folder defaults for the scan, for the same reason: a scan that
+    // resolved to `undefined` would blow up in the Promise.all destructuring
+    // of every test that does not care about scenario discovery.
+    vi.mocked(listScenariosFromFolder).mockResolvedValue([]);
+    vi.mocked(extractScenarioNamesFromZips).mockResolvedValue([]);
+    vi.mocked(discoverScenariosFromZipMetadata).mockResolvedValue({
+      scenarioSessions: new Map(),
+      scenarioNames: [],
+    });
   });
 
   // ========================================================================
@@ -337,51 +340,31 @@ describe('createFolderManager', () => {
       );
     });
 
-    it('should NOT call importRefPointsFromFolder (ref point import is scenario-scoped)', async () => {
-      // Why: Cross-scenario ZIP scan was removed; ref points are loaded per-scenario in loadAndDisplayRefPoints
-      const { importRefPointsFromFolder } =
-        await import('../storage/ref-point-importer');
+    it('should call listScenariosFromFolder with the folder handle', async () => {
+      // Why: Must scan for scenario subdirectories
       const { manager } = createFolderManagerWithDefaults();
 
       await manager.handleOpenFolder();
 
-      expect(importRefPointsFromFolder).not.toHaveBeenCalled();
-    });
-
-    it('should call listScenariosFromFolder with the folder handle', async () => {
-      // Why: Must scan for scenario subdirectories
-      const { manager, deps } = createFolderManagerWithDefaults();
-
-      await manager.handleOpenFolder();
-
-      expect(deps.listScenariosFromFolder).toHaveBeenCalledWith(
-        mockFolderHandle
-      );
+      expect(listScenariosFromFolder).toHaveBeenCalledWith(mockFolderHandle);
     });
 
     it('should call extractScenarioNamesFromZips', async () => {
       // Why: Top-level ZIPs with scenario prefixes must also contribute
-      const { manager, deps } = createFolderManagerWithDefaults();
+      const { manager } = createFolderManagerWithDefaults();
 
       await manager.handleOpenFolder();
 
-      expect(deps.extractScenarioNamesFromZips).toHaveBeenCalledWith(
+      expect(extractScenarioNamesFromZips).toHaveBeenCalledWith(
         mockFolderHandle
       );
     });
 
     it('should merge OPFS, folder, and zip scenarios — deduplicated and sorted', async () => {
       // Why: Dropdown must show unified, sorted, deduplicated scenario list
-      const listScenarios = vi
-        .fn<FolderManagerDeps['listScenariosFromFolder']>()
-        .mockResolvedValue(['Paris', 'Munich']);
-      const extractZipScenarios = vi
-        .fn<FolderManagerDeps['extractScenarioNamesFromZips']>()
-        .mockResolvedValue(['Tokyo']);
-      const { manager, deps } = createFolderManagerWithDefaults({
-        listScenariosFromFolder: listScenarios,
-        extractScenarioNamesFromZips: extractZipScenarios,
-      });
+      vi.mocked(listScenariosFromFolder).mockResolvedValue(['Paris', 'Munich']);
+      vi.mocked(extractScenarioNamesFromZips).mockResolvedValue(['Tokyo']);
+      const { manager, deps } = createFolderManagerWithDefaults();
       manager.setCachedOpfsScenarios(['Paris', 'Berlin']);
 
       await manager.handleOpenFolder();
@@ -396,11 +379,8 @@ describe('createFolderManager', () => {
 
     it('should update folder status with scenario count', async () => {
       // Why: User needs feedback on what was found
-      const { manager, deps } = createFolderManagerWithDefaults({
-        listScenariosFromFolder: vi
-          .fn<FolderManagerDeps['listScenariosFromFolder']>()
-          .mockResolvedValue(['Paris', 'Munich']),
-      });
+      vi.mocked(listScenariosFromFolder).mockResolvedValue(['Paris', 'Munich']);
+      const { manager, deps } = createFolderManagerWithDefaults();
 
       await manager.handleOpenFolder();
 
@@ -415,17 +395,15 @@ describe('createFolderManager', () => {
 
       await manager.handleOpenFolder();
 
-      expect(deps.setFolderSelected).toHaveBeenCalledWith(true);
       expect(deps.validateEnterButton).toHaveBeenCalled();
     });
 
     it('should handle unexpected errors during folder scan', async () => {
       // Why: Must not crash on unexpected exceptions
-      const { manager, deps } = createFolderManagerWithDefaults({
-        listScenariosFromFolder: vi
-          .fn<FolderManagerDeps['listScenariosFromFolder']>()
-          .mockRejectedValue(new Error('Network error')),
-      });
+      vi.mocked(listScenariosFromFolder).mockRejectedValue(
+        new Error('Network error')
+      );
+      const { manager, deps } = createFolderManagerWithDefaults();
 
       await manager.handleOpenFolder();
 
@@ -450,16 +428,14 @@ describe('createFolderManager', () => {
 
     it('should discover scenarios from both directories and zip metadata', async () => {
       // Why: Replay mode must discover scenarios from both sources
-      const { manager, deps } = createFolderManagerWithDefaults({
+      const { manager } = createFolderManagerWithDefaults({
         getIsReplayMode: vi.fn(() => true),
       });
 
       await manager.handleOpenFolder();
 
-      expect(deps.listScenariosFromFolder).toHaveBeenCalledWith(
-        mockFolderHandle
-      );
-      expect(deps.discoverScenariosFromZipMetadata).toHaveBeenCalledWith(
+      expect(listScenariosFromFolder).toHaveBeenCalledWith(mockFolderHandle);
+      expect(discoverScenariosFromZipMetadata).toHaveBeenCalledWith(
         mockFolderHandle
       );
     });
@@ -508,14 +484,12 @@ describe('createFolderManager', () => {
           ],
         ],
       ]);
+      vi.mocked(discoverScenariosFromZipMetadata).mockResolvedValue({
+        scenarioSessions,
+        scenarioNames: ['ParkWalk'],
+      });
       const { manager, deps } = createFolderManagerWithDefaults({
         getIsReplayMode: vi.fn(() => true),
-        discoverScenariosFromZipMetadata: vi
-          .fn<FolderManagerDeps['discoverScenariosFromZipMetadata']>()
-          .mockResolvedValue({
-            scenarioSessions,
-            scenarioNames: ['ParkWalk'],
-          }),
       });
 
       await manager.handleOpenFolder();
@@ -527,28 +501,24 @@ describe('createFolderManager', () => {
 
     it('should merge and deduplicate scenarios from directories and zips', async () => {
       // Why: Both discovery mechanisms must contribute without duplicates
+      vi.mocked(listScenariosFromFolder).mockResolvedValue(['DirScenario']);
+      vi.mocked(discoverScenariosFromZipMetadata).mockResolvedValue({
+        scenarioSessions: new Map([
+          [
+            'ZipScenario',
+            [
+              {
+                filename: 'rec.zip',
+                fileHandle: {} as FileSystemFileHandle,
+                date: null,
+              },
+            ],
+          ],
+        ]),
+        scenarioNames: ['ZipScenario'],
+      });
       const { manager, deps } = createFolderManagerWithDefaults({
         getIsReplayMode: vi.fn(() => true),
-        listScenariosFromFolder: vi
-          .fn<FolderManagerDeps['listScenariosFromFolder']>()
-          .mockResolvedValue(['DirScenario']),
-        discoverScenariosFromZipMetadata: vi
-          .fn<FolderManagerDeps['discoverScenariosFromZipMetadata']>()
-          .mockResolvedValue({
-            scenarioSessions: new Map([
-              [
-                'ZipScenario',
-                [
-                  {
-                    filename: 'rec.zip',
-                    fileHandle: {} as FileSystemFileHandle,
-                    date: null,
-                  },
-                ],
-              ],
-            ]),
-            scenarioNames: ['ZipScenario'],
-          }),
       });
 
       await manager.handleOpenFolder();
@@ -561,11 +531,9 @@ describe('createFolderManager', () => {
 
     it('should update folder status with scenario count', async () => {
       // Why: User needs to see what was found in the folder
+      vi.mocked(listScenariosFromFolder).mockResolvedValue(['A', 'B']);
       const { manager, deps } = createFolderManagerWithDefaults({
         getIsReplayMode: vi.fn(() => true),
-        listScenariosFromFolder: vi
-          .fn<FolderManagerDeps['listScenariosFromFolder']>()
-          .mockResolvedValue(['A', 'B']),
       });
 
       await manager.handleOpenFolder();
@@ -577,11 +545,11 @@ describe('createFolderManager', () => {
 
     it('should handle replay mode folder scan errors gracefully', async () => {
       // Why: Must not crash on scan failure
+      vi.mocked(listScenariosFromFolder).mockRejectedValue(
+        new Error('Permission denied')
+      );
       const { manager, deps } = createFolderManagerWithDefaults({
         getIsReplayMode: vi.fn(() => true),
-        listScenariosFromFolder: vi
-          .fn<FolderManagerDeps['listScenariosFromFolder']>()
-          .mockRejectedValue(new Error('Permission denied')),
       });
 
       await manager.handleOpenFolder();
@@ -589,19 +557,6 @@ describe('createFolderManager', () => {
       expect(deps.updateFolderStatus).toHaveBeenCalledWith(
         '❌ Failed to read scenarios'
       );
-    });
-
-    it('should NOT import ref points in replay mode', async () => {
-      // Why: Replay mode only needs scenario discovery, not ref point import
-      const { importRefPointsFromFolder } =
-        await import('../storage/ref-point-importer');
-      const { manager } = createFolderManagerWithDefaults({
-        getIsReplayMode: vi.fn(() => true),
-      });
-
-      await manager.handleOpenFolder();
-
-      expect(importRefPointsFromFolder).not.toHaveBeenCalled();
     });
   });
 
@@ -1186,8 +1141,8 @@ describe('createFolderManager', () => {
     /**
      * Why this test matters:
      * D1 — the whole point of this slice: picking the folder must start the
-     * indexing pass immediately, while Enter AR validation (setFolderSelected
-     * + validateEnterButton) happens FIRST so the pass never delays the gate
+     * indexing pass immediately, while Enter AR validation
+     * (validateEnterButton) happens FIRST so the pass never delays the gate
      * (non-blocking constraint, 2026-06-05 D5).
      */
     it('starts indexing immediately on folder pick, after Enter AR validation, forwarding progress', async () => {
@@ -1209,7 +1164,6 @@ describe('createFolderManager', () => {
       );
 
       // Enter AR gate was validated before the pass settled.
-      expect(deps.setFolderSelected).toHaveBeenCalledWith(true);
       expect(deps.validateEnterButton).toHaveBeenCalled();
 
       const [handleArg, optsArg] = vi.mocked(indexRefPointDefinitionsFromFolder)

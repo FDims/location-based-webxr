@@ -17,16 +17,19 @@ import {
   hideSettingsModal,
   isSettingsModalVisible,
   getWorkingOptions,
+  getOptionBindingIdsForTesting,
 } from './settings-modal';
 import {
   loadSettingsModalHtml,
   loadSettingsButtonHtml,
   loadSettingsTestFixture,
 } from '../test-utils/html-fixtures';
+import { simulateNativeSliderGesture } from 'gps-plus-slam-app-framework/test-utils/pointer-gestures';
 import {
   loadRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
-} from 'gps-plus-slam-app-framework/state/recording-options';
+  COMPASS_DEBUG_CONSTRAINTS,
+} from '../state/recording-options';
 
 const { mockGetBuildInfo } = vi.hoisted(() => ({
   mockGetBuildInfo: vi.fn(() => ({
@@ -328,6 +331,44 @@ describe('settings-modal', () => {
       const html = loadSettingsModalHtml();
       expect(html).toContain('id="btn-clear-refpoint-cache"');
       expect(html).toContain('Clear Reference Point Cache');
+    });
+  });
+
+  describe('binding-table completeness (declarative wiring guard)', () => {
+    // Why this test matters: the option↔DOM wiring is driven by the
+    // OPTION_BINDINGS table, and a typo'd element id there would produce a
+    // silently DEAD control (getElementById → null → binding skipped — the
+    // "dead checkbox" failure mode several older tests guard per-control).
+    // This asserts every bound id resolves to the right element kind in the
+    // PRODUCTION modal HTML, and that every slider has its `${id}-value`
+    // label, so a dead control fails CI instead of shipping.
+    /** Classify a resolved element into the binding-kind vocabulary. */
+    function resolvedKind(el: HTMLElement | null): string {
+      if (el === null) return 'missing';
+      if (el instanceof HTMLSelectElement) return 'select';
+      if (el instanceof HTMLInputElement) {
+        if (el.type === 'checkbox') return 'checkbox';
+        if (el.type === 'range') return 'slider';
+        return `input[type=${el.type}]`;
+      }
+      return el.tagName.toLowerCase();
+    }
+
+    it('every bound control id resolves to the right element kind in production HTML', () => {
+      initSettingsModal();
+      const mismatches = getOptionBindingIdsForTesting()
+        .map(({ id, kind }) => ({
+          id,
+          expected: kind,
+          actual: resolvedKind(document.getElementById(id)),
+          valueLabelMissing:
+            kind === 'slider' &&
+            document.getElementById(`${id}-value`) === null,
+        }))
+        .filter((r) => r.actual !== r.expected || r.valueLabelMissing);
+      // Empty list = every control resolves to its declared kind and every
+      // slider has its value label; failures print the offending descriptors.
+      expect(mismatches).toEqual([]);
     });
   });
 
@@ -827,8 +868,9 @@ describe('settings-modal', () => {
       const slider = document.getElementById(
         'occupancy-cell-size'
       ) as HTMLInputElement;
-      // default 15 cm
-      expect(slider.value).toBe('15');
+      // default 16 cm (framework reconstruction default; 2026-07-16 evening
+      // on-device framerate/mesh trade-off pass)
+      expect(slider.value).toBe('16');
 
       slider.value = '10';
       slider.dispatchEvent(new Event('input'));
@@ -857,8 +899,7 @@ describe('settings-modal', () => {
         unknown
       >;
       const flags = saved.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(flags?.enableCss3dRenderer).toBe(false);
     });
   });
@@ -923,7 +964,7 @@ describe('settings-modal', () => {
       expect(linear).not.toBeNull();
       // Defaults from DEFAULT_MOTION_FILTER (0.6 rad/s, 2.5 m/s — the linear
       // threshold was raised 0.5 → 2.5 on 2026-07-02 to stop deferring walking;
-      // see 2026-07-02-image-capture-rate-motion-gate-finding.md).
+      // see 2026-07-02-0117-image-capture-rate-motion-gate-finding.md).
       expect(parseFloat(angular!.value)).toBeCloseTo(0.6, 6);
       expect(parseFloat(linear!.value)).toBeCloseTo(2.5, 6);
     });
@@ -988,12 +1029,16 @@ describe('settings-modal', () => {
       showSettingsModal();
     });
 
-    it('is present and defaults to OFF (opt-in until field-tuned)', () => {
+    it('is present and reflects the shipped default (ON since the tuning landed)', () => {
+      // Was "defaults to OFF (opt-in until field-tuned)". The tuning happened:
+      // 156 hand-labelled frames put k = 0.8 at ~0.98 precision, and the gate
+      // ships enabled. The toggle must show the truth, or the settings screen
+      // tells a user their captures are unfiltered when they are not.
       const cb = document.getElementById(
         'images-quality-filter'
       ) as HTMLInputElement | null;
       expect(cb).not.toBeNull();
-      expect(cb!.checked).toBe(false);
+      expect(cb!.checked).toBe(true);
     });
 
     it('persists qualityFilter.enabled = true when checked', () => {
@@ -1035,8 +1080,11 @@ describe('settings-modal', () => {
       ) as HTMLInputElement | null;
       expect(blur).not.toBeNull();
       expect(luma).not.toBeNull();
-      // Defaults from DEFAULT_QUALITY_FILTER (k=0.5, minMeanLuminance=10).
-      expect(parseFloat(blur!.value)).toBeCloseTo(0.5, 6);
+      // Defaults from DEFAULT_QUALITY_FILTER (k=0.8 since 2026-08-20,
+      // minMeanLuminance=10). k was 0.5 while the threshold was a placeholder;
+      // the corpus benchmark moved it to 0.8, where ~30 % of frames are
+      // rejected at ~0.98 precision against the degraded/sharp boundary.
+      expect(parseFloat(blur!.value)).toBeCloseTo(0.8, 6);
       expect(parseFloat(luma!.value)).toBeCloseTo(10, 6);
     });
 
@@ -1080,21 +1128,94 @@ describe('settings-modal', () => {
         'images-min-luminance'
       ) as HTMLInputElement;
 
-      // Gate off (the default) → sliders disabled.
+      // Gate on (the shipped default since 2026-08-20) → sliders enabled.
+      expect(blur.disabled).toBe(false);
+      expect(luma.disabled).toBe(false);
+
+      // Gate off → sliders disabled. This is the direction the test is named
+      // for, and it is now the one that has to be driven rather than assumed.
+      qualityFilter.checked = false;
+      qualityFilter.dispatchEvent(new Event('change'));
       expect(blur.disabled).toBe(true);
       expect(luma.disabled).toBe(true);
 
-      // Gate on → sliders enabled.
+      // Back on, so the capture-off override below is tested against a gate
+      // that would otherwise leave the sliders enabled.
       qualityFilter.checked = true;
       qualityFilter.dispatchEvent(new Event('change'));
       expect(blur.disabled).toBe(false);
-      expect(luma.disabled).toBe(false);
 
       // Capture off overrides → sliders disabled regardless of the gate.
       imagesEnabled.checked = false;
       imagesEnabled.dispatchEvent(new Event('change'));
       expect(blur.disabled).toBe(true);
       expect(luma.disabled).toBe(true);
+    });
+
+    // Why these tests matter: the blur-metric select (2026-07-12 toggle plan)
+    // is the only UI to A/B the FFT metric on device; it must round-trip
+    // through persisted options and follow the same disabled rules as the
+    // other quality-gate controls, or a dead/mislabeled control would fake a
+    // field test that never ran.
+    it('exposes the blur-metric select with both metrics, default first', () => {
+      const select = document.getElementById(
+        'images-blur-metric'
+      ) as HTMLSelectElement | null;
+      expect(select).not.toBeNull();
+      expect(select!.value).toBe('variance-of-laplacian');
+      expect([...select!.options].map((o) => o.value)).toEqual([
+        'variance-of-laplacian',
+        'high-frequency-energy-ratio',
+      ]);
+    });
+
+    it('persists an edited blur metric through save/load (gate on)', () => {
+      const qualityFilter = document.getElementById(
+        'images-quality-filter'
+      ) as HTMLInputElement;
+      const select = document.getElementById(
+        'images-blur-metric'
+      ) as HTMLSelectElement;
+
+      qualityFilter.checked = true;
+      qualityFilter.dispatchEvent(new Event('change'));
+      select.value = 'high-frequency-energy-ratio';
+      select.dispatchEvent(new Event('change'));
+
+      document.getElementById('btn-settings-save')?.click();
+
+      const saved = loadRecordingOptions().images.qualityFilter;
+      expect(saved.enabled).toBe(true);
+      expect(saved.blurMetric).toBe('high-frequency-energy-ratio');
+    });
+
+    it('disables the blur-metric select when the gate (or capture) is off', () => {
+      const imagesEnabled = document.getElementById(
+        'images-enabled'
+      ) as HTMLInputElement;
+      const qualityFilter = document.getElementById(
+        'images-quality-filter'
+      ) as HTMLInputElement;
+      const select = document.getElementById(
+        'images-blur-metric'
+      ) as HTMLSelectElement;
+
+      // Gate on (the shipped default) → select enabled.
+      expect(select.disabled).toBe(false);
+
+      // Gate off → select disabled, which is what this test is named for.
+      qualityFilter.checked = false;
+      qualityFilter.dispatchEvent(new Event('change'));
+      expect(select.disabled).toBe(true);
+
+      // Back on, then capture off — the override must win over the gate.
+      qualityFilter.checked = true;
+      qualityFilter.dispatchEvent(new Event('change'));
+      expect(select.disabled).toBe(false);
+
+      imagesEnabled.checked = false;
+      imagesEnabled.dispatchEvent(new Event('change'));
+      expect(select.disabled).toBe(true);
     });
   });
 
@@ -1170,6 +1291,10 @@ describe('settings-modal', () => {
       ['compass-cold-start-override', 'coldStartOverride'],
       ['compass-rotation-prior', 'rotationPrior'],
       ['compass-webxr-consistency', 'webXRConsistency'],
+      // 2026-07-19 field-test toggles (enablement plan): the experiment combo
+      // (prior + tolerance 15° + C′) and the alternative robust-solver comparison arm.
+      ['compass-experiment', 'experiment'],
+      ['compass-consensus-solver-comparison', 'consensusSolverComparison'],
     ] as const;
 
     const COMPASS_DEFAULT_CHECKED: Record<
@@ -1179,6 +1304,8 @@ describe('settings-modal', () => {
       coldStartOverride: true,
       rotationPrior: false,
       webXRConsistency: false,
+      experiment: false,
+      consensusSolverComparison: false,
     };
 
     it('default checkbox states match the per-flag defaults (Stage 0 on, others off)', () => {
@@ -1227,6 +1354,168 @@ describe('settings-modal', () => {
 
       const cb = document.getElementById(id) as HTMLInputElement | null;
       expect(cb?.checked).toBe(true);
+    });
+
+    it('vote-weight slider defaults to 0.1 (census optimum), persists a change, and populates from a saved value', () => {
+      // Why: the slider is the field-test surface for the 2026-07-19
+      // vote-weight curve. Default moved 0.3 → 0.1 on 2026-07-20 (census
+      // optimum; settings-clarity follow-up §4.6). It must round-trip through
+      // save/load like the sibling compass toggles and render its value.
+      initSettingsModal();
+      showSettingsModal();
+
+      const slider = document.getElementById(
+        'compass-vote-weight'
+      ) as HTMLInputElement | null;
+      const valueSpan = document.getElementById('compass-vote-weight-value');
+      expect(slider).not.toBeNull();
+      expect(Number(slider!.value)).toBeCloseTo(0.1, 6);
+      expect(valueSpan?.textContent).toContain('0.10');
+
+      slider!.value = '0.3';
+      slider!.dispatchEvent(new Event('input'));
+      expect(valueSpan?.textContent).toContain('0.30');
+      document.getElementById('btn-settings-save')?.click();
+      expect(loadRecordingOptions().compassDebug.voteWeight).toBeCloseTo(
+        0.3,
+        6
+      );
+    });
+
+    it('vote-weight slider matches its sibling sliders: accessible name, shared track classes, constraints injected from COMPASS_DEBUG_CONSTRAINTS', () => {
+      // Why: PR 205 review (coderabbit) — the slider shipped without the
+      // aria-label and shared track styling every other modal slider carries
+      // (browser-default track, no accessible name), and with min/max/step
+      // hardcoded in the HTML although initSettingsModal injects them from
+      // COMPASS_DEBUG_CONSTRAINTS (the single source of truth). Class parity
+      // with a sibling slider pins the visual consistency; the constraint
+      // assertions prove the injection covers the removed HTML attributes.
+      initSettingsModal();
+      showSettingsModal();
+      const slider = document.getElementById(
+        'compass-vote-weight'
+      ) as HTMLInputElement;
+      const sibling = document.getElementById(
+        'images-interval'
+      ) as HTMLInputElement;
+      expect(slider.getAttribute('aria-label')).toBe('Vote weight');
+      expect(slider.className).toBe(sibling.className);
+      const { min, max, step } = COMPASS_DEBUG_CONSTRAINTS.voteWeight;
+      expect(slider.min).toBe(String(min));
+      expect(slider.max).toBe(String(max));
+      expect(slider.step).toBe(String(step));
+    });
+
+    it('populates the vote-weight slider from a saved 0.5', () => {
+      localStorageMock.getItem.mockReturnValueOnce(
+        JSON.stringify({ compassDebug: { voteWeight: 0.5 } })
+      );
+      initSettingsModal();
+      showSettingsModal();
+      const slider = document.getElementById(
+        'compass-vote-weight'
+      ) as HTMLInputElement | null;
+      expect(Number(slider?.value)).toBeCloseTo(0.5, 6);
+    });
+
+    // Why these tests matter: the 2026-07-20 settings-clarity follow-up (§3.4,
+    // §4.2) found the vote-weight slider looked live in the Stage-0-only
+    // default state although nothing consumes it, and that checking Stage C
+    // next to the experiment silently does nothing extra. The gating below
+    // mirrors compassStoreOptions (slider) and the config-derivation semantics
+    // (experiment implies Stage C at 15°). Decision §4.6: greyed-out Stage C
+    // KEEPS its stored value and both flags keep being recorded.
+    describe('compass control gating (settings-clarity §4.2)', () => {
+      const el = (id: string) =>
+        document.getElementById(id) as HTMLInputElement;
+
+      it('greys the vote-weight slider out until the experiment or Stage C can consume it', () => {
+        initSettingsModal();
+        showSettingsModal();
+        // Stage-0-only default state: the weight reaches no consumer.
+        expect(el('compass-vote-weight').disabled).toBe(true);
+
+        el('compass-experiment').checked = true;
+        el('compass-experiment').dispatchEvent(new Event('change'));
+        expect(el('compass-vote-weight').disabled).toBe(false);
+
+        el('compass-experiment').checked = false;
+        el('compass-experiment').dispatchEvent(new Event('change'));
+        expect(el('compass-vote-weight').disabled).toBe(true);
+
+        el('compass-rotation-prior').checked = true;
+        el('compass-rotation-prior').dispatchEvent(new Event('change'));
+        expect(el('compass-vote-weight').disabled).toBe(false);
+      });
+
+      it('greys Stage C out while the experiment implies it, keeping and persisting its stored value', () => {
+        localStorageMock.getItem.mockReturnValueOnce(
+          JSON.stringify({
+            compassDebug: { rotationPrior: true, experiment: true },
+          })
+        );
+        initSettingsModal();
+        showSettingsModal();
+        const stageC = el('compass-rotation-prior');
+        expect(stageC.disabled).toBe(true);
+        expect(stageC.checked).toBe(true); // value preserved while greyed
+
+        // Saving while greyed persists BOTH flags (keep-value-record-both).
+        document.getElementById('btn-settings-save')?.click();
+        const saved = loadRecordingOptions().compassDebug;
+        expect(saved.rotationPrior).toBe(true);
+        expect(saved.experiment).toBe(true);
+
+        el('compass-experiment').checked = false;
+        el('compass-experiment').dispatchEvent(new Event('change'));
+        expect(stageC.disabled).toBe(false);
+        expect(stageC.checked).toBe(true);
+      });
+
+      it('applies the gating when the modal opens with a saved prior (slider live, Stage C enabled)', () => {
+        localStorageMock.getItem.mockReturnValueOnce(
+          JSON.stringify({ compassDebug: { rotationPrior: true } })
+        );
+        initSettingsModal();
+        showSettingsModal();
+        expect(el('compass-vote-weight').disabled).toBe(false);
+        expect(el('compass-rotation-prior').disabled).toBe(false);
+      });
+    });
+
+    // Why these tests matter: §3.2/§3.5/§3.7 of the follow-up — "trust" used
+    // to name two unrelated mechanisms in adjacent labels (the compass↔GPS
+    // trust machine vs the compass↔WebXR consistency gate), and the group help
+    // text neither covered all six controls nor the full calibration rule.
+    describe('compass group copy (trust-naming split + calibration rule)', () => {
+      it('names the WebXR mechanism "Consistency gate" and reserves "trust" for the trust machine', () => {
+        initSettingsModal();
+        showSettingsModal();
+        const gateLabel =
+          document.getElementById('compass-webxr-consistency')?.closest('label')
+            ?.textContent ?? '';
+        expect(gateLabel).toContain('Consistency gate');
+        expect(gateLabel.toLowerCase()).not.toContain('trust');
+      });
+
+      it('help text states the full calibration rule (Stage 0 AND experiment toggles OFF) and the 0.1 expectation', () => {
+        initSettingsModal();
+        showSettingsModal();
+        const help =
+          document.getElementById('compass-debug-help')?.textContent ?? '';
+        // Full §6a calibration rule — not just "Stage 0 OFF".
+        expect(help).toMatch(/Stage 0.*experiment.*OFF/is);
+        // One line of corpus expectation-setting for field testers.
+        expect(help).toContain('0.1');
+      });
+
+      it('visually separates the robust-solver A/B arm from the compass mechanisms', () => {
+        initSettingsModal();
+        showSettingsModal();
+        const divider = document.getElementById('compass-ab-arm-divider');
+        expect(divider).not.toBeNull();
+        expect(divider!.textContent).toMatch(/not a compass/i);
+      });
     });
 
     it('persists + populates the loop-closure capture toggle (experimental, default OFF)', () => {
@@ -1291,8 +1580,7 @@ describe('settings-modal', () => {
 
       const working = getWorkingOptions() as Record<string, unknown> | null;
       const flags = working?.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
 
       expect(working?.images).toEqual(
         expect.objectContaining({ enabled: false })
@@ -1334,8 +1622,7 @@ describe('settings-modal', () => {
         unknown
       >;
       const flags = saved.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(flags?.applyChromiumProjectionLayerWorkaround).toBe(false);
     });
 
@@ -1445,6 +1732,50 @@ describe('settings-modal', () => {
       expect(valueDisplay?.textContent).toBe('4.0s');
     });
 
+    it('shows sub-second image intervals in ms (splat-scan cadence)', () => {
+      // Why this test matters: IMAGE_CONSTRAINTS.intervalMs.min dropped to
+      // 250 ms (2026-07-10 splat-orbit finding) and `(250/1000).toFixed(1)`
+      // would render a misleading "0.3s" — sub-second values must show exact
+      // milliseconds (mirroring the QR interval display).
+      const slider = document.getElementById(
+        'images-interval'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById('images-interval-value');
+
+      slider.value = '250';
+      slider.dispatchEvent(new Event('input'));
+
+      expect(valueDisplay?.textContent).toBe('250 ms');
+    });
+
+    it('shows quarter-second image intervals ≥1s with exact decimals', () => {
+      // Why this test matters: IMAGE_CONSTRAINTS.intervalMs.step is 250 ms,
+      // so 1250/1750 are reachable slider values — `toFixed(1)` would render
+      // them as a misleading "1.3s"/"1.8s" (PR #178 review). Quarter-second
+      // values must show two decimals while half-second multiples keep the
+      // clean one-decimal form.
+      const slider = document.getElementById(
+        'images-interval'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById('images-interval-value');
+
+      slider.value = '1250';
+      slider.dispatchEvent(new Event('input'));
+      expect(valueDisplay?.textContent).toBe('1.25s');
+
+      slider.value = '1750';
+      slider.dispatchEvent(new Event('input'));
+      expect(valueDisplay?.textContent).toBe('1.75s');
+
+      slider.value = '1500';
+      slider.dispatchEvent(new Event('input'));
+      expect(valueDisplay?.textContent).toBe('1.5s');
+
+      slider.value = '1000';
+      slider.dispatchEvent(new Event('input'));
+      expect(valueDisplay?.textContent).toBe('1.0s');
+    });
+
     it('updates images quality value display', () => {
       const slider = document.getElementById(
         'images-quality'
@@ -1544,6 +1875,72 @@ describe('settings-modal', () => {
 
       expect(valueDisplay?.textContent).toBe('6');
       expect(getWorkingOptions()?.occupancy.minConfidence).toBe(6);
+    });
+
+    /**
+     * Why this test matters (user feedback 2026-07-27): the settings panel
+     * scrolls and its full-width sliders sit under the swiping finger, so a
+     * plain downward swipe used to rewrite whatever option it passed over.
+     * This pins the guard end-to-end through the production HTML — the swipe
+     * must leave both the label and the working copy untouched, while an
+     * explicit sideways drag still edits the option.
+     */
+    it('ignores a vertical scroll swipe over a slider', () => {
+      const slider = document.getElementById(
+        'occupancy-min-confidence'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById(
+        'occupancy-min-confidence-value'
+      );
+      const before = getWorkingOptions()?.occupancy.minConfidence;
+      const labelBefore = valueDisplay?.textContent;
+
+      simulateNativeSliderGesture(slider, [
+        { x: 8, y: 400 },
+        { x: 9, y: 340 },
+        { x: 7, y: 250 },
+      ]);
+
+      expect(getWorkingOptions()?.occupancy.minConfidence).toBe(before);
+      expect(valueDisplay?.textContent).toBe(labelBefore);
+    });
+
+    it('applies a short tap on a slider (owner decision 2026-07-28)', () => {
+      // Why this test matters: the guard commits a tap by dispatching a fresh
+      // `input` event on release — this pins that the modal's binding listener
+      // actually receives it and writes the working copy, not just that the
+      // DOM value changed.
+      const slider = document.getElementById(
+        'occupancy-min-confidence'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById(
+        'occupancy-min-confidence-value'
+      );
+
+      simulateNativeSliderGesture(slider, [{ x: 7, y: 400 }], {
+        durationMs: 80,
+      });
+
+      expect(getWorkingOptions()?.occupancy.minConfidence).toBe(7);
+      expect(valueDisplay?.textContent).toBe('7');
+    });
+
+    it('applies an explicit horizontal drag on a slider', () => {
+      const slider = document.getElementById(
+        'occupancy-min-confidence'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById(
+        'occupancy-min-confidence-value'
+      );
+
+      simulateNativeSliderGesture(slider, [
+        { x: 2, y: 400 },
+        { x: 20, y: 402 },
+        { x: 8, y: 401 },
+      ]);
+
+      expect(getWorkingOptions()?.occupancy.minConfidence).toBe(8);
+      expect(valueDisplay?.textContent).toBe('8');
     });
   });
 

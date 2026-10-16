@@ -18,6 +18,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import './test-utils/main-module-stubs';
 
 // ---------- hoisted mocks (need to be available before vi.mock factories) ----------
 
@@ -48,17 +49,8 @@ const {
   };
 });
 
-const {
-  mockGetCurrentArPose,
-  mockSetTrackingLostCallback,
-  mockSetTrackingCallbacks,
-  mockSetTrackingRecoveredCallback,
-  mockRecordingOptions,
-} = vi.hoisted(() => ({
+const { mockGetCurrentArPose, mockRecordingOptions } = vi.hoisted(() => ({
   mockGetCurrentArPose: vi.fn().mockReturnValue(null),
-  mockSetTrackingLostCallback: vi.fn(),
-  mockSetTrackingCallbacks: vi.fn(),
-  mockSetTrackingRecoveredCallback: vi.fn(),
   // Shared mutable options object — main.ts keeps the returned reference, so
   // tests flip `loopClosureDebug.detectorEnabled` between enter-AR calls.
   mockRecordingOptions: {
@@ -106,25 +98,15 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   isWebXRSupported: vi.fn().mockResolvedValue(true),
   getCurrentArPose: mockGetCurrentArPose,
   applyAlignmentMatrix: vi.fn(),
-  setImageCaptureCallback: vi.fn(),
   startImageCapture: vi.fn(),
   stopImageCapture: vi.fn(),
-  setDepthCaptureCallback: vi.fn(),
   startDepthCapture: vi.fn(),
   stopDepthCapture: vi.fn(),
-  setFrameCallback: vi.fn(),
-  setCameraFrameCallback: vi.fn(),
-  setTrackingLostCallback: mockSetTrackingLostCallback,
-  setTrackingCallbacks: mockSetTrackingCallbacks,
-  setTrackingRecoveredCallback: mockSetTrackingRecoveredCallback,
-  setTrackingStore: vi.fn(),
-  setSessionEndCallback: vi.fn(),
+  rebindTrackingStore: vi.fn(),
   endARSession: vi.fn(),
   getScene: vi.fn().mockReturnValue({ name: 'scene' }),
   getCamera: vi.fn().mockReturnValue({ name: 'camera' }),
   getArWorldGroup: vi.fn().mockReturnValue({ name: 'ar-world' }),
-  setScene: vi.fn(),
-  setArWorldGroup: vi.fn(),
   getDepthInfoFromFrame: vi.fn(),
   getImageCaptureFrameCount: vi.fn().mockReturnValue(0),
   getDepthSampleCount: vi.fn().mockReturnValue(0),
@@ -132,7 +114,6 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
 
 // ---------- lightweight stubs for the rest of main.ts imports ----------
 
-vi.mock('./utils/sentry', () => ({ initSentry: vi.fn() }));
 vi.mock('gps-plus-slam-app-framework/visualization/camera-follower', () => ({
   createCameraFollower: vi.fn().mockReturnValue({
     object3D: { name: 'camera-follower' },
@@ -142,20 +123,6 @@ vi.mock('gps-plus-slam-app-framework/visualization/camera-follower', () => ({
 }));
 vi.mock('gps-plus-slam-app-framework/visualization/gps-compass-cubes', () => ({
   createGpsCompassCubes: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-vi.mock('./ui/ref-point-view-wiring', () => ({
-  wireRefPointViews: vi.fn(() => ({
-    refreshMapMarkers: vi.fn(),
-    unsubscribe: vi.fn(),
-  })),
 }));
 vi.mock('./ui/hud', () => ({
   initUI: vi.fn(),
@@ -170,7 +137,6 @@ vi.mock('./ui/hud', () => ({
   validateEnterButton: vi.fn(),
   updatePermissionStatus: vi.fn(),
   setPermissionsReady: vi.fn(),
-  setFolderSelected: vi.fn(),
   setSaveLocationSelected: vi.fn(),
   setFolderImportExpanded: vi.fn(),
   setFolderImportProgress: vi.fn(),
@@ -189,60 +155,9 @@ vi.mock('./ui/toast', () => ({
   showToast: vi.fn(),
   TOAST_DURATION_ERROR: 5000,
 }));
-vi.mock('./ui/session-summary', () => ({
-  initSessionSummary: vi.fn(),
-  showSessionSummary: vi.fn(),
-  hideSessionSummary: vi.fn(),
-}));
-vi.mock('./ui/log-panel', () => ({
-  initLogPanel: vi.fn(),
-  showLogPanel: vi.fn(),
-  hideLogPanel: vi.fn(),
-  toggleLogPanel: vi.fn(),
-}));
 vi.mock('./ui/confirm-dialog', () => ({
   destroyConfirmDialog: vi.fn(),
   showConfirmDialog: vi.fn(),
-}));
-vi.mock('./ui/ref-point-picker', () => ({
-  showRefPointPicker: vi.fn(),
-  createRefPointPickerHtml: vi.fn().mockReturnValue(''),
-  isRefPointPickerVisible: vi.fn(),
-  cancelRefPointPicker: vi.fn(),
-}));
-vi.mock('./ui/navigation', () => ({
-  initNavigation: vi.fn(),
-  getCurrentScreen: vi.fn(() => 'setup'),
-  enableBeforeUnloadWarning: vi.fn(),
-  disableBeforeUnloadWarning: vi.fn(),
-  pushScreenState: vi.fn(),
-  replaceScreenState: vi.fn(),
-}));
-vi.mock('./ui/settings-modal', () => ({
-  initSettingsModal: vi.fn(),
-}));
-vi.mock('./ui/replay-ui', () => ({
-  initReplayUI: vi.fn(),
-  switchToReplayMode: vi.fn(),
-  populateReplayScenarios: vi.fn(),
-  populateReplaySessions: vi.fn(),
-  updateReplayProgress: vi.fn(),
-  showReplayControls: vi.fn(),
-  hideReplayControls: vi.fn(),
-  updatePlayPauseButton: vi.fn(),
-  updateCameraModeButton: vi.fn(),
-  enableStartReplay: vi.fn(),
-  disableStartReplay: vi.fn(),
-}));
-vi.mock('./ui/session-browser', () => ({
-  DEFAULT_SCENARIO: 'Default Scenario',
-  listScenariosFromFolder: vi.fn(),
-  extractScenarioNamesFromZips: vi.fn(),
-  discoverScenariosFromZipMetadata: vi.fn(),
-  listSessionZipsInScenario: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/ar/xr-error-handler', () => ({
-  getXrErrorMessage: vi.fn(),
 }));
 vi.mock('gps-plus-slam-app-framework/ar/replay-scene', () => ({
   initReplayScene: vi.fn(),
@@ -258,39 +173,8 @@ vi.mock('./storage/scenario-storage', () => ({
   startSession: vi.fn(),
   resetForNewSession: vi.fn(),
 }));
-vi.mock('./storage/external-file-storage', () => ({
-  isExternalStorageSupported: vi.fn().mockReturnValue(true),
-  selectReadFolder: vi.fn(),
-  selectSaveFile: vi.fn(),
-  getSaveFileHandle: vi.fn(),
-  getReadFolderHandle: vi.fn(),
-  resetForNewRecording: vi.fn(),
-  hasReadFolderPermission: vi.fn(),
-}));
 vi.mock('./storage/sync-manager', () => ({
   createSyncManager: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/storage/zip-export', () => ({
-  syncToExternalZip: vi.fn(),
-}));
-vi.mock('./storage/ref-point-loader', () => ({
-  loadAllRefPoints: vi.fn(),
-  saveRefPointObservation: vi.fn(),
-  flattenRefPointsToMarks: vi.fn(),
-  listRefPointIds: vi.fn(),
-}));
-vi.mock('./storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/storage/file-system-utils', () => ({
-  formatTimestamp: vi.fn(),
-  SESSION_IMAGES_DIR: 'images',
-}));
-vi.mock('gps-plus-slam-app-framework/utils/fused-path', () => ({
-  computeFusedPath: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/utils/list-formatter', () => ({
-  listFormatter: { format: vi.fn() },
 }));
 vi.mock('./state/recorder-store', () => ({
   createRecorderStore: vi.fn(() => mockStore),
@@ -299,9 +183,6 @@ vi.mock('./state/recorder-store', () => ({
   add2dImage: vi.fn(),
   recordDepthSample: vi.fn(),
 }));
-vi.mock('gps-plus-slam-app-framework/state/store-subscribers', () => ({
-  wireStoreSubscribers: vi.fn().mockReturnValue(() => {}),
-}));
 vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   createGpsPositionHandler: vi.fn().mockReturnValue(() => {}),
   updateDeviceOrientation: vi.fn(),
@@ -309,7 +190,10 @@ vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   extractOdomPosition: vi.fn().mockReturnValue([0, 0, 0]),
   extractOdomRotation: vi.fn().mockReturnValue([0, 0, 0, 1]),
 }));
-vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
+vi.mock('./state/recording-options', () => ({
+  // main.ts also consumes the pure compassStoreOptions mapping — stubbed
+  // inert here; its real logic is unit-tested in recording-options.test.ts.
+  compassStoreOptions: () => ({}),
   loadRecordingOptions: vi.fn(() => mockRecordingOptions),
 }));
 vi.mock('gps-plus-slam-app-framework/sensors/gps', () => ({
@@ -341,21 +225,8 @@ vi.mock('gps-plus-slam-app-framework/sensors/permission-checker', () => ({
   }),
   subscribePermissionChanges: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
 }));
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {},
-}));
 vi.mock('gps-plus-slam-app-framework/visualization/gps-event-markers', () => ({
   gpsEventVisualizer: { setVisible: vi.fn(), clearAll: vi.fn() },
-}));
-vi.mock('gps-plus-slam-app-framework/visualization/map-overlay', () => ({
-  MapOverlay: vi.fn().mockImplementation(() => ({
-    isVisible: vi.fn().mockReturnValue(false),
-    toggle: vi.fn(),
-    updatePosition: vi.fn(),
-    setGpsPosition: vi.fn(),
-    getGpsPosition: vi.fn().mockReturnValue(null),
-    dispose: vi.fn(),
-  })),
 }));
 vi.mock(
   'gps-plus-slam-app-framework/visualization/leaflet-map-overlay',
@@ -370,18 +241,6 @@ vi.mock(
     })),
   })
 );
-vi.mock('gps-plus-slam-app-framework/storage/null-storage-backend', () => ({
-  NullStorageBackend: vi.fn(),
-}));
-vi.mock('./storage/write-failure-tracker', () => ({
-  createWriteFailureTracker: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/ar/capture-failure-tracker', () => ({
-  createCaptureFailureTracker: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework', () => ({
-  selectTrackingQuality: vi.fn().mockReturnValue(null),
-}));
 vi.mock('./ui/hud-tracking-quality-subscriber', () => ({
   subscribeHudToTrackingQuality: vi.fn(() => vi.fn()),
 }));
@@ -426,6 +285,14 @@ vi.mock('./storage/folder-manager', () => ({
 
 // Import after all mocks are set up
 import { handleEnterARForTesting, resetMainState } from './main';
+import { initAR } from 'gps-plus-slam-app-framework/ar/webxr-session';
+
+/** The tracking group main.ts passed to the mocked initAR (setter fold). */
+function getTrackingCallbacks() {
+  const callbacks = vi.mocked(initAR).mock.calls[0]?.[3];
+  expect(callbacks?.tracking).toBeDefined();
+  return callbacks!.tracking!;
+}
 
 const setupDom = () => {
   document.body.innerHTML = `
@@ -475,7 +342,25 @@ describe('loop-closure capture wiring (opt-in)', () => {
     lastFrameCallback()({});
 
     expect(mockCreateLoopClosureHandler).toHaveBeenCalledTimes(1);
-    expect(mockCreateLoopClosureHandler).toHaveBeenCalledWith(mockStore);
+    // The handler is given a store that FORWARDS to the session store rather
+    // than the store object itself: it dispatches `arLoopClosureDetected`
+    // internally, and that action moves the odometry frame — the QR sighting
+    // fold has to be told, and there is no callback for it. Asserting the
+    // forwarding is the property that matters; asserting object identity
+    // would forbid the interception without protecting anything.
+    const handed = (
+      mockCreateLoopClosureHandler.mock.calls as unknown as {
+        dispatch: (a: unknown) => unknown;
+        getState: unknown;
+      }[][]
+    )[0]?.[0];
+    expect(handed).toBeDefined();
+    if (handed === undefined) return;
+    expect(handed.getState).toBe(mockStore.getState);
+    handed.dispatch({ type: 'gpsData/arLoopClosureDetected' });
+    expect(mockStore.dispatch).toHaveBeenCalledWith({
+      type: 'gpsData/arLoopClosureDetected',
+    });
     expect(mockLoopClosureHandler.processPose).toHaveBeenCalledWith(
       [1, 2, 3],
       [0, 0, 0, 1]
@@ -509,15 +394,13 @@ describe('loop-closure capture wiring (opt-in)', () => {
     lastFrameCallback()({});
 
     // Simulate the framework firing the tracking callbacks.
-    const lostCb = mockSetTrackingLostCallback.mock.calls[0]![0] as () => void;
-    lostCb();
+    const tracking = getTrackingCallbacks();
+    tracking.onLost!();
     expect(mockLoopClosureHandler.setTrackingActive).toHaveBeenCalledWith(
       false
     );
 
-    const recoveredCb = mockSetTrackingRecoveredCallback.mock
-      .calls[0]![0] as () => void;
-    recoveredCb();
+    tracking.onRecovered!();
     expect(mockLoopClosureHandler.setTrackingActive).toHaveBeenLastCalledWith(
       true
     );
@@ -537,7 +420,7 @@ describe('loop-closure capture wiring (opt-in)', () => {
     lastFrameCallback()({});
     mockLoopClosureHandler.setTrackingActive.mockClear();
 
-    const restartCb = mockSetTrackingCallbacks.mock.calls[0]![0] as (
+    const restartCb = getTrackingCallbacks().onRestarted! as (
       payload: unknown
     ) => void;
     restartCb({});
@@ -562,5 +445,25 @@ describe('loop-closure capture wiring (opt-in)', () => {
 
     resetMainState();
     expect(xrFrameUnregisterSpies[1]).toHaveBeenCalledTimes(1);
+  });
+
+  it('tears down the per-frame registration when a later Enter-AR step throws', async () => {
+    // Why this test matters: the catch in handleEnterAR ends the XR session,
+    // but the resources registered BEFORE the throw (here the loop-closure
+    // frame feed) live in arSessionScope, which endARSession knows nothing
+    // about. Left registered, the feed keeps running against a dead session
+    // until the NEXT Enter AR disposes it - the "broken half-initialized
+    // state" the catch's own comment says it prevents.
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    const { subscribeHudToTrackingQuality } =
+      await import('./ui/hud-tracking-quality-subscriber');
+    vi.mocked(subscribeHudToTrackingQuality).mockImplementationOnce(() => {
+      throw new Error('post-init failure');
+    });
+
+    await handleEnterARForTesting();
+
+    expect(xrFrameUnregisterSpies).toHaveLength(1);
+    expect(xrFrameUnregisterSpies[0]).toHaveBeenCalledTimes(1);
   });
 });

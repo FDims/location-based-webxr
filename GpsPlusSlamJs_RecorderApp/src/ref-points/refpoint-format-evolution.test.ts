@@ -333,7 +333,7 @@ describe('Ref Point Format Evolution (old vs new recording)', () => {
     /**
      * Fused GPS is a *post-hoc* quantity (aligned VIO path after the session
      * finishes). It is only written into scenario-level
-     * refPoints/<id>.json files by the app framework's ref-point-importer,
+     * refPoints/<id>.json files by the scenario-level ref-point persistence,
      * never into the `markReferencePoint` action itself. This invariant is
      * important for replay: replayed actions never carry fused data, so the
      * library must be able to (re)compute alignment from raw inputs alone.
@@ -375,7 +375,7 @@ describe('Ref Point Format Evolution (old vs new recording)', () => {
   // -------------------------------------------------------------------------
   describe('Positioning-in-3D contract', () => {
     /**
-     * The visualizer (`RefPointVisualizer.displayPriorRefPoints`) needs only
+     * The visualizer (`RefPointVisualizer.syncRefPoints`) needs only
      * `{ lat, lon, altitude? }` and a zero-reference. Both eras supply lat
      * and lon on every observation, so no H3-cell-center fallback is ever
      * needed to place the sphere in `scene` space via

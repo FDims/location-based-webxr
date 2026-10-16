@@ -58,14 +58,35 @@ const { blob, fileCount } = await exportSessionHandleAsZip(sessionHandle, {
 });
 ```
 
-### Download ZIP
+### Download a file
 
 ```typescript
-import { downloadZip } from './zip-export';
+import { downloadZip, downloadBlob, PDF_FILE_TYPE } from './zip-export';
 
 // Trigger browser download
-await downloadZip(zipBlob, 'recording-2026-01-26.zip');
+const saved = await downloadZip(zipBlob, 'recording-2026-01-26.zip');
+// false: the user dismissed the save picker and nothing was written
+
+// Anything else: same picker-then-anchor path, a different filter
+await downloadBlob(pdfBlob, 'tour-codes-3x-16cm.pdf', PDF_FILE_TYPE);
 ```
+
+`downloadBlob(blob, filename, fileType)` is the general form;
+`downloadZip` is the zip-shaped call its existing callers already make.
+It was generalised when a second kind of file needed the same save path
+(the Tour Viewer's printable sheet of QR codes): the picker's type filter
+was the only zip-specific thing in it, and a second copy of the
+picker-then-anchor dance is exactly the duplication this repo keeps
+finding. `DownloadFileType` is `{ description, mimeType, extension }`;
+`PDF_FILE_TYPE` and `ZIP_FILE_TYPE` are both exported: the zip one was
+private while `downloadZip` was its only caller, and stopped being so when
+`share-or-download.ts` and the recorder needed to name the type without
+going through `downloadZip`.
+
+**`downloadZip` has no production callers left** (the Tour Viewer moved to
+`shareOrDownloadZip`, the recorder to `shareOrDownloadBlob`). It stays
+because it is part of the published package's surface, not because
+anything here uses it.
 
 ### Sync to External File Handle
 
@@ -115,10 +136,11 @@ never needs to know about them.
 
 ## Error Modes
 
-| Error               | Cause                      | Recovery                  |
-| ------------------- | -------------------------- | ------------------------- |
-| "Session not found" | Invalid session name       | Check session exists      |
-| AbortError          | User cancelled save dialog | Normal - no action needed |
+| Error                     | Cause                                                                                          | Recovery                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| "Session not found"       | Invalid session name                                                                           | Check session exists                                |
+| AbortError                | User cancelled save dialog                                                                     | `downloadZip` resolves `false`; nothing was written |
+| "relative path is unsafe" | A contributor path fails `assertSafeZipEntryPaths` ([zip-entry-path.ts](zip-entry-path.ts.md)) | Fix the contributor; no partial archive is kept     |
 
 ## Dependencies
 

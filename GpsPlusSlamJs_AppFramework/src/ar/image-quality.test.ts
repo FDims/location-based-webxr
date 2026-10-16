@@ -12,10 +12,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   sharpnessScore,
+  highFrequencyEnergyRatio,
+  blurMetricScorer,
+  BLUR_METRIC_IDS,
+  type BlurMetricId,
   meanLuminance,
   rgbaToGrayscale,
   ImageQualityGate,
   DEFAULT_QUALITY_FILTER,
+  QUALITY_FILTER_CONSTRAINTS,
+  validateQualityFilterConfig,
   type QualityFilterConfig,
 } from './image-quality.js';
 
@@ -203,5 +209,223 @@ describe('ImageQualityGate', () => {
     expect(gate.historyLength()).toBe(0);
     // Back in cold start → a tiny score is accepted again.
     expect(gate.evaluate(1, 200, cfg).accept).toBe(true);
+  });
+});
+
+/** Deterministic LCG so the noise-based checks are reproducible. */
+function makeLcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+function noiseImage(w: number, h: number, seed: number): number[] {
+  const rnd = makeLcg(seed);
+  return Array.from({ length: w * h }, () => Math.floor(rnd() * 200));
+}
+
+describe('highFrequencyEnergyRatio', () => {
+  // Why these tests matter: the toggleable second gate metric must rank
+  // frames the same way it did in the offline benchmark it was promoted
+  // from; the single-bin spectral cases pin the FFT + band-split math
+  // exactly, and the defensive contract must match sharpnessScore so the
+  // worker can swap metrics without new failure modes.
+
+  it('is ~0 for a single low-frequency sinusoid and ~1 for a checkerboard', () => {
+    const w = 32;
+    const h = 32;
+    // All AC energy in bin (1, 0): normalized radius ~0.044 < cutoff 0.3.
+    const lowFreq = Array.from({ length: w * h }, (_, i) => {
+      const x = i % w;
+      return 128 + 100 * Math.sin((2 * Math.PI * x) / w);
+    });
+    expect(highFrequencyEnergyRatio(lowFreq, w, h)).toBeLessThan(0.05);
+    // Checkerboard = the (Nyquist, Nyquist) bin: normalized radius 1.
+    expect(highFrequencyEnergyRatio(checkerboard(w, h), w, h)).toBeGreaterThan(
+      0.95
+    );
+  });
+
+  it('blur strictly reduces the ratio on a noise image', () => {
+    const w = 32;
+    const h = 32;
+    const sharp = noiseImage(w, h, 1234);
+    const blurred = boxBlur(sharp, w, h);
+    const rSharp = highFrequencyEnergyRatio(sharp, w, h);
+    const rBlur = highFrequencyEnergyRatio(blurred, w, h);
+    expect(rSharp).toBeGreaterThan(0);
+    expect(rBlur).toBeLessThan(rSharp);
+  });
+
+  it('returns 0 for flat, degenerate, short-buffer, and sub-8x8 inputs', () => {
+    expect(highFrequencyEnergyRatio(new Array(32 * 32).fill(50), 32, 32)).toBe(
+      0
+    );
+    expect(highFrequencyEnergyRatio([1, 2, 3, 4], 2, 2)).toBe(0);
+    expect(highFrequencyEnergyRatio([1, 2, 3], 3, 3)).toBe(0);
+    expect(highFrequencyEnergyRatio(new Array(32 * 32).fill(0), 31.5, 32)).toBe(
+      0
+    );
+    // 7x7: largest pow2 crop is 4x4 < 8x8 minimum.
+    expect(
+      highFrequencyEnergyRatio(
+        Array.from({ length: 49 }, (_, i) => i),
+        7,
+        7
+      )
+    ).toBe(0);
+  });
+
+  it('scores the centered power-of-two crop for non-pow2 dims', () => {
+    // 33-wide image whose first 32 columns are a checkerboard: the crop
+    // (offset 0) sees exactly the 32x32 checkerboard, so the extra constant
+    // column must not change the score.
+    const w = 33;
+    const h = 32;
+    const gray = Array.from({ length: w * h }, (_, i) => {
+      const x = i % w;
+      const y = (i - x) / w;
+      return x < 32 ? ((x + y) % 2 === 0 ? 0 : 255) : 50;
+    });
+    expect(highFrequencyEnergyRatio(gray, w, h)).toBeCloseTo(
+      highFrequencyEnergyRatio(checkerboard(32, 32), 32, 32),
+      8
+    );
+  });
+});
+
+describe('blurMetricScorer', () => {
+  // Why this test matters: the worker is the untested device seam - the
+  // metric-id -> function mapping (incl. the undefined/unknown fallback for
+  // persisted pre-toggle configs) must be pinned HERE so the worker stays a
+  // thin shell.
+
+  it('maps each id to its function; undefined/unknown fall back to VoL', () => {
+    expect(blurMetricScorer('variance-of-laplacian')).toBe(sharpnessScore);
+    expect(blurMetricScorer('high-frequency-energy-ratio')).toBe(
+      highFrequencyEnergyRatio
+    );
+    expect(blurMetricScorer(undefined)).toBe(sharpnessScore);
+    expect(blurMetricScorer('bogus' as BlurMetricId)).toBe(sharpnessScore);
+  });
+
+  it('BLUR_METRIC_IDS lists exactly the two ids with the default first', () => {
+    expect(BLUR_METRIC_IDS).toEqual([
+      'variance-of-laplacian',
+      'high-frequency-energy-ratio',
+    ]);
+  });
+
+  it('DEFAULT_QUALITY_FILTER pins variance-of-laplacian (pre-toggle behavior)', () => {
+    expect(DEFAULT_QUALITY_FILTER.blurMetric).toBe('variance-of-laplacian');
+  });
+});
+
+/**
+ * Why these tests matter: a QualityFilterConfig survives page reloads inside a
+ * consumer app's persisted settings, so it comes back as untrusted input. The
+ * gate owns what its own numbers mean, so it owns their bounds — these pin that
+ * a corrupt or pre-feature stored value can never turn the gate on by itself,
+ * push a threshold outside the range where the check is meaningful, or lose the
+ * pre-toggle blur-metric behaviour. (They moved here from the recorder catalog,
+ * which used to encode this gate's ranges in its own table.)
+ */
+describe('validateQualityFilterConfig', () => {
+  // CHANGED 2026-08-20 with the corpus-tuned default. This previously asserted
+  // "gate stays DISABLED", which was the right invariant while the threshold
+  // was an unvalidated placeholder. Now that k = 0.8 is measured, a config that
+  // never expressed a preference SHOULD inherit the improvement — and note what
+  // this does not do: an explicit `enabled: false` is a valid boolean and is
+  // preserved untouched below, so nobody who opted out is opted back in.
+  it('default-fills an empty, null or undefined group to the shipped defaults', () => {
+    for (const empty of [{}, null, undefined]) {
+      expect(validateQualityFilterConfig(empty)).toEqual(
+        DEFAULT_QUALITY_FILTER
+      );
+      expect(validateQualityFilterConfig(empty).enabled).toBe(
+        DEFAULT_QUALITY_FILTER.enabled
+      );
+    }
+  });
+
+  it('preserves an explicit opt-out', () => {
+    // The population that matters for the default flip: someone who stored
+    // `false` deliberately must stay off, or the flip is a silent override
+    // rather than a new default.
+    expect(validateQualityFilterConfig({ enabled: false }).enabled).toBe(false);
+  });
+
+  it('honors an explicit enabled=true', () => {
+    expect(validateQualityFilterConfig({ enabled: true }).enabled).toBe(true);
+  });
+
+  it('falls back to the shipped default for a non-boolean enabled', () => {
+    // Also changed with the default flip. The old name was "never
+    // self-enables", which encoded a real asymmetry: garbage input must not
+    // switch on something risky. That asymmetry existed because the gate was
+    // unvalidated; now it is the shipped behaviour, and treating `enabled`
+    // differently from every other malformed field would be a surprise of its
+    // own. Garbage still does not mean "the opposite of the default" — it
+    // means "no preference expressed".
+    expect(
+      validateQualityFilterConfig({
+        enabled: 'yes' as unknown as boolean,
+      }).enabled
+    ).toBe(DEFAULT_QUALITY_FILTER.enabled);
+  });
+
+  it('clamps thresholds to QUALITY_FILTER_CONSTRAINTS', () => {
+    expect(
+      validateQualityFilterConfig({ blurRelativeThreshold: 9 })
+        .blurRelativeThreshold
+    ).toBe(QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.max);
+    expect(
+      validateQualityFilterConfig({ minMeanLuminance: -5 }).minMeanLuminance
+    ).toBe(QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.min);
+  });
+
+  // A stored NaN is `typeof 'number'` and would survive a bare clamp.
+  it('falls back to the default for non-finite thresholds', () => {
+    expect(validateQualityFilterConfig({ maxWaitMs: NaN }).maxWaitMs).toBe(
+      DEFAULT_QUALITY_FILTER.maxWaitMs
+    );
+  });
+
+  /**
+   * `blurMetric` is OPTIONAL, so it is the one field whose fallback cannot come
+   * from the defaults alone — a config written before the metric toggle existed
+   * must resolve to variance-of-Laplacian, the behaviour it was tuned under.
+   */
+  it('keeps a known blurMetric and maps missing/unknown to variance-of-laplacian', () => {
+    for (const id of BLUR_METRIC_IDS) {
+      expect(validateQualityFilterConfig({ blurMetric: id }).blurMetric).toBe(
+        id
+      );
+    }
+    expect(validateQualityFilterConfig({}).blurMetric).toBe(
+      'variance-of-laplacian'
+    );
+    expect(
+      validateQualityFilterConfig({
+        blurMetric: 'sobel' as unknown as BlurMetricId,
+      }).blurMetric
+    ).toBe('variance-of-laplacian');
+  });
+
+  it('brackets every numeric default inside its own constraint window', () => {
+    for (const key of [
+      'blurRelativeThreshold',
+      'minMeanLuminance',
+      'maxWaitMs',
+    ] as const) {
+      expect(DEFAULT_QUALITY_FILTER[key]).toBeGreaterThanOrEqual(
+        QUALITY_FILTER_CONSTRAINTS[key].min
+      );
+      expect(DEFAULT_QUALITY_FILTER[key]).toBeLessThanOrEqual(
+        QUALITY_FILTER_CONSTRAINTS[key].max
+      );
+    }
   });
 });

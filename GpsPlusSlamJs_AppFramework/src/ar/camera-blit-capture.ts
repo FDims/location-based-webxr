@@ -49,25 +49,41 @@ export const DEFAULT_BLIT_CONFIG: CameraBlitCaptureConfig = {
  * @param cameraWidth  - Native camera width in pixels (from XRCamera)
  * @param cameraHeight - Native camera height in pixels (from XRCamera)
  * @param divisor      - Resolution divisor: 1 = full, 2 = half, 4 = quarter, etc.
- *                        Values ≤ 0 are treated as 1. Fractional values < 1 are treated as 1.
- * @returns Integer pixel dimensions, clamped to at least 1×1.
- *          Falls back to DEFAULT_BLIT_CONFIG when inputs are invalid (≤ 0).
+ *                        Anything not ≥ 1 and finite is treated as 1 — that
+ *                        covers ≤ 0, fractions < 1, NaN, and Infinity (which
+ *                        would otherwise divide both edges to a 1×1 target).
+ * @returns Integer pixel dimensions, finite, at least 1×1, and never larger
+ *          than the camera's own edges. Falls back to DEFAULT_BLIT_CONFIG when
+ *          the camera dimensions are invalid — ≤ 0, NaN, or ±Infinity.
  */
 export function computeCaptureSize(
   cameraWidth: number,
   cameraHeight: number,
   divisor: number
 ): { width: number; height: number } {
-  // Guard: invalid camera dimensions → fallback
-  if (cameraWidth <= 0 || cameraHeight <= 0) {
+  // Guard: invalid camera dimensions → fallback. The negated `> 0` checks
+  // reject NaN too (`NaN <= 0` is false, so the original `<= 0` form let NaN
+  // straight through), and the explicit `Number.isFinite` rejects Infinity,
+  // which passes `> 0` yet makes `Math.floor(Infinity / d)` an infinite edge.
+  // Either one reaches render-target allocation as a non-finite size — the
+  // same failure `computeAspectFitSize` below documents and guards.
+  if (
+    !(cameraWidth > 0) ||
+    !Number.isFinite(cameraWidth) ||
+    !(cameraHeight > 0) ||
+    !Number.isFinite(cameraHeight)
+  ) {
     return {
       width: DEFAULT_BLIT_CONFIG.width,
       height: DEFAULT_BLIT_CONFIG.height,
     };
   }
 
-  // Guard: nonsensical divisor → treat as 1 (full resolution, no upscale)
-  const safeDivisor = divisor >= 1 ? divisor : 1;
+  // Guard: nonsensical divisor → treat as 1 (full resolution, no upscale).
+  // `Number.isFinite` additionally rejects Infinity, which passes `>= 1` yet
+  // divides both edges to 0 — pinned by `Math.max(1, …)` to a 1x1 render
+  // target, i.e. a capture that succeeds and is worthless.
+  const safeDivisor = divisor >= 1 && Number.isFinite(divisor) ? divisor : 1;
 
   return {
     width: Math.max(1, Math.floor(cameraWidth / safeDivisor)),
@@ -364,21 +380,14 @@ export class CameraBlitCapture {
   }
 
   /**
-   * Convert the internal pixel buffer to a JPEG Blob using OffscreenCanvas
-   * (or fallback to regular Canvas).
+   * Convert the internal pixel buffer to a JPEG Blob - the shared encoder
+   * over a top-left-origin copy (`rgbaImageToJpegBlob`).
    */
-  private async pixelsToJpegBlob(quality: number): Promise<Blob | null> {
-    // Prefer OffscreenCanvas (available in modern browsers, non-blocking)
-    if (typeof OffscreenCanvas !== 'undefined') {
-      return this.pixelsToJpegViaOffscreenCanvas(quality);
-    }
-    // Fallback: use regular canvas
-    return this.pixelsToJpegViaCanvas(quality);
-  }
-
-  private getFlippedImageData(): ImageData {
-    // flippedPixelCopy() already returns an owned, top-left-origin copy.
-    return new ImageData(this.flippedPixelCopy(), this.width, this.height);
+  private pixelsToJpegBlob(quality: number): Promise<Blob | null> {
+    return rgbaImageToJpegBlob(
+      { data: this.flippedPixelCopy(), width: this.width, height: this.height },
+      quality
+    );
   }
 
   /**
@@ -394,39 +403,6 @@ export class CameraBlitCapture {
     copy.set(this.pixelBuffer);
     this.flipRowsVertically(copy, this.width, this.height);
     return copy;
-  }
-
-  private async pixelsToJpegViaOffscreenCanvas(
-    quality: number
-  ): Promise<Blob | null> {
-    const offscreen = new OffscreenCanvas(this.width, this.height);
-    const ctx = offscreen.getContext('2d');
-    if (!ctx) {
-      return null;
-    }
-
-    const imageData = this.getFlippedImageData();
-    ctx.putImageData(imageData, 0, 0);
-
-    return offscreen.convertToBlob({ type: 'image/jpeg', quality });
-  }
-
-  private pixelsToJpegViaCanvas(quality: number): Promise<Blob | null> {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = this.width;
-      canvas.height = this.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(null);
-        return;
-      }
-
-      const imageData = this.getFlippedImageData();
-      ctx.putImageData(imageData, 0, 0);
-
-      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
-    });
   }
 
   /**
@@ -466,7 +442,25 @@ export class CameraBlitCapture {
     if (this.disposed) {
       return false;
     }
-    if (newWidth <= 0 || newHeight <= 0) {
+    // Same guard shape as `computeCaptureSize` above, and for the same
+    // reason: `<= 0` is FALSE for NaN, so the old form let NaN and ±Infinity
+    // through to `setSize` and to `new Uint8Array(w * h * 4)`. This is a
+    // PUBLIC method, so hardened call sites elsewhere do not cover it.
+    // INTEGER, not merely finite (PR #379 review): `new Uint8Array(512.5 *
+    // 384 * 4)` throws `RangeError: Invalid typed array length`, so a
+    // fractional dimension escapes as an exception from a method documented
+    // to RETURN FALSE on invalid dimensions. `Number.isInteger` is false for
+    // NaN and +-Infinity, so it subsumes the finiteness check.
+    //
+    // `computeCaptureSize` and `computeAspectFitSize` need no such check:
+    // they floor/round their own results, so their outputs are integers by
+    // construction. It is this PUBLIC setter that takes arbitrary numbers.
+    if (
+      !Number.isInteger(newWidth) ||
+      newWidth <= 0 ||
+      !Number.isInteger(newHeight) ||
+      newHeight <= 0
+    ) {
       return false;
     }
     if (newWidth === this.width && newHeight === this.height) {
@@ -511,4 +505,61 @@ export class CameraBlitCapture {
     disposeObject3D(this.quad);
     log.info('CameraBlitCapture disposed');
   }
+}
+
+/** A top-left-origin RGBA frame the encoder accepts (the `RgbaImage` shape
+ *  the camera-frame source emits and `captureToRgba` returns). */
+export interface RgbaFrame {
+  readonly data: Uint8ClampedArray;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Encode a top-left-origin RGBA frame as a JPEG Blob - OffscreenCanvas
+ * where the browser has it (off the main-thread canvas path), a DOM canvas
+ * otherwise. The ONE encoder behind the blit capture and the Tour Viewer's
+ * placed photos (DEC-H3; the viewer used to carry a copy).
+ *
+ * The data must be exactly `width * height * 4` bytes; `ImageData` throws
+ * on anything else, and that is reported as a rejection, never a
+ * synchronous throw. Resolves null when no 2D context is available or the
+ * encoder produced nothing.
+ */
+export async function rgbaImageToJpegBlob(
+  frame: RgbaFrame,
+  quality: number
+): Promise<Blob | null> {
+  const { data, width, height } = frame;
+  if (data.length !== width * height * 4) {
+    throw new RangeError(
+      `rgbaImageToJpegBlob: expected ${String(width * height * 4)} bytes for ${String(width)}×${String(height)}, got ${String(data.length)}`
+    );
+  }
+  // A plain-ArrayBuffer-backed copy only when the input is not one already
+  // (ImageData refuses a SharedArrayBuffer view).
+  const pixels =
+    data.buffer instanceof ArrayBuffer
+      ? (data as Uint8ClampedArray<ArrayBuffer>)
+      : new Uint8ClampedArray(data);
+  const imageData = new ImageData(pixels, width, height);
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const offscreen = new OffscreenCanvas(width, height);
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) return null;
+    ctx.putImageData(imageData, 0, 0);
+    return offscreen.convertToBlob({ type: 'image/jpeg', quality });
+  }
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      resolve(null);
+      return;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+  });
 }

@@ -1,9 +1,26 @@
 packages:
   - GpsPlusSlamJs_AppFramework
+  - GpsPlusSlamJs_Osm
   - GpsPlusSlamJs_RecorderApp
   - GpsPlusSlamJs_MinimalExample
   - GpsPlusSlamJs_AnchorStarter
   - GpsPlusSlamJs_QrTrackingDemo
+  - GpsPlusSlamJs_Landing
+  - GpsPlusSlamJs_PhysicsDemo
+  - GpsPlusSlamJs_WayfindingHudDemo
+  - GpsPlusSlamJs_OsmDemo
+  - GpsPlusSlamJs_TourViewer
+  - GpsPlusSlamJs_SiteWorker
+  - GpsPlusSlamJs_DesignSystem
+
+# `osmtogeojson@3.0.0-beta.5` (a devDependency of GpsPlusSlamJs_Osm - its
+# polygon table is benchmarked against, never shipped; deprecated upstream)
+# pins `@xmldom/xmldom` 0.8.3 EXACTLY, the one advisory a plain in-range
+# `pnpm update` cannot move: one critical and five highs that drowned the
+# audit's signal (dependency sweeps 2026-08-31 and 2026-09-07). 0.8.13 is
+# the patched line; the 0.9 line changes the API and is not needed.
+overrides:
+  "@xmldom/xmldom": "^0.8.13"
 
 # pnpm 11: only these packages may run install/postinstall build scripts
 # (strictDepBuilds is on by default in v11, so anything else errors loudly
@@ -14,9 +31,13 @@ allowBuilds:
   "@sentry/cli": true
   "@playwright/test": true
   esbuild: true
+  # wrangler's local-simulator runtime; its postinstall downloads a binary
+  # that only `wrangler dev` needs. We deploy with `wrangler versions
+  # upload` (pure API call), so the build stays disallowed on purpose.
+  workerd: false
 
 # Supply-chain embargo (decided 2026-07-09, see the private repo's
-# GpsPlusSlamJs_Docs/docs/2026-07-09-pnpm11-upgrade-and-publish-via-pnpm-plan.md
+# GpsPlusSlamJs_Docs/docs/2026-07-09-2329-pnpm11-upgrade-and-publish-via-pnpm-plan.md
 # scope item 6): keep pnpm 11's default 24 h minimumReleaseAge for
 # third-party packages (written explicitly for self-documentation), but
 # exclude our own packages so the AppFramework's `gps-plus-slam-js: ^x.y.z`

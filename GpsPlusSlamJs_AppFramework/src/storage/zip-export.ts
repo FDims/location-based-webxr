@@ -18,6 +18,8 @@
 
 import { BlobWriter, ZipWriter, BlobReader } from '@zip.js/zip.js';
 import { createLogger } from '../utils/logger';
+import { getSessionsRootHandle } from './opfs-storage';
+import { assertSafeZipEntryPaths } from './zip-entry-path.js';
 
 const log = createLogger('ZipExport');
 
@@ -98,12 +100,19 @@ export interface ExportSessionAsZipOptions {
 // ============================================================================
 
 /**
- * Get the OPFS sessions directory handle (flat layout).
+ * Get the OPFS sessions directory handle from the layout owner
+ * (quality-review G-9 — this used to re-derive the
+ * `'gps-plus-slam'/'sessions'` path itself, so a root re-nesting in
+ * `opfs-storage.ts` would have silently broken export only).
  */
-async function getSessionsHandle(): Promise<FileSystemDirectoryHandle> {
-  const opfsRoot = await navigator.storage.getDirectory();
-  const gpsPlusSlamDir = await opfsRoot.getDirectoryHandle('gps-plus-slam');
-  return gpsPlusSlamDir.getDirectoryHandle('sessions');
+function getSessionsHandle(): FileSystemDirectoryHandle {
+  const sessions = getSessionsRootHandle();
+  if (!sessions) {
+    throw new Error(
+      'OPFS storage not initialized — call initOpfsStorage() before exporting'
+    );
+  }
+  return sessions;
 }
 
 /**
@@ -172,7 +181,7 @@ export async function exportSessionAsZip(
 ): Promise<ZipExportResult> {
   log.info(`Exporting session: ${sessionName}`);
 
-  const sessionsDir = await getSessionsHandle();
+  const sessionsDir = getSessionsHandle();
   let sessionHandle: FileSystemDirectoryHandle;
   try {
     sessionHandle = await sessionsDir.getDirectoryHandle(sessionName);
@@ -229,24 +238,22 @@ export async function exportSessionHandleAsZip(
     seenSubdirs.add(subdir);
 
     const addFile: ZipContributorAddFile = async (relativePath, blob) => {
-      if (relativePath.startsWith('/')) {
+      // The shared rule set (zip-entry-path.ts): absolute paths, backslashes,
+      // '.'/'..' segments, empty segments and trailing slashes are all
+      // rejected. Without this, a contributor could escape its declared
+      // subdir (e.g. `../actions/000001.json`) and overwrite framework-owned
+      // files inside the ZIP. These used to be three inline checks that the
+      // validator absorbed from community PR #321 was LAXER than (its
+      // review, 2026-08-26); one module now serves every writer (DEC-H3).
+      // The COMPOSED path is what reaches the archive, so that is what is
+      // validated (M1 review #4: validating the relative half alone let a
+      // drive-lettered or backslashed subdir through).
+      try {
+        assertSafeZipEntryPaths([`${subdir}/${relativePath}`]);
+      } catch (err) {
         throw new Error(
-          `ZipExportContributor relative path must not start with '/' (got ${relativePath})`
-        );
-      }
-      // Defensive: reject backslashes (Windows-style separators) and any path
-      // traversal segments. Without this, a contributor could escape its
-      // declared subdir (e.g. `../actions/000001.json`) and overwrite
-      // framework-owned files inside the ZIP.
-      if (relativePath.includes('\\')) {
-        throw new Error(
-          `ZipExportContributor relative path must not contain '\\' (got ${relativePath})`
-        );
-      }
-      const segments = relativePath.split('/');
-      if (segments.some((s) => s === '..' || s === '.')) {
-        throw new Error(
-          `ZipExportContributor relative path must not contain '.' or '..' segments (got ${relativePath})`
+          `ZipExportContributor relative path is unsafe: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err }
         );
       }
       await zipWriter.add(`${subdir}/${relativePath}`, new BlobReader(blob));
@@ -305,8 +312,61 @@ export async function syncToExternalZip(
  *
  * @param blob - The blob to download
  * @param filename - Suggested filename
+ * @returns `true` when a download or save was started; `false` when the
+ *   user dismissed the save picker, in which case nothing was written. A
+ *   caller whose next step assumes the file exists (the Tour Viewer's
+ *   finish step) keeps its download control live on `false`; before this
+ *   result the cancelled path was silent.
  */
-export async function downloadZip(blob: Blob, filename: string): Promise<void> {
+export async function downloadZip(
+  blob: Blob,
+  filename: string
+): Promise<boolean> {
+  return downloadBlob(blob, filename, ZIP_FILE_TYPE);
+}
+
+/** What the save picker offers to filter by. */
+export interface DownloadFileType {
+  /** Shown in the picker's filter row, e.g. "ZIP Archive". */
+  description: string;
+  /** The MIME type, e.g. `application/pdf`. */
+  mimeType: string;
+  /** The extension WITH its dot, e.g. `.pdf`. */
+  extension: string;
+}
+
+/** A recording or tour archive - the type both apps' zips are saved as. */
+export const ZIP_FILE_TYPE: DownloadFileType = {
+  description: 'ZIP Archive',
+  mimeType: 'application/zip',
+  extension: '.zip',
+};
+
+/** A printable document - the Tour Viewer's sheet of numbered codes. */
+export const PDF_FILE_TYPE: DownloadFileType = {
+  description: 'PDF Document',
+  mimeType: 'application/pdf',
+  extension: '.pdf',
+};
+
+/**
+ * Trigger a file download, with the picker filtered to `fileType`.
+ *
+ * Generalised from `downloadZip` when a second kind of file needed the same
+ * save path (the printable PDF of QR codes): the picker's type filter was
+ * the only zip-specific thing in it, and a second copy of the
+ * picker-then-anchor dance is exactly the duplication this repo keeps
+ * finding. `downloadZip` stays as the zip-shaped call its callers already
+ * make.
+ *
+ * @returns `true` when a download or save was started; `false` when the
+ *   user dismissed the save picker, in which case nothing was written.
+ */
+export async function downloadBlob(
+  blob: Blob,
+  filename: string,
+  fileType: DownloadFileType
+): Promise<boolean> {
   // Try File System Access API first (better UX on desktop)
   if ('showSaveFilePicker' in window && window.showSaveFilePicker) {
     try {
@@ -314,8 +374,8 @@ export async function downloadZip(blob: Blob, filename: string): Promise<void> {
         suggestedName: filename,
         types: [
           {
-            description: 'ZIP Archive',
-            accept: { 'application/zip': ['.zip'] },
+            description: fileType.description,
+            accept: { [fileType.mimeType]: [fileType.extension] },
           },
         ],
       });
@@ -323,13 +383,13 @@ export async function downloadZip(blob: Blob, filename: string): Promise<void> {
       await writable.write(blob);
       await writable.close();
       log.info(`Saved via File System Access API: ${filename}`);
-      return;
+      return true;
     } catch (err) {
       const error = err as Error;
       if (error.name === 'AbortError') {
         // User cancelled - don't fall through
         log.info('User cancelled save dialog');
-        return;
+        return false;
       }
       // Fall through to <a download> fallback
       log.warn('showSaveFilePicker failed, using fallback:', error.message);
@@ -346,8 +406,14 @@ export async function downloadZip(blob: Blob, filename: string): Promise<void> {
   link.click();
   document.body.removeChild(link);
 
-  // Clean up object URL after a short delay
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Clean up the object URL after a delay. TEN seconds, not one: the
+  // recorder's own copy of this fallback carried that value with a reason -
+  // on slower Android browsers the click event can propagate
+  // asynchronously, and revoking too early cancels the download. When the
+  // two copies were merged (r665) the longer, reasoned value won; nothing
+  // depends on the URL being released sooner.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 
   log.info(`Download triggered via <a download>: ${filename}`);
+  return true;
 }

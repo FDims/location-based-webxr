@@ -3,36 +3,50 @@
 /**
  * build-site.mjs — orchestrates the multi-app subpath deployment.
  *
- * Builds the framework once, then builds the RecorderApp under base `/recorder/`,
- * the AnchorStarter under base `/starter/`, the MinimalExample under base
- * `/minimal/`, and the QrTrackingDemo under base `/qr-demo/` into a single
- * combined output directory (`dist-site/`), and copies the static landing page
- * to the root. The resulting tree is what Cloudflare serves from
- * `gps.csutil.com`:
+ * Builds the Landing app FIRST at base `/` into the `dist-site/` root (it
+ * must come first: a Vite build into the shared root after the apps would
+ * risk clobbering their subdirs), then builds the framework once, then the
+ * RecorderApp under base `/recorder/`, the AnchorStarter under base
+ * `/starter/`, the MinimalExample under base `/minimal/`, the
+ * QrTrackingDemo under base `/qr-demo/`, the PhysicsDemo under base
+ * `/physics/`, the WayfindingHudDemo under base `/wayfinding/` and the OsmDemo
+ * under base `/osm/` into the same combined output directory. The resulting tree is what Cloudflare
+ * serves from `gps.csutil.com`:
  *
  *   dist-site/
- *     index.html        ← landing page (root)
+ *     index.html        ← Landing app (Vite build, base=/)
+ *     assets/           ← Landing bundle
  *     recorder/         ← RecorderApp, base=/recorder/
  *     starter/          ← AnchorStarter, base=/starter/
  *     minimal/          ← MinimalExample, base=/minimal/
  *     qr-demo/          ← QrTrackingDemo, base=/qr-demo/
+ *     physics/          ← PhysicsDemo, base=/physics/
+ *     wayfinding/       ← WayfindingHudDemo, base=/wayfinding/
+ *     osm/              ← OsmDemo, base=/osm/
+ *     tour/             ← TourViewer, base=/tour/
+ *     blog/             ← rendered from the project WIKI repo (not a Vite app)
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
  *
- * After each app build it asserts the emitted HTML contains no root-absolute
- * (`/...`) URL outside the app's own base — this is the executable guard for
- * plan Steps 1-3 (so a future runtime-absolute URL that Vite cannot rewrite
- * fails the deploy instead of 404-ing in production).
+ * After each subpath app build it asserts the emitted HTML contains no
+ * root-absolute (`/...`) URL outside the app's own base — this is the
+ * executable guard for plan Steps 1-3 (so a future runtime-absolute URL that
+ * Vite cannot rewrite fails the deploy instead of 404-ing in production).
+ * That guard is vacuous for the landing app (every root-absolute URL starts
+ * with its base `/`), so the landing gets its own guards instead: every
+ * demo link must be present in the built HTML (the "demos remain
+ * launchable" requirement) and every local asset URL it references must
+ * exist in the tree.
  *
- * See: GpsPlusSlamJs_Docs/docs/2026-06-01-multi-app-subpath-deployment-plan.md
+ * See: GpsPlusSlamJs_Docs/docs/2026-06-01-0424-multi-app-subpath-deployment-plan.md
+ * and GpsPlusSlamJs_Docs/docs/2026-07-12-2046-landing-page-3d-scroll-redesign-plan.md
  */
 
 import { execFileSync } from 'node:child_process';
 import {
   rmSync,
   mkdirSync,
-  cpSync,
   existsSync,
   readFileSync,
   readdirSync,
@@ -102,6 +116,58 @@ function assertNoBareAbsoluteUrlsInDir(dir, base) {
   }
 }
 
+/**
+ * Landing-specific guards (the bare-URL assertion is vacuous at base `/`):
+ * the built landing HTML must still link every demo app, and every
+ * local (root-absolute, non-demo) href/src it references must exist as a
+ * file in dist-site — a missing bundle asset would otherwise 404 silently.
+ *
+ * @param {string} htmlPath absolute path to the built landing index.html
+ */
+function assertLandingHtml(htmlPath) {
+  const html = readFileSync(htmlPath, 'utf-8');
+  const requiredDemoLinks = [
+    '/starter/',
+    '/minimal/',
+    '/qr-demo/',
+    '/recorder/',
+    '/physics/',
+    '/wayfinding/',
+    '/osm/',
+    '/tour/',
+    // Not a demo, but required for the same reason: this footer link is the
+    // only inbound path a crawler has to /blog/, and the canonical-copy
+    // argument (the blog should outrank the GitHub wiki copy of the same
+    // article) rests entirely on it.
+    '/blog/',
+  ];
+  const missingLinks = requiredDemoLinks.filter(
+    (link) => !html.includes(`href="${link}"`)
+  );
+  if (missingLinks.length > 0) {
+    throw new Error(
+      `Landing ${htmlPath} lost demo link(s): ${missingLinks.join(', ')}. ` +
+        `Every demo app must stay launchable from the landing page.`
+    );
+  }
+  const attrRe = /(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  const missingAssets = [];
+  let match;
+  while ((match = attrRe.exec(html)) !== null) {
+    const url = match[1] ?? match[2] ?? '';
+    if (!url.startsWith('/') || url.startsWith('//')) continue;
+    if (requiredDemoLinks.includes(url)) continue;
+    const assetPath = join(distSite, url.replace(/^\//, '').split('?')[0] ?? '');
+    if (!existsSync(assetPath)) missingAssets.push(url);
+  }
+  if (missingAssets.length > 0) {
+    throw new Error(
+      `Landing ${htmlPath} references missing asset file(s): ` +
+        `${[...new Set(missingAssets)].join(', ')}.`
+    );
+  }
+}
+
 /** Assert the combined deploy tree matches the documented target layout. */
 function assertSiteTree() {
   const required = [
@@ -111,6 +177,16 @@ function assertSiteTree() {
     'starter/index.html',
     'minimal/index.html',
     'qr-demo/index.html',
+    'physics/index.html',
+    'wayfinding/index.html',
+    'osm/index.html',
+    'tour/index.html',
+    // The blog index exists even with nothing published (it renders "No posts
+    // published yet"), so its absence means the blog step did not run at all.
+    'blog/index.html',
+    'blog/sitemap.xml',
+    // Carries the `Sitemap:` line that points crawlers at blog/sitemap.xml.
+    'robots.txt',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {
@@ -124,8 +200,37 @@ console.log('• Cleaning dist-site/');
 rmSync(distSite, { recursive: true, force: true });
 mkdirSync(distSite, { recursive: true });
 
+// The landing app builds FIRST, straight into the dist-site ROOT. Order is
+// load-bearing: building into the shared root after the subpath apps would
+// risk wiping their subdirs (e.g. via --emptyOutDir). The just-cleaned root
+// is empty, so no --emptyOutDir is needed here.
+console.log('• Building Landing (base=/)');
+run('pnpm', ['--filter', 'gps-plus-slam-landing', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-landing',
+  'exec',
+  'vite',
+  'build',
+  '--base=/',
+  '--outDir',
+  distSite,
+]);
+
+// The two workspace LIBRARIES, built once before any app that consumes them.
+// Consumers resolve both through their package `exports`, i.e. through dist, so
+// an app's `typecheck` fails outright if its library has not been built yet —
+// "Cannot find module 'X' or its corresponding type declarations", followed by
+// a cascade of implicit-any errors that read like the app's own bug.
+//
+// The OSM build was missing here and nowhere else supplied it, which broke the
+// /osm/ deployment while every local build passed against a stale dist left
+// over from an earlier e2e run.
 console.log('• Building framework (once)');
 run('pnpm', ['run', 'build:framework']);
+
+console.log('• Building OSM package (once)');
+run('pnpm', ['run', 'build:osm']);
 
 console.log('• Building RecorderApp (base=/recorder/)');
 run('pnpm', ['--filter', 'gps-plus-slam-recorder', 'run', 'typecheck']);
@@ -159,6 +264,21 @@ run('pnpm', [
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'starter'), '/starter/');
 
+console.log('• Building TourViewer (base=/tour/)');
+run('pnpm', ['--filter', 'gps-plus-slam-tour-viewer', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-tour-viewer',
+  'exec',
+  'vite',
+  'build',
+  '--base=/tour/',
+  '--outDir',
+  join(distSite, 'tour'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'tour'), '/tour/');
+
 console.log('• Building MinimalExample (base=/minimal/)');
 run('pnpm', ['--filter', 'gps-plus-slam-minimal-example', 'run', 'typecheck']);
 run('pnpm', [
@@ -189,11 +309,69 @@ run('pnpm', [
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'qr-demo'), '/qr-demo/');
 
-console.log('• Copying landing page to dist-site/index.html');
-cpSync(
-  join(repoRoot, 'GpsPlusSlamJs_Landing', 'index.html'),
-  join(distSite, 'index.html')
-);
+console.log('• Building PhysicsDemo (base=/physics/)');
+run('pnpm', ['--filter', 'gps-plus-slam-physics-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-physics-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/physics/',
+  '--outDir',
+  join(distSite, 'physics'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'physics'), '/physics/');
+
+console.log('• Building WayfindingHudDemo (base=/wayfinding/)');
+run('pnpm', ['--filter', 'gps-plus-slam-wayfinding-hud-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-wayfinding-hud-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/wayfinding/',
+  '--outDir',
+  join(distSite, 'wayfinding'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'wayfinding'), '/wayfinding/');
+
+// The OSM demo is not an AR app — it is a Leaflet map beside a three.js scene —
+// but it is published with the others because judging the affordance grid by eye
+// is the one thing no test can do, and that needs a URL rather than a checkout.
+console.log('• Building OsmDemo (base=/osm/)');
+run('pnpm', ['--filter', 'gps-plus-slam-osm-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-osm-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/osm/',
+  '--outDir',
+  join(distSite, 'osm'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'osm'), '/osm/');
+
+// The blog is not a Vite app: it is markdown from the project WIKI repository
+// (a separate repo — see GpsPlusSlamJs_Landing/scripts/blog/) rendered to
+// static HTML. It builds last because it depends on nothing else in the tree.
+//
+// Deliberately NOT wrapped in a try/catch: a missing or unreachable wiki must
+// fail the build rather than deploy an empty /blog/ over a working one, which
+// would unpublish every article at once behind a green build.
+console.log('• Building blog (base=/blog/)');
+run('node', [
+  join('GpsPlusSlamJs_Landing', 'scripts', 'blog', 'build-blog.mjs'),
+  '--out',
+  distSite,
+]);
+
+assertLandingHtml(join(distSite, 'index.html'));
 
 assertSiteTree();
 console.log('✓ dist-site/ built and verified');

@@ -10,7 +10,7 @@ The slice is the recorder-side replacement for the library's
 `gpsData.referencePoints` field + the legacy recorder `refPoints` slice.
 It is registered alongside the legacy slice under a parallel root key
 (`refPoints`) and is **pure addition** until sub-step 5.7 of the
-[slice-collapse plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-27-collapse-refpoint-and-frame-slices-plan.md)
+[slice-collapse plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-27-collapse-refpoint-and-frame-slices-plan.md)
 collapses the two.
 
 ## Public API
@@ -46,7 +46,7 @@ collapses the two.
 - [ref-points-slice.test.ts](ref-points-slice.test.ts) — reducer
   cases (`addRefPointEntry`, `setImportedRefPointEntries`,
   `resetRefPoints`) and action-type namespace assertions.
-- [ref-points-v2-selectors.test.ts](ref-points-v2-selectors.test.ts) —
+- [ref-points-selectors.test.ts](ref-points-selectors.test.ts) —
   `selectRefPointEntries` (incl. stable empty sentinel),
   `selectKnownAnchorsByCell` (grouping, first-non-null name, lat/lon
   surface, memoisation), `selectImportedKnownAnchors` (timestamp-0

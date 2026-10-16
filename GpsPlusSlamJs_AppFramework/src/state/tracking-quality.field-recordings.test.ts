@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadActionsFromZip, type ZipActionEntry } from '../storage/zip-reader';
 import { createSlamAppStore, type SlamAppStore } from './create-slam-app-store';
@@ -35,6 +35,12 @@ import type { TrackingQualityReport } from './tracking-quality';
 // is ever re-tuned, instead of silently drifting from a hardcoded literal.
 const TRANSLATION_FAIL_M =
   DEFAULT_TRACKING_QUALITY_OPTIONS.convergenceTranslationWarnM * 4;
+
+// Same derivation for the rotation axis (`rotFail = rotWarn * 4`, 24° today).
+// `rampDown` returns exactly 0 at or above this value, so "ΣΔrot ≥ ROTATION_FAIL_DEG"
+// IS the production definition of a broken-alignment recording.
+const ROTATION_FAIL_DEG =
+  DEFAULT_TRACKING_QUALITY_OPTIONS.convergenceRotationWarnDeg * 4;
 
 // ---------------------------------------------------------------------------
 // Fixtures — resolved relative to the workspace root, where both
@@ -293,13 +299,32 @@ describe.runIf(fixturesAvailable)(
       it('indoor: rotation sum captures broken alignment', () => {
         // Why: confirms rotation is the load-bearing axis on indoor
         // stationary recordings (translation stays mute because the
-        // user isn't walking). The 2026-05-23 indoor recording final
-        // ΣΔrot was 132.9° — well into fail. Loosen the gate to 50°
-        // so this doesn't false-fail on slightly less-broken indoor
-        // recordings, but tight enough to catch the F4 pathology.
+        // user isn't walking).
+        //
+        // The bound is DERIVED from the production fail threshold, not
+        // hand-picked. "Broken alignment" is not a number this test gets to
+        // invent — it is `sumRotDeg >= rotFail`, the point where rampDown
+        // pins the rotation score at 0 and (via `min`) the whole convergence
+        // sub-score with it. Asserting the derived value is what makes the
+        // second expectation below a consequence rather than a coincidence.
+        //
+        // History — why this is NOT a loosened assertion (2026-07-27): the
+        // bound used to be a hardcoded 50°, chosen in 2026-05 as a fraction
+        // of the 132.9° this recording then produced. The promoted alignment
+        // defaults (primary repo `1e90951a4` + `a3525a0e6`) improved it to
+        // 28.09°, which is still ABOVE the 24° fail threshold — the recording
+        // is still broken by the product's own definition; only the arbitrary
+        // literal had gone stale. Sibling `TRANSLATION_FAIL_M` above has
+        // always been derived this way; the rotation axis had been missed.
+        // See GpsPlusSlamJs_Docs/docs/2026-07-27-2210-tracking-quality-f6-recalibration-followup.md
+        //
+        // Headroom warning: the margin is now 1.17× (28.09 / 24), down from
+        // 5.5×. If a future alignment improvement drops this recording below
+        // 24°, do NOT lower the threshold — the correct response is a fixture
+        // that is still genuinely broken.
         expect(
           indoorResult.finalReport!.diagnostics.recentSumRotationDeltaDeg
-        ).toBeGreaterThan(50);
+        ).toBeGreaterThan(ROTATION_FAIL_DEG);
         expect(indoorResult.finalReport!.subScores.convergence).toBeLessThan(
           0.2
         );
@@ -339,13 +364,50 @@ describe.runIf(fixturesAvailable)(
 );
 
 describe.runIf(!fixturesAvailable)(
-  'tracking-quality field recordings (§3) — fixtures missing',
+  'tracking-quality field recordings (§3) — fixtures absent on this machine',
   () => {
-    it('skipped — recordings not present at expected paths', () => {
-      // Why: tests must skip gracefully when the (gitignored) recordings
-      // are not in the workspace. They live outside the npm-published
-      // package — see §3.1 of the user-feedback doc.
-      expect(true).toBe(true);
+    it('looked in the documented sibling-checkout location, so absence means absence', () => {
+      // Why this test matters: every real assertion in this file is `runIf`-gated
+      // on `fixturesAvailable`, so where the recordings are missing the suite
+      // simply vanishes and the run is green. This branch used to be
+      // `expect(true).toBe(true)`, which made two very different situations
+      // produce the identical green line: "the recordings are not on this
+      // machine" and "the path walk broke, so every recording LOOKS missing".
+      // The second is a live hazard — `GPS_ROOT` is a fixed `../../../..` walk
+      // from this file's own location, which any move of the file silently
+      // invalidates, and this suite is the only defence of findings F1/F4/F6.
+      //
+      // So assert the one thing that is still checkable with no fixtures: that
+      // we looked where the docs say the recordings live. Deliberately NOT
+      // asserting that the sibling checkout is absent — a partial checkout with
+      // the repo but without `TestDataJs/` is a legitimate setup, and failing
+      // on it would trade a silent pass for a false alarm.
+      //
+      // The recordings are COMMITTED, not gitignored as an earlier version of
+      // this comment claimed; they live in the private sibling checkout, which
+      // public CI does not have. See §3.1 of the user-feedback doc.
+      // Pin the DEPTH of the `../../../..` walk, not just the shape of its
+      // result. The first version of this test asserted that TEST_DATA_ROOT
+      // ends with `/gps-plus-slam`, and a probe that shortened the walk by one
+      // level still passed — the wrong root simply produced
+      // `…/GpsPlusSlamJs_AppFramework/gps-plus-slam`, which ends the same way.
+      // The distinguishing fact is that a REPO directory must sit between
+      // GPS_ROOT and this package.
+      expect(isAbsolute(TEST_DATA_ROOT)).toBe(true);
+      const fromRoot = relative(GPS_ROOT, __dirname).split(sep);
+      // <gpsRoot>/<this checkout>/GpsPlusSlamJs_AppFramework/src/state
+      expect(fromRoot).toHaveLength(4);
+      expect(fromRoot[1]).toBe('GpsPlusSlamJs_AppFramework');
+      expect(fromRoot.slice(2)).toEqual(['src', 'state']);
+
+      // Both fixture roots (`TestDataJs/` and `TestDataJs-Other/`) hang off
+      // TEST_DATA_ROOT, so assert against it rather than a literal that would
+      // match one of them by accident.
+      for (const fixture of [OUTDOOR, INDOOR]) {
+        expect(fixture.path.startsWith(TEST_DATA_ROOT + sep)).toBe(true);
+        expect(fixture.path.endsWith('.zip')).toBe(true);
+      }
+      expect(OUTDOOR.path).not.toBe(INDOOR.path);
     });
   }
 );

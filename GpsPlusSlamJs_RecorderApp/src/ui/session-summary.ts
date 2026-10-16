@@ -9,10 +9,19 @@
  */
 
 import { createSummaryMap, type SummaryMapInstance } from './summary-map';
+import { qrAnchorSummaryLines } from '../qr/qr-anchor-summary';
+import type { QrAnchorOutcome } from '../qr/qr-level-zip-contributor';
 import type { RefPointMarkerInput } from './draw-ref-point-markers';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { formatFileSize } from 'gps-plus-slam-app-framework/utils/format-file-size';
 import { getRequiredElement } from '../utils/dom-helpers';
+import {
+  shareOrDownloadBlob,
+  ZIP_FILE_TYPE,
+} from 'gps-plus-slam-app-framework/storage';
+import { showError } from './hud';
+import { showToast } from './toast';
+import { formatDistance } from 'gps-plus-slam-app-framework/utils/format-distance';
 import type {
   GpsCoord,
   RawGpsSample,
@@ -45,6 +54,15 @@ export interface SessionSummaryData {
   readonly depthSampleCount: number;
   /** List of errors/warnings from the session */
   readonly errors: string[];
+  /**
+   * What this recording decided about each printed QR code it saw.
+   *
+   * Empty is the normal case (QR recording off). A DECLINED code has to
+   * appear here, because in the zip "declined" and "never seen" look
+   * identical - no file - and the only feedback for "your poster moved"
+   * would otherwise be silence.
+   */
+  readonly qrAnchors: readonly QrAnchorOutcome[];
   /** First GPS coordinate (null if no GPS data) */
   readonly firstGps: GpsCoord | null;
   /** Last GPS coordinate (null if no GPS data) */
@@ -154,17 +172,38 @@ function formatGps(gps: GpsCoord | null): string {
 
 /**
  * Format distance in meters for display.
+ *
+ * The workspace's shared formatter (2026-08-24) with this screen's rule: two
+ * decimals on kilometres, because a session total is a figure the user compares
+ * between recordings rather than glances at, and 1.23 km distinguishes two
+ * walks that 1.2 km does not. Output unchanged for non-negative finite input —
+ * the framework's `format-distance.test.ts` pins it differentially against the
+ * old body. Outside that range it DID change on purpose: this summary used to
+ * print "NaN m", and now formats that as "0.0 m".
  */
-function formatDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${meters.toFixed(1)} m`;
-  }
-  return `${(meters / 1000).toFixed(2)} km`;
+function formatSummaryDistance(meters: number): string {
+  return formatDistance(meters, { kmDecimals: 2 });
 }
 
 /**
  * Format errors list for display.
  */
+/** Render the printed-code block, or hide it when nothing was seen. */
+function renderQrAnchors(
+  outcomes: readonly QrAnchorOutcome[] | undefined
+): void {
+  const block = document.getElementById('summary-qr-anchors-block');
+  const body = document.getElementById('summary-qr-anchors');
+  if (!block || !body) return;
+  const lines = qrAnchorSummaryLines(outcomes);
+  if (lines === null) {
+    block.classList.add('hidden');
+    return;
+  }
+  block.classList.remove('hidden');
+  body.textContent = lines;
+}
+
 function formatErrors(errors: string[]): string {
   if (errors.length === 0) {
     return 'No errors';
@@ -175,65 +214,47 @@ function formatErrors(errors: string[]): string {
 /**
  * Handle the share/download action for the session ZIP.
  *
- * Uses Web Share API with file sharing where supported (primarily mobile),
- * falls back to <a download> for desktop browsers.
- *
  * User Feedback Issue #2 (2026-02-06): Share recorded session button.
+ *
+ * The Web-Share-then-download dance used to be written out here, together
+ * with a second hand copy of the framework's `<a download>` fallback. Both
+ * are now the framework's `shareOrDownloadBlob` (DEC-H3: shared behaviour
+ * carrying a contract is unified, and the repo's duplicate guard is keyed
+ * on names so it could see neither copy).
+ *
+ * TWO deliberate changes came with the move (M2 review #5), because the
+ * merged behaviour is not identical to what stood here:
+ * - **A save picker is now offered on the download route.** The old
+ *   fallback was a bare `<a download>`; `downloadBlob` tries
+ *   `showSaveFilePicker` first. That is better on desktop and introduces a
+ *   state the old code did not have - the user dismissing the picker - so
+ *   this handler now SAYS so. It previously logged and left the button
+ *   looking as though nothing had been pressed.
+ * - **The share route is gated on a coarse pointer**, so a desktop keeps
+ *   the save picker rather than a share sheet with no "save to disk".
+ *
+ * Unchanged: an aborted share stops rather than dropping an unwanted file
+ * into Downloads, and any other share failure falls through to the
+ * download.
  */
 async function handleShareSession(blob: Blob, filename: string): Promise<void> {
-  const file = new File([blob], filename, { type: 'application/zip' });
-
-  // Try Web Share API with file support.
-  // Note: The outer check tests that the API exists at all, while
-  // canShare(shareData) tests that this browser supports *file* sharing
-  // specifically — many desktop browsers expose the API for text/URLs
-  // only and return false for files. Both checks are needed.
-  if (navigator.canShare && navigator.share) {
-    const shareData = { files: [file] };
-    if (navigator.canShare(shareData)) {
-      try {
-        await navigator.share(shareData);
-        log.info(`Shared session via Web Share API: ${filename}`);
-        return;
-      } catch (err) {
-        const error = err as Error;
-        if (error.name === 'AbortError') {
-          log.info('User cancelled share');
-          return;
-        }
-        log.warn(
-          'Web Share API failed, falling back to download:',
-          error.message
-        );
-      }
-    }
-  }
-
-  // Fallback: <a download> approach
-  triggerDownload(blob, filename);
-}
-
-/**
- * Trigger a file download via hidden <a> element.
- * Used as fallback when Web Share API is not available.
- */
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  // The browser resolves the blob URL synchronously during click(), so the
-  // download is already initiated when we reach this point. Use a generous
-  // timeout to ensure the download starts on slower Android browsers where
-  // the click event may propagate asynchronously.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-
-  log.info(`Download triggered via <a download>: ${filename}`);
+  const { route, delivered } = await shareOrDownloadBlob(
+    blob,
+    filename,
+    ZIP_FILE_TYPE
+  );
+  log.info(
+    `Session ${filename}: ${route} route, ${delivered ? 'delivered' : 'not delivered'}`
+  );
+  if (delivered) return;
+  // Nothing left the page. Not an error - the user dismissed a picker or
+  // backed out of a share sheet - but silence here is indistinguishable
+  // from a dead button, which is what the async-UI rule exists to prevent.
+  showToast(
+    route === 'share'
+      ? 'Nothing was shared - tap again to retry.'
+      : 'Not saved - tap again to retry.'
+  );
 }
 
 // --- Public API ---
@@ -347,9 +368,10 @@ export function showSessionSummary(data: SessionSummaryData): void {
   }
 
   cachedElements.errors.textContent = formatErrors(data.errors);
+  renderQrAnchors(data.qrAnchors);
   cachedElements.firstGps.textContent = formatGps(data.firstGps);
   cachedElements.lastGps.textContent = formatGps(data.lastGps);
-  cachedElements.distance.textContent = formatDistance(
+  cachedElements.distance.textContent = formatSummaryDistance(
     data.totalDistanceMeters
   );
 
@@ -373,7 +395,13 @@ export function showSessionSummary(data: SessionSummaryData): void {
       const blob = data.zipBlob;
       const filename = data.zipFilename ?? 'session.zip';
       cachedElements.btnShare.onclick = () => {
-        void handleShareSession(blob, filename);
+        // `downloadBlob` can reject (a failing write, a revoked handle) and
+        // the old synchronous fallback could not, so an unhandled rejection
+        // is a NEW way for this button to fail silently (M2 review #9).
+        handleShareSession(blob, filename).catch((err: unknown) => {
+          log.warn('Sharing the session failed:', err);
+          showError('Could not share the recording - see logs.');
+        });
       };
     } else {
       cachedElements.btnShare.classList.add('hidden');

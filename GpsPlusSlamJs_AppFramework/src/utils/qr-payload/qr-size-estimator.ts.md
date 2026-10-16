@@ -3,7 +3,7 @@
 ## Purpose
 
 Pure QR footprint estimator — the _metric_ of the QR payload-compression
-benchmark (`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-05-qr-payload-compression-benchmark-plan.md`,
+benchmark (`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-05-0611-qr-payload-compression-benchmark-plan.md`,
 §3): given a payload string and an error-correction level, it computes the
 QR bit-stream size after **optimal mode segmentation**, the minimum QR
 version (1–25) that holds it, and the module width. Character count is the
@@ -26,7 +26,20 @@ to pick the sparsest launch-URL form by measurement.
   value order (`0–9`, `A–Z`, ` $%*+-./:`). Note `? = & # _` and all
   lowercase are absent — a conventional query string always drops at least
   partially to byte mode.
-- Types: `QrEcLevel`, `QrSizeEstimate`.
+- `EC_LEVELS` — **module-private**, deliberately: it is every error-correction
+  level and the source of truth for `QrEcLevel`, which is derived from it
+  (`(typeof EC_LEVELS)[number]`). Deriving a type from a const does NOT require
+  exporting the const, and exporting it here failed `check:deadcode` as an
+  unused export — nothing outside this module needs the values, only the type.
+  The
+  list is a runtime validator (`estimateQrSize` returns `null` for a level
+  absent from it); as a hand-written `readonly QrEcLevel[]` an incomplete list
+  still type-checked, so a level added to the union would have compiled and
+  then been rejected at runtime. Note the asymmetry that made this easy to
+  miss: `DATA_CODEWORDS` is a `Record<QrEcLevel, …>` and so was always
+  exhaustiveness-checked — the table could not drift, only the list guarding
+  the door could.
+- Types: `QrEcLevel` (derived, above), `QrSizeEstimate`.
 
 ## Invariants & assumptions
 

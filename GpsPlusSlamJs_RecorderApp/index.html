@@ -13,16 +13,15 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E"
       type="image/svg+xml"
     />
-    <!-- Leaflet CSS (for session summary map - Issue #4, 2026-01-27) -->
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-      crossorigin=""
-    />
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- App styles (behavioral CSS + log/legend colors) -->
+    <!-- Styles are LINKED here as local files under /styles/ — Tailwind's
+         build output, a vendored Leaflet CSS, and the app's own — never a CDN
+         (see `styles/tailwind.css` for what the CDN cost when it was slow).
+         `no-external-page-assets.test.ts` pins exactly these link tags. This
+         comment claimed the opposite ("imported from src/main.ts, not linked")
+         until the PR #329 review caught the leftover from an earlier attempt
+         at the swap. -->
+    <link rel="stylesheet" href="/styles/tailwind.css" />
+    <link rel="stylesheet" href="/styles/leaflet.css" />
     <link rel="stylesheet" href="/styles/app.css" />
   </head>
   <body class="bg-black text-white font-sans">
@@ -58,6 +57,14 @@
           >
             <span class="text-gray-400">🧭 AbsCompass:</span>
             <span id="abs-compass-status" class="text-green-400">--</span>
+          </div>
+          <div
+            id="qr-info"
+            class="text-sm mt-1 hidden"
+            role="status"
+            aria-live="polite"
+          >
+            <span id="qr-status" class="text-green-400">--</span>
           </div>
           <div id="frame-count-info" class="text-sm mt-1 hidden">
             <span class="text-gray-400">📷 Frames:</span>
@@ -185,7 +192,7 @@
         <div class="flex justify-between items-end">
           <!-- Left: Playback controls + speed presets + progress -->
           <div class="flex gap-2 items-center">
-            <!-- Play/pause + speed presets grouped in a single pill -->
+            <!-- Play/pause + restart + speed presets grouped in a single pill -->
             <div
               class="flex items-center bg-gray-700/80 rounded-xl shadow-lg overflow-hidden"
             >
@@ -194,6 +201,14 @@
                 class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 transition-all"
               >
                 ▶ Play
+              </button>
+              <button
+                id="btn-replay-restart"
+                class="hidden bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 transition-all border-l border-gray-600"
+                title="Restart replay from the beginning"
+                aria-label="Restart Replay"
+              >
+                🔄
               </button>
               <button
                 data-replay-speed="0.1"
@@ -285,6 +300,20 @@
               </button>
             </div>
           </div>
+        </div>
+        <!-- Scrubber / timeline slider (full width, below buttons) -->
+        <div class="mt-2 px-1">
+          <input
+            type="range"
+            id="replay-scrubber"
+            class="replay-scrubber w-full"
+            min="0"
+            max="0"
+            value="0"
+            step="1"
+            title="Seek through replay actions"
+            aria-label="Replay timeline scrubber"
+          />
         </div>
       </div>
 
@@ -449,6 +478,22 @@
             </div>
           </div>
 
+          <!-- QR anchors: what this recording decided about each printed
+               code it saw. A DECLINED code has to be visible here, because
+               "absent" and "refused" look identical in the zip. -->
+          <div
+            id="summary-qr-anchors-block"
+            class="bg-gray-700/50 rounded-lg p-3 mb-4 hidden"
+          >
+            <h2 class="text-sm font-medium text-gray-300 mb-2">
+              🔳 Printed codes
+            </h2>
+            <pre
+              id="summary-qr-anchors"
+              class="text-xs text-gray-200 whitespace-pre-wrap max-h-32 overflow-y-auto"
+            ></pre>
+          </div>
+
           <!-- Error Log -->
           <div class="bg-gray-700/50 rounded-lg p-3 mb-4">
             <h2 class="text-sm font-medium text-gray-300 mb-2">
@@ -458,8 +503,7 @@
               id="summary-errors"
               class="text-xs text-red-300 whitespace-pre-wrap max-h-24 overflow-y-auto"
             >
-No errors</pre
-            >
+No errors</pre>
           </div>
 
           <!-- Actions -->
@@ -1052,6 +1096,27 @@ No errors</pre
                   >Skip blurry/black frames (image)</span
                 >
               </label>
+              <!-- Blur metric (2026-07-12 toggle plan): which sharpness score -->
+              <!-- the gate's relative rule runs on. VoL is the shipped        -->
+              <!-- default; the FFT energy ratio won "sharp vs degraded" in    -->
+              <!-- the offline benchmark and is exposed for on-device A/B.     -->
+              <div class="space-y-1">
+                <div class="flex justify-between text-xs text-gray-400">
+                  <span>Blur metric</span>
+                </div>
+                <select
+                  id="images-blur-metric"
+                  aria-label="Blur metric"
+                  class="w-full bg-gray-600 text-sm text-gray-200 rounded-lg p-1 cursor-pointer"
+                >
+                  <option value="variance-of-laplacian">
+                    Variance of Laplacian (default)
+                  </option>
+                  <option value="high-frequency-energy-ratio">
+                    High-frequency energy (experimental)
+                  </option>
+                </select>
+              </div>
               <!-- Image-quality thresholds (for on-device field tuning). Blur is -->
               <!-- relative (fraction of the recent sharpness median); blackness  -->
               <!-- is an absolute 0–255 luma cutoff (0 = off). Higher blur =       -->
@@ -1387,6 +1452,25 @@ No errors</pre
                   >Detect &amp; record QR codes (RAW)</span
                 >
               </label>
+              <!-- Moved here from Depth Sampling (2026-09-08): the one control
+                   that CONSUMES printed codes belongs with the detection
+                   controls it depends on (Tour Viewer feedback F4). -->
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="qr-use-levels"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Use codes to improve this recording</span
+                >
+              </label>
+              <p class="text-xs text-gray-400 pl-6">
+                Downloads what a printed code knows about where it is, and feeds
+                it into this session's positioning. Leave this off for
+                recordings you want to analyse later — it adds computed GPS
+                readings alongside the real ones.
+              </p>
               <div class="space-y-1">
                 <div class="flex justify-between text-xs text-gray-400">
                   <span>Detection Interval</span>
@@ -1515,13 +1599,23 @@ No errors</pre
               >
             </div>
             <div class="bg-gray-700/50 rounded-lg p-3 space-y-3">
-              <p class="text-[11px] text-gray-400">
+              <p id="compass-debug-help" class="text-[11px] text-gray-400">
                 Feed the absolute-orientation compass into the live GPS
-                alignment. Stage 0 is ON by default (fixes initial rotation);
-                Stage C + the trust gate are experimental (off). Applies on the
-                next session / reload. These flags are recorded into the session
-                (replay re-enables them), so turn Stage 0 OFF for compass
-                calibration sets.
+                alignment. Applies on the next session / reload; all flags are
+                recorded into the session (replay re-enables them). Stage 0 (ON
+                by default) owns the yaw only until it becomes observable from
+                GPS. Stage C keeps a small steady-state vote afterwards, gated
+                by the compass↔GPS <em>trust machine</em> (8° tolerance — too
+                strict to activate on the field corpus). The compass experiment
+                is the recommended field-test combo: the Stage C vote at the
+                census-backed 15° trust tolerance plus C′ pair selection — it
+                implies Stage C, so that checkbox greys out. The consistency
+                gate is a different mechanism than the trust machine: a
+                compass↔WebXR drift check applied only once yaw is observable
+                (with only Stage 0 on it barely acts). Vote weight scales the
+                Stage C / experiment vote — 0.1 measured best (2026-07-19 weight
+                census). Calibration rule: Stage 0 AND the experiment toggles
+                must all be OFF for §6a compass-calibration recordings.
               </p>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1541,8 +1635,8 @@ No errors</pre
                   class="w-4 h-4 accent-blue-500"
                 />
                 <span class="text-sm text-gray-200"
-                  >Stage C — steady-state rotation prior (trust-gated
-                  vote)</span
+                  >Stage C — steady-state rotation prior (trust-machine-gated
+                  vote; implied by the experiment)</span
                 >
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
@@ -1552,8 +1646,53 @@ No errors</pre
                   class="w-4 h-4 accent-blue-500"
                 />
                 <span class="text-sm text-gray-200"
-                  >Trust gate — only use compass when consistent with
-                  WebXR</span
+                  >Consistency gate — down-weight the compass while it drifts
+                  against WebXR</span
+                >
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="compass-experiment"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Compass experiment — Stage C vote at 15° trust tolerance + C′
+                  pair selection (field test)</span
+                >
+              </label>
+              <div>
+                <div class="flex justify-between text-sm text-gray-200 mb-1">
+                  <span>Vote weight (steady-state compass influence)</span>
+                  <span id="compass-vote-weight-value">0.10</span>
+                </div>
+                <input
+                  type="range"
+                  id="compass-vote-weight"
+                  aria-label="Vote weight"
+                  class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <p class="text-[11px] text-gray-400">
+                  Only active while the experiment / Stage C is on (greyed out
+                  otherwise). Default 0.1 — the corpus-measured optimum
+                  (2026-07-19 weight census).
+                </p>
+              </div>
+              <div
+                id="compass-ab-arm-divider"
+                class="border-t border-gray-600 pt-2 text-[11px] text-gray-400"
+              >
+                A/B comparison arm — not a compass mechanism (seed-dependent;
+                attribute its effects to the solver, not the compass):
+              </div>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="compass-consensus-solver-comparison"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Robust-solver comparison — plain outlier rejection</span
                 >
               </label>
             </div>

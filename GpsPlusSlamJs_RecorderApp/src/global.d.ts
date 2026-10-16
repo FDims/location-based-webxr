@@ -32,6 +32,10 @@ declare global {
      */
     testHooks?: {
       populateScenarios: (scenarios: string[]) => void;
+      /** The in-recording settings wheel's values + touched flag, or null without `?debug=1` (2026-09-02). */
+      getDebugWheelValues: () => Record<string, unknown> | null;
+      /** Hide the setup modal as Enter AR does, so HUD controls behind it are clickable (2026-09-02). */
+      hideSetupModal: () => void;
       validateEnterButton: () => void;
       showRecordingControls: () => void;
       hideRecordingControls: () => void;
@@ -40,6 +44,16 @@ declare global {
       updateArInfo: (tracking: string) => void;
       updatePermissionStatus: (result: PermissionCheckResult) => void;
       setPermissionsReady: (ready: boolean) => void;
+      /**
+       * Show a real toast (2026-08-24). Exists so the toast has e2e coverage
+       * at all: it is the one UI this app moved onto the framework's shared
+       * mechanism, and its behaviour â attach on show, text written one task
+       * later, removed on linger â is only fully observable in a browser.
+       */
+      showToast: (
+        message: string,
+        options?: { duration?: number; severity?: 'info' | 'warning' | 'error' }
+      ) => void;
       // Log panel hooks (Issue #5)
       showLogPanel: () => void;
       hideLogPanel: () => void;
@@ -53,9 +67,10 @@ declare global {
       clearGpsEventVisualizer: () => void;
       /**
        * §3c — Replay-mode diagnostic. Adds a GPS event with optional 1σ
-       * accuracy to the visualizer. Creates an offline scene + arWorldGroup
-       * via `setSceneForTesting` so the visualizer can run without an
-       * active WebXR session.
+       * accuracy to the visualizer. Creates a module-local offline scene +
+       * arWorldGroup in e2e-hooks and points the visualizer at it via
+       * `gpsEventVisualizer.setSceneSource` (live scene wins when present),
+       * so the visualizer can run without an active WebXR session.
        */
       addGpsEventForTest: (
         gpsCoords: [number, number, number],
@@ -74,7 +89,6 @@ declare global {
       // Tracking quality indicator hook
       updateTrackingQuality: (report: TrackingQualityReport) => void;
       // Mandatory storage selection hooks (Task 1a-fix)
-      setFolderSelected: (selected: boolean) => void;
       setFolderImportExpanded: (expanded: boolean, hint?: string) => void;
       /** Folder-import indexing progress bar (D2, 2026-07-05). */
       setFolderImportProgress: (state: FolderImportProgressState) => void;
@@ -160,9 +174,7 @@ declare global {
      * Allows Playwright tests to trigger the real picker modal behavior.
      */
     refPointPickerApi?: {
-      showRefPointPicker: (
-        existingIds: string[]
-      ) => Promise<RefPointPickerResult | null>;
+      showRefPointPicker: () => Promise<RefPointPickerResult | null>;
     };
   }
 }

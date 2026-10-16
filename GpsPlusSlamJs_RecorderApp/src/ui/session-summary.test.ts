@@ -131,6 +131,7 @@ describe('Session Summary Panel', () => {
       firstGps: { lat: 50.0, lng: 8.0 },
       lastGps: { lat: 50.001, lng: 8.001 },
       totalDistanceMeters: 150.5,
+      qrAnchors: [],
     };
 
     beforeEach(() => {
@@ -233,6 +234,7 @@ describe('Session Summary Panel', () => {
         firstGps: null,
         lastGps: null,
         totalDistanceMeters: 0,
+        qrAnchors: [],
       };
 
       showSessionSummary(noGpsData);
@@ -256,6 +258,7 @@ describe('Session Summary Panel', () => {
         imageCount: 0,
         depthSampleCount: 0,
         errors: [],
+        qrAnchors: [],
         firstGps: null,
         lastGps: null,
         totalDistanceMeters: 0,
@@ -278,6 +281,7 @@ describe('Session Summary Panel', () => {
         imageCount: 30,
         depthSampleCount: 60,
         errors: [],
+        qrAnchors: [],
         firstGps: { lat: 0, lng: 0 },
         lastGps: { lat: 1, lng: 1 },
         totalDistanceMeters: 1000,
@@ -309,6 +313,7 @@ describe('Session Summary - Error Collection', () => {
       imageCount: 0,
       depthSampleCount: 0,
       errors: manyErrors,
+      qrAnchors: [],
       firstGps: null,
       lastGps: null,
       totalDistanceMeters: 0,
@@ -350,6 +355,7 @@ describe('Session Summary - Failed Write Count', () => {
       imageCount: 10,
       depthSampleCount: 60,
       errors: [],
+      qrAnchors: [],
       firstGps: { lat: 50.0, lng: 8.0 },
       lastGps: { lat: 50.001, lng: 8.001 },
       totalDistanceMeters: 150,
@@ -372,6 +378,7 @@ describe('Session Summary - Failed Write Count', () => {
       imageCount: 10,
       depthSampleCount: 60,
       errors: [],
+      qrAnchors: [],
       firstGps: { lat: 50.0, lng: 8.0 },
       lastGps: { lat: 50.001, lng: 8.001 },
       totalDistanceMeters: 150,
@@ -394,6 +401,7 @@ describe('Session Summary - Failed Write Count', () => {
       imageCount: 10,
       depthSampleCount: 60,
       errors: [],
+      qrAnchors: [],
       firstGps: { lat: 50.0, lng: 8.0 },
       lastGps: { lat: 50.001, lng: 8.001 },
       totalDistanceMeters: 150,
@@ -425,6 +433,7 @@ describe('Session Summary - ZIP Stats Display (Issue #3, 2026-02-06)', () => {
     imageCount: 10,
     depthSampleCount: 60,
     errors: [],
+    qrAnchors: [],
     firstGps: { lat: 50.0, lng: 8.0 },
     lastGps: { lat: 50.001, lng: 8.001 },
     totalDistanceMeters: 150,
@@ -508,6 +517,7 @@ describe('Session Summary - Share Session (Issue #2, 2026-02-06)', () => {
     imageCount: 15,
     depthSampleCount: 60,
     errors: [],
+    qrAnchors: [],
     firstGps: { lat: 50.0, lng: 8.0 },
     lastGps: { lat: 50.001, lng: 8.001 },
     totalDistanceMeters: 150.5,
@@ -548,6 +558,7 @@ describe('Session Summary - Share Session (Issue #2, 2026-02-06)', () => {
       imageCount: 0,
       depthSampleCount: 0,
       errors: [],
+      qrAnchors: [],
       firstGps: null,
       lastGps: null,
       totalDistanceMeters: 0,
@@ -559,8 +570,28 @@ describe('Session Summary - Share Session (Issue #2, 2026-02-06)', () => {
     expect(shareBtn.classList.contains('hidden')).toBe(true);
   });
 
+  /** A touch device: what the share route is now gated on, on top of the
+   *  capability. Windows Chrome and macOS Safari CAN share files and their
+   *  sheets have no "save to disk", so a desktop keeps the save picker
+   *  (r665, M2 review #1). jsdom has no matchMedia at all, which the
+   *  framework reads as "not a phone" - correct, and the reason these
+   *  tests have to say what device they are on. */
+  function pretendPhone(): void {
+    Object.defineProperty(window, 'matchMedia', {
+      value: (query: string) => ({
+        matches: query.includes('coarse'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+      writable: true,
+      configurable: true,
+    });
+  }
+
   it('should call navigator.share with the ZIP file when supported', async () => {
     // Why: Native share sheet gives best UX on mobile
+    pretendPhone();
     const mockShare = vi.fn().mockResolvedValue(undefined);
     const mockCanShare = vi.fn().mockReturnValue(true);
     Object.defineProperty(navigator, 'share', {
@@ -591,6 +622,68 @@ describe('Session Summary - Share Session (Issue #2, 2026-02-06)', () => {
     expect(shareArg.files).toHaveLength(1);
     expect(shareArg.files[0].name).toBe('test-scenario-2026-02-06.zip');
     expect(shareArg.files[0].type).toBe('application/zip');
+  });
+
+  it('does NOT share on a desktop that could, because its sheet cannot save to disk', async () => {
+    // Why this test matters: this is a deliberate behaviour CHANGE (r665).
+    // Windows Chrome and macOS Safari implement Web Share with files, so
+    // the capability alone said "share" on a desktop - handing the user a
+    // sheet offering Mail and Nearby Share, and no way to put the
+    // recording in a folder. The save picker is the right hand-off there,
+    // and the pointer is what distinguishes the two.
+    const mockShare = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', {
+      value: mockShare,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, 'canShare', {
+      value: vi.fn().mockReturnValue(true),
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'matchMedia', {
+      value: (query: string) => ({
+        matches: false, // a mouse
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+      writable: true,
+      configurable: true,
+    });
+
+    // The download path builds an <a download> and removes it again in the
+    // same turn, so it is observed the way the neighbouring fallback test
+    // observes it: through the element it builds.
+    const mockClick = vi.fn();
+    const mockLink = {
+      href: '',
+      download: '',
+      click: mockClick,
+      style: { display: '' },
+    };
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) =>
+      tag === 'a'
+        ? (mockLink as unknown as HTMLAnchorElement)
+        : originalCreateElement(tag)
+    );
+    vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+    vi.spyOn(document.body, 'removeChild').mockImplementation((node) => node);
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:test-url'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    initSessionSummary({ onNewRecording: vi.fn() });
+    showSessionSummary(shareableSummaryData);
+    (document.getElementById('btn-share-session') as HTMLButtonElement).click();
+
+    await vi.waitFor(() => {
+      expect(mockClick).toHaveBeenCalledTimes(1);
+    });
+    expect(mockShare).not.toHaveBeenCalled();
   });
 
   it('should fall back to download when navigator.share not available', async () => {
@@ -727,6 +820,7 @@ describe('hideSessionSummary (soft reset integration)', () => {
       imageCount: 5,
       depthSampleCount: 3,
       errors: [],
+      qrAnchors: [],
       firstGps: { lat: 50.0, lng: 8.0 },
       lastGps: { lat: 50.001, lng: 8.001 },
       totalDistanceMeters: 100,

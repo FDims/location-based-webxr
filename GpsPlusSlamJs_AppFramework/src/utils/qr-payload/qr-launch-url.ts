@@ -2,7 +2,7 @@
  * `buildQrLaunchUrl` — turn (app base URL, asset "map to load" URL) into
  * the launch URL that yields the SPARSEST printable QR code, applying every
  * strategy the 2026-07-05 payload benchmark validated
- * (gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-05-qr-payload-compression-benchmark-results.md):
+ * (gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-05-2027-qr-payload-compression-benchmark-results.md):
  *
  * - `raw` — `<base>/?qr=<url>` (minimally escaped); the universal baseline.
  * - `dictionary` — `<base>/?qr=~<A4 blob>`; the `~` marker makes dispatch
@@ -41,11 +41,7 @@ import { compressBytes } from './compression';
 
 /** Not exported on purpose (knip): surfaces via `QrLaunchPlan.strategy`. */
 type QrLaunchStrategy =
-  | 'name'
-  | 'template'
-  | 'raw'
-  | 'dictionary'
-  | 'path-base32';
+  'name' | 'template' | 'raw' | 'dictionary' | 'path-base32';
 
 /** Not exported on purpose (knip): reachable via `QrLaunchPlan.candidates`. */
 interface QrLaunchCandidate {
@@ -74,6 +70,16 @@ export interface QrLaunchOptions {
    * until the static deployment routes `/S/*` to the app.
    */
   allowPathForm?: boolean;
+  /**
+   * Extra query parameters printed into the launch URL alongside `?qr=`
+   * (e.g. a per-code token, e.g. `{ n: '2' }` of the QR-pose plan).
+   * Appended — percent-encoded — to every candidate BEFORE size estimation,
+   * so the returned estimate and the fits-a-QR guarantee hold for the string
+   * actually printed. The all-caps `/S/` path form cannot carry `&`/`=`/
+   * lowercase in alphanumeric mode, so that candidate is dropped whenever
+   * extra params are present.
+   */
+  extraQuery?: Readonly<Record<string, string>>;
 }
 
 /** Characters that must never appear literally inside a `?qr=` value. */
@@ -94,6 +100,7 @@ export async function buildQrLaunchUrl(
   const base = normalizeBaseUrl(baseUrl);
   validateDataUrl(dataUrl);
   const query = `${base}/?qr=`;
+  const extraSuffix = buildExtraQuerySuffix(options.extraQuery);
 
   const urls: [QrLaunchStrategy, string | null][] = [
     ['name', nameUrl(query, dataUrl, options.defaultAssetPrefix)],
@@ -105,16 +112,13 @@ export async function buildQrLaunchUrl(
     ],
     [
       'path-base32',
-      options.allowPathForm ? await pathFormUrl(base, dataUrl) : null,
+      // The all-caps alphanumeric form cannot carry extra query params.
+      options.allowPathForm && extraSuffix === ''
+        ? await pathFormUrl(base, dataUrl)
+        : null,
     ],
   ];
-  const candidates: QrLaunchCandidate[] = [];
-  for (const [strategy, url] of urls) {
-    const estimate = url === null ? null : estimateQrSize(url, ecLevel);
-    if (url !== null && estimate !== null) {
-      candidates.push({ strategy, url, estimate });
-    }
-  }
+  const candidates = collectCandidates(urls, extraSuffix, ecLevel);
 
   const best = pickFewestBits(candidates);
   if (best === null) {
@@ -123,6 +127,25 @@ export async function buildQrLaunchUrl(
     );
   }
   return { ...best, candidates };
+}
+
+/** Estimate each printable candidate (suffix included — path-base32 is
+ *  already null whenever the suffix is non-empty, and appending '' is a
+ *  no-op, so one uniform expression covers every case). */
+function collectCandidates(
+  urls: readonly [QrLaunchStrategy, string | null][],
+  extraSuffix: string,
+  ecLevel: QrEcLevel
+): QrLaunchCandidate[] {
+  const candidates: QrLaunchCandidate[] = [];
+  for (const [strategy, url] of urls) {
+    const printed = url === null ? null : url + extraSuffix;
+    const estimate = printed === null ? null : estimateQrSize(printed, ecLevel);
+    if (printed !== null && estimate !== null) {
+      candidates.push({ strategy, url: printed, estimate });
+    }
+  }
+  return candidates;
 }
 
 /** Fewest bits wins; ties keep the earlier (more readable) candidate. */
@@ -136,6 +159,19 @@ function pickFewestBits(
     }
   }
   return best;
+}
+
+/** `&k=v&k2=v2` (percent-encoded) for the extra printed params, or ''. */
+function buildExtraQuerySuffix(
+  extraQuery: Readonly<Record<string, string>> | undefined
+): string {
+  if (extraQuery === undefined) return '';
+  return Object.entries(extraQuery)
+    .map(
+      ([key, value]) =>
+        `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+    )
+    .join('');
 }
 
 /** Accepts `gps.csutil.com`, adds https://, strips one trailing slash. */

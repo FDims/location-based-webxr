@@ -15,7 +15,7 @@
  *      persistent cache (2-B) is the documented escape hatch only if real
  *      folders prove too slow to re-scan.
  *
- * @see GpsPlusSlamJs_Docs/docs/2026-06-14-map-centric-recording-browser-and-h3-index-user-feedback.md (D2)
+ * @see GpsPlusSlamJs_Docs/docs/2026-06-14-1048-map-centric-recording-browser-and-h3-index-user-feedback.md (D2)
  */
 
 import { loadGpsPathFromBlob } from 'gps-plus-slam-app-framework/storage/zip-reader';
@@ -25,13 +25,14 @@ import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   discoverScenariosFromZipMetadata,
   type SessionEntry,
-} from './session-browser';
+} from '../storage/recording-discovery';
 
 const log = createLogger('RecordingIndex');
 
 /**
  * Maximum number of legacy zips whose GPS path is read concurrently while
- * backfilling coverage. Mirrors the metadata-scan cap in `session-browser.ts`:
+ * backfilling coverage. Mirrors the metadata-scan cap in
+ * `storage/recording-discovery.ts`:
  * each read uses BlobReader but a legacy backfill reads every action file, so
  * we keep concurrency bounded to avoid overwhelming browser I/O.
  */
@@ -138,7 +139,7 @@ async function discoverFlatRecordings(
  * folder cancels further emission and stops pulling new legacy zips, so a torn
  * -down map never receives stray tiles. Nothing is written to disk.
  *
- * @see ./recording-index.md
+ * @see ./recording-index.ts.md
  */
 export async function streamRecordingIndex(
   rootHandle: FileSystemDirectoryHandle,

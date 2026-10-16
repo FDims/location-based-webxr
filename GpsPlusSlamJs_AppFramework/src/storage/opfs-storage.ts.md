@@ -21,7 +21,7 @@ await initOpfsStorage();
 
 **Note:** `odomCoordVersion` in session metadata was expanded to support values `2 | 3 | 4 | 5` reflecting the evolution from NUE-baked actions (era 2), to raw-WebXR positions (era 3), to raw-WebXR + RawGpsPoint (era 4), to state-side quaternion conversion (era 5). Optional `build` and sanitized `pageUrl` (origin + pathname only) fields were added for debugging — older ZIPs without them remain valid.
 
-**Coverage index:** Optional `h3Cells` (deduped H3 cells the GPS path crossed) and `h3Resolution` (the H3 resolution used, currently 11) were added to power the map-centric recording browser — it reads them straight from `session.json` to place a tour and answer "which tours cross this tile?" without unzipping GPS data. The recorder computes `h3Cells` at recording stop via `gpsPathToCoverageCells` (see `geo/h3-proximity.ts` and `GpsPlusSlamJs_Docs/docs/2026-06-14-map-centric-recording-browser-and-h3-index-user-feedback.md`, D1/D2). Both fields are optional — legacy recordings without them remain valid and are backfilled in memory from their GPS path on demand.
+**Coverage index:** Optional `h3Cells` (deduped H3 cells the GPS path crossed) and `h3Resolution` (the H3 resolution used, currently 11) were added to power the map-centric recording browser — it reads them straight from `session.json` to place a tour and answer "which tours cross this tile?" without unzipping GPS data. The recorder computes `h3Cells` at recording stop via `gpsPathToCoverageCells` (see `geo/h3-proximity.ts` and `GpsPlusSlamJs_Docs/docs/2026-06-14-1048-map-centric-recording-browser-and-h3-index-user-feedback.md`, D1/D2). Both fields are optional — legacy recordings without them remain valid and are backfilled in memory from their GPS path on demand.
 
 ### Session Management
 
@@ -105,7 +105,7 @@ const { available, used } = await checkStorageQuota();
 4. Frame filenames follow the pattern `frame-{index}.jpg`
 5. Session folders are named `recording-YYYY-MM-DD_HH-MM-SSutc` (an underscore/dash-separated UTC stamp, NOT ISO 8601 — colons are illegal in directory names). The timestamp is whole-second resolution, so `createSession()` probes for an existing directory and appends a numeric suffix (`-2`, `-3`, …) on collision — two recordings started within the same UTC second get distinct directories instead of silently reusing and mixing one. The first session in a given second keeps the bare timestamp name.
    - The probe distinguishes error names (PR #158 review): `NotFoundError` → name free; `TypeMismatchError` (a **file** occupies the name — `{ create: true }` could not replace it either) → name taken, probe advances to the next suffix; any other error (`InvalidStateError`, …) is a storage failure and is **rethrown** so `createSession` fails loudly — treating it as "taken" would loop the suffix probe forever, treating it as "free" would crash later with a misleading create-time error.
-6. All write operations use `safeWriteToFile()` helper which guarantees `FileSystemWritableFileStream` cleanup. On write/close errors, it captures the original error, attempts `writable.abort()` in a separate try/catch (so abort failures cannot mask the original error), and then rethrows the original error.
+6. All write operations go through the framework helper `writeFileOrAbort()` (`./write-file-or-abort.ts`), which guarantees `FileSystemWritableFileStream` cleanup: on write/close errors it aborts the stream (never closes it, which would commit a partial write), swallows an abort failure so it cannot mask the cause, and rethrows the original error. It lived here as a private `safeWriteToFile` until 2026-07-27, when three hand-rolled copies in the recorder — one already missing its abort guard — made it worth sharing.
 
 ## Error Modes
 
@@ -126,4 +126,4 @@ Write failures (e.g., disk full, quota exceeded) will propagate the error to the
 
 - Unit tests: `opfs-storage.test.ts`
 - All tests use `MockOPFSDirectoryHandle` from `browser-mocks.ts`
-- Resource cleanup tests verify `writable.abort()` is called on write errors
+- Resource cleanup tests verify `writable.abort()` is called on write errors (the helper itself is covered directly by `write-file-or-abort.test.ts`)

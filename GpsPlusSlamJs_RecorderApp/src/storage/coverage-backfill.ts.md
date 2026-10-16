@@ -4,7 +4,7 @@
 
 One-line: the one-time, opt-in upgrade that embeds each legacy recording's H3 coverage into its own `session.json` (O3 — in-zip rewrite), so legacy recordings index instantly on every future open in this app **and any other reader**.
 
-The coverage cells are already derived in memory while the map browser streams its index (Slice A) — this step only **writes** them; it never re-reads GPS paths. See the plan: `GpsPlusSlamJs_Docs/docs/2026-06-14-followup-progressive-map-browser-indexing-and-backfill.md` (B1/B2/B4) and the B3 primitive `GpsPlusSlamJs_AppFramework/src/storage/zip-coverage-embed.ts`.
+The coverage cells are already derived in memory while the map browser streams its index (Slice A) — this step only **writes** them; it never re-reads GPS paths. See the plan: `GpsPlusSlamJs_Docs/docs/2026-06-14-1924-progressive-map-browser-indexing-and-backfill-followup.md` (B1/B2/B4) and the B3 primitive `GpsPlusSlamJs_AppFramework/src/storage/zip-coverage-embed.ts`.
 
 ## Public API
 
@@ -23,7 +23,7 @@ The coverage cells are already derived in memory while the map browser streams i
   - **Deliberate deviation from the plan's B4:** the plan prescribed a manual `<name>.h3.tmp` sibling + read-back. That assumed the FS-Access API has no atomic rename, but `createWritable()` already provides one; the manual sibling also needs per-file parent-directory handles and leaves `.tmp` litter. The in-memory verify + atomic `createWritable` is simpler, has no litter, and is at least as safe.
 - **Idempotent / no-op safe:** a candidate whose zip has no/broken/already-embedded `session.json` is counted as `skipped` and left untouched (the B3 primitive returns the input by reference). Re-running the upgrade only rewrites what still needs it.
 - **Isolated failures:** a per-file read/verify/write error is logged, counted in `failed`, and does not abort the rest. Bounded concurrency (`BACKFILL_WRITE_CONCURRENCY = 4`); abortable via `signal` (stops pulling new files, skips the in-flight write).
-  - **Write-failure cleanup uses `abort()`, never `close()`.** If `write()`/`close()` throws mid-rewrite, the temp swap holds a partial/empty result. The handler `abort()`s the writable so that temp is **discarded without** the atomic swap (calling `close()` would commit the corruption over the user's recording) and the stream's file-handle lock is finalized rather than leaked. The original file is left byte-for-byte intact and the file is counted in `failed`.
+  - **Write-failure cleanup uses `abort()`, never `close()`** — now delegated to the framework helper `writeFileOrAbort` rather than hand-rolled here. If `write()`/`close()` throws mid-rewrite the temp swap holds a partial/empty result, so the helper `abort()`s the writable: the temp is **discarded without** the atomic swap (calling `close()` would commit the corruption over the user's recording) and the stream's file-handle lock is finalized rather than leaked. The original file is left byte-for-byte intact and the file is counted in `failed`.
 
 ## Examples
 

@@ -16,7 +16,7 @@ Uses `subscribeToSelector` for selective change detection — each state slice (
 
 ### `mapOverlay` dependency (optional)
 
-- `setGpsPosition(lat, lon)` — called on GPS-position changes to center the map on the **same coordinate the blue dot shows**: the rebuilt `MapData.userPosition` (fused tip when an alignment exists, raw fix before the first solve). For a **render-less** overlay (minimal `setGpsPosition`-only shape) there is no rebuilt snapshot, so centering keeps the last raw fix. See [2026-07-06-recorder-live-map-user-dot-fused-pose-user-feedback.md](../../../GpsPlusSlamJs_Docs/docs/2026-07-06-recorder-live-map-user-dot-fused-pose-user-feedback.md) decisions 3, 5, 6.
+- `setGpsPosition(lat, lon)` — called on GPS-position changes to center the map on the **same coordinate the blue dot shows**: the rebuilt `MapData.userPosition` (fused tip when an alignment exists, raw fix before the first solve). For a **render-less** overlay (minimal `setGpsPosition`-only shape) there is no rebuilt snapshot, so centering keeps the last raw fix. See [2026-07-06-1526-recorder-live-map-user-dot-fused-pose-user-feedback.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-06-1526-recorder-live-map-user-dot-fused-pose-user-feedback.md) decisions 3, 5, 6.
 - `render?(data: MapData)` — draws the full shared trajectory snapshot (raw GPS + accuracy circles, fused path, alignment snapshots, user dot) via the shared `drawMapData` routine.
 - The previous incremental API (`addRawGpsPoint` / `addFusedPoint` / `addAlignmentSnapshot` / `addRefPoint`) **no longer exists** — the fused path recomputes wholesale from the latest matrix on every rebuild (D2, unified-trajectory-map Phase 3), and ref points are recorder-owned.
 
@@ -35,7 +35,7 @@ On each state change the subscriber:
 9. **Reference-point visualization (Finding 5, 2026-04-30)** — if `deps.refPointVisualizer` is provided, two additional subscriptions are wired:
    - `selectPriorRefPointMarks` → `displayPriorRefPoints(priorMarks)`. Fires whenever `priorMarks` changes by reference, replacing the green-sphere set wholesale.
    - `selectCurrentRefPointMarks` → `addCurrentRefPoint(mark)`. Append-only with a high-water-mark counter (`lastCurrentMarksLen`). When the array shrinks (e.g., `clearCurrentRefPointMarks` on scenario reset), the counter is reset to 0 so subsequent re-adds render again.
-     Call sites no longer call `refPointVisualizer.displayPriorRefPoints` / `addCurrentRefPoint` directly — they dispatch `setPriorRefPointMarks` / `addCurrentRefPointMark` instead. See [docs/2026-04-30-refpoint-marks-into-redux-plan.md](../../../GpsPlusSlamJs_Docs/docs/2026-04-30-refpoint-marks-into-redux-plan.md).
+     Call sites no longer call `refPointVisualizer.displayPriorRefPoints` / `addCurrentRefPoint` directly — they dispatch `setPriorRefPointMarks` / `addCurrentRefPointMark` instead. See [docs/2026-04-30-refpoint-marks-into-redux-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-30-refpoint-marks-into-redux-plan.md).
 
 Each call creates **fresh selector subscriptions** scoped to that call — no manual reset needed between sessions.
 
@@ -110,11 +110,8 @@ Covered by `store-subscribers.test.ts` (47 test cases):
 
 ## Related Files
 
-- [store.ts](store.ts) — `CombinedRootState`, `RecorderStore` interface
 - [subscribe-to-selector.ts](subscribe-to-selector.ts) — `subscribeToSelector` utility, `SubscribableStore` interface
 - [app-selectors.ts](app-selectors.ts) — memoized selectors for alignment matrix, GPS positions, etc.
-- [../ar/webxr-session.ts](../ar/webxr-session.ts) — `applyAlignmentMatrix`
-- [../visualization/gps-event-markers.ts](../visualization/gps-event-markers.ts) — `GpsEventVisualizer`
-- [../visualization/map-overlay.ts](../visualization/map-overlay.ts) — `MapOverlay`
-- [../main.ts](../main.ts) — consumer (live recording path)
-- [2026-02-19-replay-mode.md](../../../GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md) — Risk R2 definition
+- [combined-root-state.ts](combined-root-state.ts) — `CombinedRootState`
+- [../visualization/map-data.ts](../visualization/map-data.ts) — `buildMapData`, `MapData` (the snapshot this module forwards to map consumers)
+- Consumer: the RecorderApp's `main.ts` (live recording path)

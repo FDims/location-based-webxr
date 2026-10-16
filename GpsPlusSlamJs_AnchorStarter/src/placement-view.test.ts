@@ -47,7 +47,6 @@ describe("toPlacementView", () => {
       visible: true,
       label: "Place anchor",
       disabled: false,
-      busy: false,
     });
     // Soft gate: copy nudges waiting but does not block.
     expect(view.banner).toContain("moving until");
@@ -59,7 +58,7 @@ describe("toPlacementView", () => {
     expect(view.banner).toContain("Tracking looks good");
   });
 
-  it('SUCCESS PATH: shows in-progress "Saving…" then final "Saved ✓" + reload prompt', () => {
+  it('SUCCESS PATH: shows in-progress "Saving…" then final "Saved ✓" + share link', () => {
     const saving = setupReducer(placeableState(true), {
       type: "PLACE_REQUESTED",
     });
@@ -68,16 +67,13 @@ describe("toPlacementView", () => {
     expect(inProgress.button).toMatchObject({
       label: "Saving…",
       disabled: true,
-      busy: true,
     });
-    expect(inProgress.reloadPrompt).toBe(false);
     expect(inProgress.copyLink.visible).toBe(false);
 
     const saved = setupReducer(saving, { type: "PLACE_SUCCEEDED" });
     const final = toPlacementView(saved);
     // Final state reflects the durable end state, not just dispatch.
-    expect(final.button).toMatchObject({ label: "Saved ✓", busy: false });
-    expect(final.reloadPrompt).toBe(true);
+    expect(final.button).toMatchObject({ label: "Saved ✓" });
     // The shareable-link confirmation is reached on the success path.
     expect(final.copyLink.visible).toBe(true);
     expect(final.banner).toContain("copy the link");
@@ -96,10 +92,8 @@ describe("toPlacementView", () => {
     expect(view.button).toMatchObject({
       label: "Place anchor",
       disabled: false,
-      busy: false,
     });
     expect(view.error).toBe("Storage quota exceeded");
-    expect(view.reloadPrompt).toBe(false);
     expect(view.copyLink.visible).toBe(false);
   });
 

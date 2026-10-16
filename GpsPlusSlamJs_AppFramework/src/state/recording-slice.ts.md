@@ -56,11 +56,11 @@ console.log(store.getState().recorder.failedWriteCount); // 1
 
 - `recording-slice.test.ts` — `latestDepthSample` behavior (initial null, stores by reference, replaced per dispatch, cleared by `startSession`, action type stays `recording/recordDepthSample`).
 - `store.test.ts` — covers all recorder actions as part of the integrated store (state transitions, startSession/endSession, failedWriteCount tracking).
-- `persistence-middleware.test.ts` — 13 tests verify that `recordWriteFailure` is excluded from persistence and dispatched on errors.
+- `persistence-middleware.test.ts` — verifies that `recordWriteFailure` is excluded from persistence and dispatched on errors.
 
 ## Related
 
-- [store.ts](store.ts.md) — factory that combines this slice with 5 others
+- [create-slam-app-store.ts](create-slam-app-store.ts.md) — the factory that combines this slice with the others
 - [persistence-middleware.ts](persistence-middleware.ts.md) — middleware consuming `recordWriteFailure`
-- [ref-points-slice.ts](ref-points-slice.ts.md) — sibling slice following the same pattern
-- [routing-slice.ts](routing-slice.ts.md) — sibling slice following the same pattern
+- [ref-points-slice.ts](../../../GpsPlusSlamJs_RecorderApp/src/state/ref-points-slice.ts.md) — same pattern, but it lives in the RECORDER (not a framework sibling)
+- [routing-slice.ts](../../../GpsPlusSlamJs_RecorderApp/src/state/routing-slice.ts.md) — same pattern, but it lives in the RECORDER (not a framework sibling)

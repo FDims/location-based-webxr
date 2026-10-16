@@ -1,6 +1,6 @@
 # Location-Based WebXR
 
-> [It was almost impossible because, because it was, the dream was so big.](https://www.youtube.com/watch?v=zhl-Cs1-sG4) -- Giorgio Moroder 🎶
+> [It was almost impossible because it was.. the dream was so big](https://www.youtube.com/watch?v=zhl-Cs1-sG4) - Giorgio Moroder 🎶
 
 **Stable outdoor AR in the browser - no native app, no VPS, no signup, not even internet required**
 
@@ -9,7 +9,7 @@ Three.js + GPS + WebXR sensor fusion that keeps 3D content pinned to real-world 
 [![npm version](https://img.shields.io/npm/v/gps-plus-slam-app-framework.svg)](https://www.npmjs.com/package/gps-plus-slam-app-framework)
 [![npm downloads](https://img.shields.io/npm/dm/gps-plus-slam-app-framework.svg)](https://www.npmjs.com/package/gps-plus-slam-app-framework)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522.14-brightgreen.svg)](https://nodejs.org/)
 
 <p align="center">
   <a href="https://gps.csutil.com"><strong>Live Demos & Examples →</strong></a>
@@ -48,8 +48,8 @@ The shortest path in is a single QR code: the user points their phone's camera a
 A common assumption is that markerless WebXR will drift badly or make content "jump" in large, visually uniform outdoor spaces (open parks, grass fields), because classic visual SLAM leans on camera feature points that are sparse there. It's worth being precise about which layer does what, so you can judge whether this fits your use case:
 
 - **Visual-inertial tracking is handled by the WebXR runtime (ARCore/ARKit), not by this library.** The device's own AR stack already fuses the camera with the IMU to produce local 6-DoF odometry, which stays usable through short stretches of sparse visual features. This framework **consumes** that odometry rather than re-implementing it.
-- **What this framework adds is GPS↔AR alignment.** `gps-plus-slam-js` continuously aligns the local AR odometry with GPS, refining the fit **live as the user moves** rather than re-snapping, so placed content does not teleport on every GPS update. Placement helpers (`createGpsAnchor`) can even defer small corrections until an object is off-screen, while still correcting if alignment drifts far enough that content would otherwise be left in a stale spot.
-- **Accuracy is sub-meter, not centimeter - and it improves with motion.** After roughly 15 seconds of walking in representative outdoor conditions, visible drift typically drops well below raw GPS and the fusion is what keeps locally-placed content sitting on its spot as the user walks around it.
+- **What this framework adds is GPS↔AR alignment.** `gps-plus-slam-js` continuously aligns the local AR odometry with GPS, refining the fit **live as the user moves** rather than re-snapping, so placed content does not teleport on every GPS update. Placement helpers (`createGpsAnchor`) can even defer corrections until an object is off-screen, so the user never watches content being repositioned; a large alignment change does not override that, because the whole AR view eases into it together rather than one object snapping under the user's gaze.
+- **Accuracy is sub-meter, not centimeter - and it improves with motion.** The estimate has no evidence until the user moves: standing still tells it about receiver noise, walking tells it about geometry. The fusion is what keeps locally-placed content sitting on its spot as the user walks around it. How *fast* it converges is deliberately not quoted as a single number here - the project's own corpus measurement (51 recordings) is in the private GpsPlusSlamJs_Investigation/docs/2026-07-25-0430-alignment-convergence-speed-findings.md, and it is less flattering than the rules of thumb that circulate.
 
 This makes the framework well-suited to large-scale outdoor AR - a walking trail with arrows pointing the way, treasure-hunt markers hidden around a field, or info labels pinned to statues and buildings - provided you treat global placement as GPS-accurate and local stability as motion-dependent rather than guaranteed. For the full rationale, caveats, and the VPS-free positioning model, see the [framework's "Why use GPS+SLAM?" section](GpsPlusSlamJs_AppFramework/README.md). The fastest way to evaluate it is to open an example URL on your phone, step outside, drop an object, and walk around it. If your use case needs accuracy from the very first frame rather than after a few seconds of walking, anchor the content to a printed QR reference instead - see [Zero-Install Onboarding](#zero-install-onboarding).
 
@@ -77,6 +77,16 @@ Your app composes its own state, screen flow, and visuals on top of the framewor
 - [`GpsPlusSlamJs_RecorderApp`](GpsPlusSlamJs_RecorderApp/) — Full-featured recorder app: capture AR sessions on a phone, replay on a desktop, debug alignment, and contribute test data.
 - [`GpsPlusSlamJs_AnchorStarter`](GpsPlusSlamJs_AnchorStarter/) — Persistent-anchor starter (the public "Demo"). GPS-anchored placement with URL-based persistence (`?show=`) and cross-device sharing.
 - [`GpsPlusSlamJs_MinimalExample`](GpsPlusSlamJs_MinimalExample/) — Smallest possible consumer of the framework. A single-file GPS + AR hit-test demo (Enable GPS AR button → reticle → tap-to-place) that contrasts an uncompensated floater cube with a drift-corrected `createGpsAnchor` marker. Use this as your starting template.
+
+Focused demos of individual framework capabilities:
+
+- [`GpsPlusSlamJs_QrTrackingDemo`](GpsPlusSlamJs_QrTrackingDemo/) — QR tracking end to end: detect any printed QR, measure its physical size from the depth map, and glue a pose overlay to it. The desktop stand-in for the on-device QR verification gate.
+- [`GpsPlusSlamJs_PhysicsDemo`](GpsPlusSlamJs_PhysicsDemo/) — Physics balls bounce off the reconstructed occupancy mesh of a real space, live in AR or against a replayed recording on the desktop.
+- [`GpsPlusSlamJs_WayfindingHudDemo`](GpsPlusSlamJs_WayfindingHudDemo/) — The wayfinding HUD: edge arrows for off-screen targets, on-screen rings, live distance labels, and an anti-flicker hysteresis deadband. Runs in AR on a phone or as a WASD walk simulator on the desktop.
+- [`GpsPlusSlamJs_OsmDemo`](GpsPlusSlamJs_OsmDemo/) — OSM affordance demo: scores OpenStreetMap data into a hex grid beside extruded 3D buildings. Desktop only.
+- [`GpsPlusSlamJs_TourViewer`](GpsPlusSlamJs_TourViewer/) — The QR-scan landing experience: open a cloud-hosted tour zip (share link or ?qr= launch) and stream it via HTTP range requests into a progressive gallery with live stats.
+
+[`GpsPlusSlamJs_ExampleRecordings`](GpsPlusSlamJs_ExampleRecordings/) holds real-world RecorderApp session ZIPs (data only, not a package) so you can exercise replay without going outside first.
 
 The recorder app at a glance:
 
@@ -145,6 +155,12 @@ startGpsWatch(
 | [`GpsPlusSlamJs_RecorderApp/`](GpsPlusSlamJs_RecorderApp/)   | The reference recorder app (Vite + Playwright).               |
 | [`GpsPlusSlamJs_AnchorStarter/`](GpsPlusSlamJs_AnchorStarter/) | Persistent-anchor starter example (the public "Demo").       |
 | [`GpsPlusSlamJs_MinimalExample/`](GpsPlusSlamJs_MinimalExample/) | Smallest possible framework consumer.                     |
+| [`GpsPlusSlamJs_QrTrackingDemo/`](GpsPlusSlamJs_QrTrackingDemo/) | QR detection + pose overlay demo.                         |
+| [`GpsPlusSlamJs_PhysicsDemo/`](GpsPlusSlamJs_PhysicsDemo/)  | Physics against the reconstructed occupancy mesh.              |
+| [`GpsPlusSlamJs_WayfindingHudDemo/`](GpsPlusSlamJs_WayfindingHudDemo/) | Wayfinding HUD (AR + desktop walk simulator).        |
+| [`GpsPlusSlamJs_OsmDemo/`](GpsPlusSlamJs_OsmDemo/)          | OSM affordance scoring demo (desktop).                        |
+| [`GpsPlusSlamJs_TourViewer/`](GpsPlusSlamJs_TourViewer/)    | QR-launch streaming tour viewer.                              |
+| [`GpsPlusSlamJs_ExampleRecordings/`](GpsPlusSlamJs_ExampleRecordings/) | Real-world session ZIPs (data only, not a package).   |
 | [`GpsPlusSlamJs_Landing/`](GpsPlusSlamJs_Landing/)          | Static landing page served at the deployment root.            |
 | `signatures/`                                               | License-key public signatures for the closed-source core.     |
 | `tests/`                                                    | Repo-config integration tests (workspace cohesion checks).    |
@@ -161,13 +177,18 @@ All public surfaces share one origin and are built into a single `dist-site/`
 directory served by Cloudflare static assets:
 
 ```bash
-pnpm run build:site   # framework + recorder (/recorder/) + starter (/starter/) + minimal (/minimal/) + landing (/)
+pnpm run build:site   # framework + every app + landing, into one dist-site/
 ```
 
 - `/` → landing page ([`GpsPlusSlamJs_Landing/`](GpsPlusSlamJs_Landing/))
 - `/recorder/` → recorder app, built with `base=/recorder/`
 - `/starter/` → anchor starter, built with `base=/starter/`
 - `/minimal/` → minimal example, built with `base=/minimal/`
+- `/qr-demo/` → QR-tracking demo, built with `base=/qr-demo/`
+- `/physics/` → physics demo, built with `base=/physics/`
+- `/wayfinding/` → wayfinding HUD demo, built with `base=/wayfinding/`
+- `/osm/` → OSM affordance demo, built with `base=/osm/`
+- `/tour/` → tour viewer (QR-launch landing target), built with `base=/tour/`
 
 The Cloudflare Git integration runs `pnpm run build:site` and serves `./dist-site`
 (see [`wrangler.toml`](wrangler.toml)). The orchestration script
@@ -178,7 +199,16 @@ resolves under its app's base so a misrouted asset fails the deploy instead of
 ## Run Tests
 
 ```bash
-# All tests (repo-config + framework + recorder unit & E2E + anchor starter + minimal example)
+# THE COMMIT GATE (since 2026-08-15): changed packages' gates in full,
+# their dependents without the browser stages, + repo-config. An Osm
+# change costs ~132 s this way against ~13.6 min for the full closure.
+# Canonical rule: root CLAUDE.md of the sibling gps-plus-slam repo,
+# section "THE COMMIT GATE".
+pnpm run test:changed
+
+# The whole cascade — every package's full gate incl. E2E, ~23 min.
+# Runs ONCE per session before the PR, and on every PR in CI. It is not
+# the per-commit gate any more.
 pnpm test
 
 # Framework tests only
@@ -196,6 +226,11 @@ pnpm run test:starter
 # Minimal-example tests only
 pnpm run test:example
 ```
+
+Every full gate run rewrites the generated `docs/test-timings.md` of the
+project(s) it ran (per package and at the root) with per-stage wall-clock
+history — commit that churn alongside your change; never hand-edit it (see
+[`scripts/test-timing/README.md`](scripts/test-timing/README.md)).
 
 ## Contributing
 

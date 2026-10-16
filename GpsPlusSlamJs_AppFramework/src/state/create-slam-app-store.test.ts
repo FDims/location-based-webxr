@@ -15,9 +15,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createSlice } from '@reduxjs/toolkit';
 import { setZeroPos, setColdStartOverrideEnabled } from 'gps-plus-slam-js';
-import { createSlamAppStore } from './create-slam-app-store';
+import {
+  composeStateSanitizer,
+  createSlamAppStore,
+} from './create-slam-app-store';
 import { startSession, endSession } from './recording-slice';
 import type { StorageBackend } from '../storage/storage-backend';
 import { NullStorageBackend } from '../storage/null-storage-backend';
@@ -91,6 +95,21 @@ describe('createSlamAppStore', () => {
       ).toThrow(/recording.*trackingQuality|trackingQuality.*recording/);
     });
 
+    it('rejects a consumer slice named diagnostics, whose prefix is persisted unconditionally', () => {
+      // Why this test matters: `diagnostics` has no reducer ON PURPOSE, so the
+      // reducer-collision check alone cannot see it — but its prefix is on the
+      // built-in persistence whitelist, so a consumer slice with that name
+      // would have EVERY one of its actions silently written into recordings.
+      // A silent WRITE, the inverse of the silent drop the whitelist guards
+      // against. Found by claude[bot] review on PR #350.
+      expect(() =>
+        createSlamAppStore({
+          storageBackend: backend,
+          extraReducers: { diagnostics: () => ({}) },
+        })
+      ).toThrow(/diagnostics/);
+    });
+
     it('still accepts non-colliding extraReducers unchanged', () => {
       const store = createSlamAppStore({
         storageBackend: backend,
@@ -122,10 +141,13 @@ describe('createSlamAppStore', () => {
     });
 
     it('enables the override BY DEFAULT (Stage-0 ships on for every consumer)', async () => {
-      // Stage 0 is now a default-on production feature (field-validated): a
-      // consumer that says nothing still gets the cold-start compass override.
-      // The library default stays OFF for replay determinism — default-on lives
-      // here at the framework opt-in tier (the dispatch is a recorded action).
+      // Stage 0 is a default-on production feature (field-validated): a consumer
+      // that says nothing still gets the cold-start compass override. Since
+      // gps-plus-slam-js 1.16.0 the LIBRARY default is on too, so this assertion
+      // no longer distinguishes the two tiers on its own — what it still pins is
+      // that the framework records the value as an explicit `gpsData` action
+      // rather than leaving replay to infer it from whatever the library
+      // currently defaults to.
       const store = createSlamAppStore({ storageBackend: backend });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
@@ -133,13 +155,88 @@ describe('createSlamAppStore', () => {
     });
 
     it('can be opted out via enableCompassColdStartOverride: false', async () => {
+      // Why this asserts `false` and not `toBeFalsy()`: it used to assert
+      // falsy, which `undefined` satisfies — so the test passed while the
+      // opt-out did NOTHING. That was harmless only as long as the LIBRARY
+      // default was also off, because "never dispatched" and "dispatched
+      // false" then had the same effect. Since gps-plus-slam-js 1.16.0 the
+      // library default is ON and `undefined` means "use the library
+      // default", so the two differ: only an explicit `false` opts out.
+      // `toBeFalsy()` cannot tell them apart, which is exactly why it kept
+      // passing. See the replay-fidelity test below for the consequence.
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassColdStartOverride: false,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
-      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBeFalsy();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(false);
+    });
+
+    it('dispatches the opt-in value EXPLICITLY, so the library default cannot decide it', async () => {
+      // Why this test matters: this is the regression that shipping
+      // gps-plus-slam-js 1.16.0 would otherwise have introduced silently.
+      //
+      // The framework used to dispatch only when the option was TRUE
+      // (`rows.filter(r => r.enabled)`), leaving `coldStartOverrideEnabled`
+      // `undefined` on an explicit `false`. The library reads `undefined` as
+      // "use DefaultAlignmentConfig", which flipped from `false` to `true` in
+      // 1.16.0 — so `enableCompassColdStartOverride: false` silently started
+      // meaning ON. RecorderApp replay passes exactly that `false` to keep a
+      // recording captured WITHOUT the override from replaying WITH it
+      // (see replay-mode.ts), so the failure landed on replay fidelity.
+      //
+      // The fix is to make the framework's intent explicit in state rather
+      // than inferable from a library default: the cold-start row (the one
+      // marked `recordWhenFalse`) dispatches its actual value. That removes the
+      // class FOR THAT FLAG — a future library-default flip cannot reinterpret a
+      // recording, because the recording now carries the value as an action. The
+      // other four opt-ins are still dispatch-on-`true` and so still stay
+      // `undefined` when disabled; their library defaults are `false`, so they
+      // need the marker only if that changes (rule stated on the field).
+      for (const value of [true, false]) {
+        const store = createSlamAppStore({
+          storageBackend: backend,
+          enableCompassColdStartOverride: value,
+        });
+        store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+        await Promise.resolve();
+        expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(value);
+      }
+    });
+
+    it('does NOT overwrite a value the action stream already decided (replay contract)', async () => {
+      // Why this test matters: this is the shape that distinguishes "supply an
+      // initial value" from "enforce a value forever", and getting it wrong
+      // inverts the very bug the explicit dispatch was added to fix.
+      //
+      // `replay-mode.ts` passes `enableCompassColdStartOverride: false` and then
+      // replays a recorded action stream. A session recorded WITH the override
+      // carries `setColdStartOverrideEnabled(true)`, which arrives AFTER the
+      // framework's opt-in has fired (the opt-in fires on the first `setZeroPos`;
+      // the recorded action comes later in the stream). If the listener treats
+      // "flag !== my option" as "not applied yet", it re-dispatches `false` over
+      // the recorded `true` — because its predicate is edge-triggered on the
+      // `gpsData` OBJECT REFERENCE, and the recorded action creates a fresh one.
+      // The session would then replay WITHOUT an override it was recorded WITH:
+      // the same defect as before, in the opposite direction.
+      //
+      // So the framework's value is a DEFAULT that the stream overrides, and
+      // `isSet` must ask "has this flag been decided at all?", not "does it equal
+      // my option?".
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassColdStartOverride: false,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(false);
+
+      // The recorded action from a session captured WITH the override.
+      store.dispatch(setColdStartOverrideEnabled(true));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
     });
 
     it('leaves the OTHER compass flags off by default (only Stage 0 ships on)', async () => {
@@ -170,6 +267,90 @@ describe('createSlamAppStore', () => {
       const store = createSlamAppStore({ storageBackend: backend });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       expect(store.getState().gpsData?.compassRotationPriorEnabled).toBeFalsy();
+    });
+  });
+
+  // Why these tests matter: the 2026-07-19 recorder enablement plan exposes
+  // two on-device field-test opt-ins. `enableCompassExperiment` must set the
+  // library's `compassExperimentEnabled` flag (which threads the decided
+  // combo: rotation prior + trust tolerance 15° + C′ pair selection — the
+  // combo itself is pinned in the LIBRARY's gpsDataSlice tests, not here);
+  // `enableConsensusSolverComparison` sets `consensusSolverComparisonEnabled` (the
+  // alternative robust-solver A/B arm). Both follow the recorded-action
+  // opt-in pattern: dispatched only once gpsData exists, default OFF ⇒
+  // byte-identical.
+  describe('enableCompassExperiment + enableConsensusSolverComparison (field-test opt-ins)', () => {
+    it('enables the compass experiment once gpsData exists (after the first setZeroPos)', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+      });
+      expect(store.getState().gpsData).toBeNull();
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.compassExperimentEnabled).toBe(true);
+    });
+
+    it('enables the Robust-solver comparison once gpsData exists', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableConsensusSolverComparison: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.consensusSolverComparisonEnabled).toBe(
+        true
+      );
+    });
+
+    it('leaves both off by default (byte-identical)', async () => {
+      const store = createSlamAppStore({ storageBackend: backend });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      const s = store.getState().gpsData;
+      expect(s?.compassExperimentEnabled).toBeFalsy();
+      expect(s?.consensusSolverComparisonEnabled).toBeFalsy();
+    });
+
+    // Why: the vote-weight slider (2026-07-19 weight-curve follow-up) rides
+    // this option — a number, not a flag, so it is dispatched only when the
+    // caller provides one (absent ⇒ library default, byte-identical).
+    it('compassVoteWeight dispatches the weight once gpsData exists', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+        compassVoteWeight: 0.1,
+      });
+      expect(store.getState().gpsData).toBeNull();
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      const s = store.getState().gpsData;
+      expect(s?.compassExperimentEnabled).toBe(true);
+      expect(s?.compassVoteWeight).toBe(0.1);
+    });
+
+    it('compassVoteWeight stays absent when not provided', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.compassVoteWeight).toBeUndefined();
+    });
+
+    it('both experiment opt-ins combine with the default Stage-0 override', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+        enableConsensusSolverComparison: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      const s = store.getState().gpsData;
+      expect(s?.coldStartOverrideEnabled).toBe(true); // default-on Stage 0
+      expect(s?.compassExperimentEnabled).toBe(true);
+      expect(s?.consensusSolverComparisonEnabled).toBe(true);
     });
   });
 
@@ -210,14 +391,29 @@ describe('createSlamAppStore', () => {
       expect(s?.compassWebXRConsistencyEnabled).toBe(true);
     });
 
-    it('RE-APPLIES the opt-in if the flag is later cleared (robust to the recorder gpsData-recreation race)', async () => {
-      // Field bug (2026-06-27): in the recorder the opt-in ended up dropped — the
-      // flag fired against a gpsData that was then recreated (store swap / origin
-      // reset), and a one-shot subscription never re-applied it. The opt-in must
-      // therefore be idempotently re-applied whenever gpsData exists with the flag
-      // unset, not fired exactly once. Modelled here by clearing it directly.
-      // Re-application runs in a listener-middleware effect (async, level-based
-      // predicate: "gpsData exists and a flag is unset"), hence the awaits.
+    it('does NOT fight an explicit later dispatch (the drop case moved to the listener test)', async () => {
+      // This test used to assert the OPPOSITE, and the change is deliberate.
+      //
+      // Field bug (2026-06-27): the opt-in fired against a gpsData that was then
+      // recreated (store swap / origin reset) and a one-shot subscription never
+      // re-applied it, so the flag ended up dropped. It must be re-applied
+      // whenever gpsData exists with the flag UNSET. That requirement still
+      // holds — but this test modelled "unset" with an explicit
+      // `setColdStartOverrideEnabled(false)`, which was only a valid stand-in
+      // while `false` and `undefined` had the same effect. Since gps-plus-slam-js
+      // 1.16.0 they do not: `undefined` means "use the library default" (now ON)
+      // and `false` is a DECISION. Re-applying `true` over an explicit `false` is
+      // exactly what breaks replay of a session recorded with the override off.
+      //
+      // Where the real coverage lives now: `slam-app-store-listener.test.ts`
+      // "re-applies the opt-in when gpsData is recreated" resets gpsData to
+      // `null` and dispatches a fresh `setZeroPos`, i.e. the actual field-bug
+      // mechanism rather than a proxy for it. It can do that because it builds
+      // its own store; a real store here has no way to reach an unset flag (a
+      // second `setZeroPos`, even a large origin jump, PRESERVES it — verified).
+      //
+      // What this test pins instead is the other half of the contract: a value
+      // the stream decides is left alone.
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassColdStartOverride: true,
@@ -225,9 +421,10 @@ describe('createSlamAppStore', () => {
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
       expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
-      store.dispatch(setColdStartOverrideEnabled(false)); // simulate the drop
+      store.dispatch(setColdStartOverrideEnabled(false));
       await Promise.resolve();
-      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
+      await Promise.resolve();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(false);
     });
   });
 
@@ -326,6 +523,49 @@ describe('createSlamAppStore', () => {
       });
       expect(writeSessionMetadata).toHaveBeenCalled();
     });
+
+    // Why: the stop flow must be able to await every queued action write
+    // before it reads `actions/` for the final sync / ZIP export (the
+    // persistence WriteQueue is async — a mark dispatched moments before
+    // Stop could otherwise miss the zip). This pins that the store exposes
+    // the middleware's drain hook and that it actually waits for the
+    // backend write to settle.
+    it('flushPendingActionWrites resolves only after queued action writes settled', async () => {
+      let releaseWrite!: () => void;
+      const writeAction = vi.fn().mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseWrite = resolve;
+          })
+      );
+      const spy: StorageBackend = {
+        createSession: vi.fn().mockResolvedValue({ sessionName: 's' }),
+        listSessions: vi.fn().mockResolvedValue([]),
+        writeAction,
+        writeFrame: vi.fn().mockResolvedValue(undefined),
+        writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+      };
+      const store = createSlamAppStore({ storageBackend: spy });
+      store.dispatch(
+        startSession({
+          scenarioName: 'Test',
+          sessionName: 'flush-session',
+          startTime: Date.now(),
+        })
+      );
+
+      let flushed = false;
+      const flushPromise = store.flushPendingActionWrites().then(() => {
+        flushed = true;
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(writeAction).toHaveBeenCalled();
+      expect(flushed).toBe(false);
+
+      releaseWrite();
+      await flushPromise;
+      expect(flushed).toBe(true);
+    });
   });
 
   describe('license validation', () => {
@@ -336,5 +576,138 @@ describe('createSlamAppStore', () => {
         createSlamAppStore({ storageBackend: backend, licenseKey: '' })
       ).toThrow();
     });
+  });
+});
+
+/**
+ * Dev-check exemptions a consumer needs for its OWN slices.
+ *
+ * Why these tests matter: the factory's ignore lists were hardcoded to the
+ * framework's `tracking` slice, so a consumer holding a large non-serialisable
+ * value of its own had exactly two options — pay RTK's deep walk on every
+ * dispatch, or turn `enableDevChecks` off and lose every check in the app.
+ *
+ * The OSM demo is that consumer. It exempts its scored snapshot on a MEASURED
+ * 71 ms per dispatch ("SerializableStateInvariantMiddleware took 71ms"), and it
+ * cannot adopt this factory — which AR mode requires, because the alignment
+ * wiring reads framework GPS state — without carrying that exemption across.
+ *
+ * ADDITIVE AND DEFAULTED, so the five existing consumers are unaffected: with
+ * the options absent the behaviour is exactly what it was.
+ */
+describe('consumer-supplied dev-check exemptions', () => {
+  it('keeps the framework defaults when the caller passes nothing', () => {
+    // The regression guard for the other five apps. The per-frame pose action
+    // and the tracking slice must stay exempt whether or not a consumer adds
+    // its own — a caller-supplied list that REPLACED the defaults would
+    // reintroduce a deep walk at 60–90 Hz.
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+
+    expect(() => {
+      store.dispatch({ type: 'tracking/poseReceived', payload: {} });
+    }).not.toThrow();
+  });
+
+  it('accepts a consumer action without warning about its payload', () => {
+    // The demo's case in miniature: an action whose payload is deliberately not
+    // plain. Without the exemption RTK logs a serializability warning and walks
+    // the whole payload on every dispatch.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+      serializableIgnoredActions: ['demo/snapshotReady'],
+      serializableIgnoredPaths: ['demo.snapshot'],
+      immutableIgnoredPaths: ['demo.snapshot'],
+    });
+    store.dispatch({
+      type: 'demo/snapshotReady',
+      payload: { cells: new Float32Array(8) },
+    });
+
+    const complaints = [...warn.mock.calls, ...error.mock.calls]
+      .flat()
+      .filter((arg) => typeof arg === 'string' && arg.includes('serializable'));
+    expect(complaints).toEqual([]);
+
+    warn.mockRestore();
+    error.mockRestore();
+  });
+});
+
+describe('composeStateSanitizer', () => {
+  it('runs the consumer summariser BEFORE the framework sanitizer', () => {
+    // THE ORDER IS THE SAFETY PROPERTY. The consumer collapses its own large
+    // slice; the framework then redacts pose and GPS data from what is left.
+    // Reversed, a consumer summariser that dropped fields could drop the
+    // redaction with them — and the framework's own walk would still have paid
+    // the full cost the consumer was trying to avoid.
+    const calls: string[] = [];
+    const consumer = (<S>(state: S): S => {
+      calls.push('consumer');
+      return state;
+    }) as <S>(state: S) => S;
+    const framework = (<T>(value: T): T => {
+      calls.push('framework');
+      return value;
+    }) as <T>(value: T) => T;
+
+    composeStateSanitizer(consumer, framework)({ any: 'state' });
+
+    expect(calls).toEqual(['consumer', 'framework']);
+  });
+
+  it("passes the consumer's OUTPUT to the framework, not the original", () => {
+    // The composition that matters: if the framework saw the raw state, the
+    // consumer's summary would be computed and thrown away — the deep walk it
+    // exists to prevent would still happen.
+    let frameworkSaw: unknown;
+    const consumer = (<S>(): S => ({ demo: 'summary' }) as S) as <S>(
+      state: S
+    ) => S;
+    const framework = (<T>(value: T): T => {
+      frameworkSaw = value;
+      return value;
+    }) as <T>(value: T) => T;
+
+    composeStateSanitizer(consumer, framework)({ demo: { huge: [1, 2, 3] } });
+
+    expect(frameworkSaw).toEqual({ demo: 'summary' });
+  });
+
+  it('returns the framework sanitizer unchanged when no consumer is given', () => {
+    // The regression guard for the other five consumers: adding the option must
+    // not wrap, allocate or otherwise change a store that does not pass it.
+    const framework = (<T>(value: T): T => value) as <T>(value: T) => T;
+    expect(composeStateSanitizer(undefined, framework)).toBe(framework);
+  });
+});
+
+describe('the devtools sanitizer is actually WIRED, not just composable', () => {
+  it('routes the consumer option through composeStateSanitizer', () => {
+    // `composeStateSanitizer` is tested as a pure function above, but nothing
+    // asserted the FACTORY uses it — and deleting that one line leaves every
+    // other test green. That is precisely how the demo's own sanitizer got
+    // silently dropped in the migration this option repairs.
+    //
+    // A SOURCE-TEXT CHECK, because the only consumer of
+    // `devTools.stateSanitizer` is the browser extension: RTK does not expose
+    // the resolved value, and there is no extension in a node test run. The
+    // repo has four existing guards of this shape for the same reason —
+    // `ip-guardrail.test.ts`, `internal-subpath-guardrail.test.ts` and
+    // friends.
+    const source = readFileSync(
+      new URL('./create-slam-app-store.ts', import.meta.url),
+      'utf-8'
+    );
+
+    expect(source).toMatch(
+      /stateSanitizer:\s*composeStateSanitizer\(\s*devToolsStateSanitizer,\s*sanitizeForDevTools,?\s*\)/
+    );
   });
 });

@@ -7,10 +7,13 @@
  *   import { initAR } from 'gps-plus-slam-app-framework/ar';
  *   import { createSlamAppStore } from 'gps-plus-slam-app-framework/state';
  *
- * This root barrel re-exports conflict-free names for convenience.
- * Names that collide across submodules (StorageBackend, SessionMetadata,
- * RefPointMark, DepthPoint, DepthSample) should be imported from their
- * specific subpath.
+ * This root barrel re-exports conflict-free names for convenience. The one
+ * name deliberately left OFF it is `SessionMetadata`, which `state/`
+ * (recording-slice.ts) and `storage/` (opfs-storage.ts) both declare with
+ * different shapes - import it from the subpath you mean. `StorageBackend`,
+ * `DepthPoint`, `DepthSample` and `RefPointMarker` ARE exported here; an
+ * older version of this comment said otherwise, and named a `RefPointMark`
+ * type that never existed.
  */
 
 // Modules with no cross-barrel naming conflicts
@@ -42,20 +45,8 @@ export {
   buildRawGpsPoint,
   buildRecordGpsEventPayload,
   createGpsPositionHandler,
-  type RecordingOptionsInput,
-  type DepthCaptureOptions,
-  type ImageCaptureOptions,
-  STORAGE_KEY,
-  DEFAULT_RECORDING_OPTIONS,
-  DEPTH_CONSTRAINTS,
-  IMAGE_CONSTRAINTS,
-  validateDepthOptions,
-  validateImageOptions,
-  validateRecordingOptions,
-  loadRecordingOptions,
-  saveRecordingOptions,
-  resetRecordingOptions,
-  cloneRecordingOptions,
+  // recording-options re-exports removed 2026-07-11 (G-1 move): the settings
+  // catalog lives in the recorder app now — see state/index.ts.
   replayRecording,
   recordingReducer,
   type TrackingPhase,
@@ -145,7 +136,10 @@ export {
   exportSessionAsZip,
   exportSessionHandleAsZip,
   syncToExternalZip,
+  downloadBlob,
   downloadZip,
+  PDF_FILE_TYPE,
+  type DownloadFileType,
   MAX_ACTION_FILE_SIZE,
   type RecordedAction,
   type ZipActionEntry,
@@ -156,7 +150,7 @@ export {
   loadGpsPathFromBlob,
 } from './storage/index.js';
 
-// Visualization: export from map-overlay (not leaflet-map-overlay) for DEFAULT_ZOOM etc.
+// Visualization
 export * from './visualization/index.js';
 
 // Licensing: bundled community license key (default for createSlamAppStore)

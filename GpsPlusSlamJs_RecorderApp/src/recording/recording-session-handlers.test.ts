@@ -15,7 +15,7 @@ import type { RecorderStore } from '../state/recorder-store';
 import {
   DEFAULT_RECORDING_OPTIONS,
   type RecordingOptions,
-} from 'gps-plus-slam-app-framework/state/recording-options';
+} from '../state/recording-options';
 import type { StoreSubscriberDeps } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
 import {
@@ -184,7 +184,6 @@ const {
     },
     mockRefPointVisualizer: {
       setZeroRef: vi.fn(),
-      displayPriorRefPoints: vi.fn(),
     },
     mockComputeFusedPath: vi.fn().mockReturnValue([]),
     mockCreateGpsErrorHandler: vi.fn().mockReturnValue(() => {}),
@@ -251,10 +250,16 @@ vi.mock('gps-plus-slam-app-framework/state/store-subscribers', () => ({
 // wirers moved to the AR-scoped ui/ref-point-view-wiring.ts (round-3
 // feedback 2026-07-05), covered by its own tests.
 
-vi.mock('../state/recorder-store', () => ({
-  startSession: mockStartSession,
-  endSession: mockEndSession,
-}));
+// Spy on the recording actions at their true source (post-barrel-removal
+// import path). Spread the actual module so every other symbol stays real.
+vi.mock(
+  'gps-plus-slam-app-framework/state/recording-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    startSession: mockStartSession,
+    endSession: mockEndSession,
+  })
+);
 
 vi.mock('../storage/write-failure-tracker', () => ({
   createWriteFailureTracker: mockCreateWriteFailureTracker,
@@ -264,10 +269,12 @@ vi.mock('gps-plus-slam-app-framework/ar/capture-failure-tracker', () => ({
   createCaptureFailureTracker: mockCreateCaptureFailureTracker,
 }));
 
+// NOTE: setImageQualityAnalyzer is no longer a framework export (setter fold,
+// surface-reduction step 1) — it is an injected dep from main.ts now, so
+// `mockSetImageQualityAnalyzer` is wired through createMockDeps below instead.
 vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   startImageCapture: mockStartImageCapture,
   stopImageCapture: mockStopImageCapture,
-  setImageQualityAnalyzer: mockSetImageQualityAnalyzer,
   startDepthCapture: mockStartDepthCapture,
   stopDepthCapture: mockStopDepthCapture,
   getImageCaptureFrameCount: mockGetImageCaptureFrameCount,
@@ -313,6 +320,8 @@ vi.mock('../ui/hud', () => ({
   setNewRefPointButtonVisible: vi.fn(),
   setAbsCompassStatus: vi.fn(),
   hideAbsCompass: vi.fn(),
+  hideQrStatus: vi.fn(),
+  setQrStatus: vi.fn(),
 }));
 
 vi.mock('../ui/session-summary', () => ({
@@ -400,6 +409,7 @@ function createMockStore(): RecorderStore {
     replaceReducer: vi.fn(),
     writeFrame: vi.fn().mockResolvedValue(undefined),
     writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+    flushPendingActionWrites: vi.fn().mockResolvedValue(undefined),
   } as unknown as RecorderStore;
 }
 
@@ -432,6 +442,7 @@ function createMockDeps(
     createNewStore: vi.fn().mockReturnValue(createMockStore()),
     getRecordingOptions: () => defaultOptions,
     getMapOverlay: () => null,
+    getQrSightingFeeder: () => null,
     getSessionNotes: () => '',
     waitForZeroReference: vi.fn().mockResolvedValue(null),
     loadAndDisplayRefPoints: vi
@@ -439,7 +450,8 @@ function createMockDeps(
       .mockResolvedValue({ refPointCount: 0, observationCount: 0 }),
     collectTrackerErrors: vi.fn(),
     applyAlignmentMatrix: vi.fn(),
-    setTrackingStore: vi.fn(),
+    rebindTrackingStore: vi.fn(),
+    setImageQualityAnalyzer: mockSetImageQualityAnalyzer,
     ...overrides,
   };
 }
@@ -562,22 +574,24 @@ describe('handleStartRecording', () => {
     expect(deps.setStore).toHaveBeenCalled();
   });
 
-  it('should re-point the AR session at the new store via setTrackingStore', async () => {
+  it('should re-point the AR session at the new store via rebindTrackingStore', async () => {
     // Why (Finding #1, 2026-05-23 user feedback): when a recording starts a
     // fresh Redux store, the WebXR session must be re-pointed at the new
     // store. Otherwise `poseReceived` keeps flowing into the orphaned old
     // store, the new store's `tracking.phase` stays 'initializing', and the
     // tracking-quality phase gate keeps the HUD on "AR LOST" forever — the
-    // exact symptom reported in the field test.
+    // exact symptom reported in the field test. Since the setter fold this
+    // goes through the framework's narrow `rebindTrackingStore` (the one
+    // runtime mutation that survived the move to initAR callbacks).
     const newStore = createMockStore();
-    const setTrackingStoreMock = vi.fn();
+    const rebindTrackingStoreMock = vi.fn();
     const localDeps = createMockDeps({
       createNewStore: vi.fn().mockReturnValue(newStore),
-      setTrackingStore: setTrackingStoreMock,
+      rebindTrackingStore: rebindTrackingStoreMock,
     });
     const localHandlers = createRecordingSessionHandlers(localDeps);
     await localHandlers.handleStartRecording();
-    expect(setTrackingStoreMock).toHaveBeenCalledWith(newStore);
+    expect(rebindTrackingStoreMock).toHaveBeenCalledWith(newStore);
   });
 
   it('should generate a session name from timestamp', async () => {
@@ -802,8 +816,8 @@ describe('handleStartRecording', () => {
   it('cleanupForNewRecording stops the live feeds too — captures, watches, analyzer worker (teardown parity with performStop)', async () => {
     // Why this test matters (recurring PR #115/#120/#123 review finding):
     // performStop was the only path that stopped captures/watches and disposed
-    // the quality-gate worker; cleanupForNewRecording (the XR-session-end /
-    // start-over path) only cleared subscriptions and trackers, so a session
+    // the quality-gate worker; cleanupForNewRecording (the start-over path)
+    // only cleared subscriptions and trackers, so a session
     // torn down through it left the camera/GPS feeds running and the worker
     // alive. Both paths now share stopLiveFeeds().
     const opts: RecordingOptions = {
@@ -953,9 +967,14 @@ describe('handleStartRecording', () => {
   });
 
   it('does NOT spawn the analyzer when qualityFilter is disabled, but still clears it', async () => {
-    // Image capture ON but the quality gate OFF (the default): no worker is
-    // spawned, and the analyzer is explicitly cleared so a previous recording's
-    // worker can't leak into this one.
+    // Image capture ON but the quality gate OFF: no worker is spawned, and the
+    // analyzer is explicitly cleared so a previous recording's worker can't
+    // leak into this one.
+    //
+    // The gate is set off EXPLICITLY here. It used to be the shipped default
+    // and this test spread the defaults; when the default flipped on
+    // 2026-08-20 the test started asserting the opposite of its own name.
+    // A test about "when X is off" should set X off.
     const opts: RecordingOptions = {
       images: {
         enabled: true,
@@ -963,7 +982,10 @@ describe('handleStartRecording', () => {
         quality: 0.7,
         resolutionDivisor: 1,
         motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
-        qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
+        qualityFilter: {
+          ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
+          enabled: false,
+        },
       },
       depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },
@@ -992,7 +1014,7 @@ describe('handleStartRecording', () => {
     // Why: Depth capture is controlled by user settings — and the user's
     // interval/grid/rgb values must actually reach the sampler. They were
     // dead knobs before startDepthCapture accepted a config (occupancy-grid
-    // port plan Iter 6; see 2026-06-12-payload-rebuild-field-drop-audit.md
+    // port plan Iter 6; see 2026-06-12-1130-payload-rebuild-field-drop-audit.md
     // F3), so this asserts the exact values, not just the call. The rgb
     // flag (Iter 8 voxel coloring) rides the same forward-the-whole-section
     // seam, so it reaches the sampler with no seam edit.
@@ -1286,6 +1308,46 @@ describe('handleStopRecording', () => {
     mockGetSaveFileHandle.mockReturnValue(null);
     await handlers.handleStopRecording();
     expect(mockExportSessionAsZip).toHaveBeenCalled();
+  });
+
+  // ── WriteQueue drain before actions/ readers (indoor-loop enablement
+  // follow-up §3.6b, 2026-07-12): the persistence middleware's WriteQueue is
+  // async, so an action dispatched moments before Stop can still be queued
+  // when the stop flow reads `actions/`. performStop must await the store's
+  // drain hook BEFORE the final sync and BEFORE the OPFS zip export, or a
+  // trailing mark silently misses the zip. ────────────────────────────────
+
+  it('flushes pending action writes BEFORE the OPFS zip export', async () => {
+    mockGetSaveFileHandle.mockReturnValue(null);
+
+    await handlers.handleStopRecording();
+
+    const flushMock = mockStore.flushPendingActionWrites as ReturnType<
+      typeof vi.fn
+    >;
+    expect(flushMock).toHaveBeenCalled();
+    expect(mockExportSessionAsZip).toHaveBeenCalled();
+    expect(flushMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockExportSessionAsZip.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it('flushes pending action writes BEFORE the final external sync', async () => {
+    mockGetSaveFileHandle.mockReturnValue({});
+    await handlers.handleStartRecording();
+    vi.clearAllMocks();
+
+    await handlers.handleStopRecording();
+
+    const flushMock = mockStore.flushPendingActionWrites as ReturnType<
+      typeof vi.fn
+    >;
+    expect(flushMock).toHaveBeenCalled();
+    expect(mockSyncManagerInstance.syncNow).toHaveBeenCalled();
+    expect(flushMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      (mockSyncManagerInstance.syncNow as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0]!
+    );
   });
 
   // ── Re-entrancy & concurrent teardown (Sentry issue 7319627943) ──────────

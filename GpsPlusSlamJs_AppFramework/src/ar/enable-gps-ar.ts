@@ -8,7 +8,7 @@
  * inheriting a framework-owned button DOM (unlike three.js' `ARButton`).
  *
  * Why a seam and not a button: per the plan
- * (`2026-06-03-threejs-arbutton-minimal-ar-example-user-feedback.md` §4 / §6.5),
+ * (`2026-06-03-0553-threejs-arbutton-minimal-ar-example-user-feedback.md` §4 / §6.5),
  * the permission/enter-AR *sequence* is the reusable core; the button DOM, toast
  * surface and copy are app-specific UX and stay app-local.
  *
@@ -24,7 +24,7 @@
  * excludes.
  */
 
-import type { ArCrashIsolationOptions } from '../state/recording-options';
+import type { ArCrashIsolationOptions } from './ar-crash-isolation';
 import type { GpsPosition, RawDeviceOrientation } from '../sensors/gps';
 import {
   requestGeolocationPermission as defaultRequestGeolocationPermission,
@@ -42,8 +42,10 @@ import {
   initAR as defaultInitAR,
   endARSession as defaultEndARSession,
   isWebXRSupported as defaultIsWebXRSupported,
+  type ArSessionCallbacks,
   type SessionFeatureOptions,
 } from './webxr-session';
+import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('EnableGpsAr');
@@ -90,6 +92,11 @@ export interface EnableGpsArConfig {
   requestHitTest?: boolean;
   /** Crash-isolation diagnostic flags forwarded verbatim to `initAR`. */
   isolationOptions?: Partial<ArCrashIsolationOptions>;
+  /**
+   * Per-session AR callbacks (tracking store, depth, image capture, …)
+   * forwarded verbatim to `initAR` — see {@link ArSessionCallbacks}.
+   */
+  callbacks?: ArSessionCallbacks;
   /** Receives every GPS fix from the started watch. */
   onGpsPosition?: (position: GpsPosition) => void;
   /** Receives every device-orientation sample from the started watch. */
@@ -119,7 +126,8 @@ export interface EnableGpsArDeps {
   initAR: (
     container: HTMLElement,
     isolationOptions?: Partial<ArCrashIsolationOptions>,
-    sessionFeatures?: SessionFeatureOptions
+    sessionFeatures?: SessionFeatureOptions,
+    callbacks?: ArSessionCallbacks
   ) => Promise<void>;
   stopGpsWatch: () => void;
   stopOrientationWatch: () => void;
@@ -175,23 +183,21 @@ export function createEnableGpsArController(
   const resolved: EnableGpsArDeps = { ...defaultDeps, ...deps };
 
   let state: EnableGpsArState = { status: 'checking' };
-  const listeners = new Set<(state: EnableGpsArState) => void>();
+  const listeners = createIsolatedRegistry<[EnableGpsArState]>({
+    onError: (err) =>
+      log.error('State listener threw; continuing dispatch:', err),
+  });
   let gpsWatchActive = false;
   let orientationWatchActive = false;
 
   function setState(next: EnableGpsArState): void {
     state = next;
-    // Snapshot so a listener that (un)subscribes during dispatch cannot mutate
-    // the set mid-iteration. Each listener is isolated in a try/catch so one
-    // throwing subscriber cannot abort the dispatch and destabilize the
-    // refreshSupport()/enable() state transitions that drive it.
-    for (const listener of [...listeners]) {
-      try {
-        listener(state);
-      } catch (err) {
-        log.error('State listener threw; continuing dispatch:', err);
-      }
-    }
+    // Snapshotted so a listener that (un)subscribes during dispatch cannot
+    // mutate the set mid-iteration, and each listener isolated so one throwing
+    // subscriber cannot abort the dispatch and destabilize the
+    // refreshSupport()/enable() transitions that drive it. Both come from the
+    // shared registry rather than being re-derived here.
+    listeners.run(state);
   }
 
   async function refreshSupport(): Promise<void> {
@@ -279,6 +285,26 @@ export function createEnableGpsArController(
 
     setState({ status: 'starting' });
 
+    // Wrap the app's per-session callbacks so the controller OBSERVES the
+    // session ending (system back gesture, or an external endARSession call).
+    // While `running` it stops the watches and returns to `ready`, so the
+    // app's button recovers without a page reload and the watches cannot
+    // leak. In every other status the respective path already owns the
+    // teardown (the enable() rollback below during `starting`, disable()
+    // during `stopping`) and the wrapper stays inert. The app's own
+    // onSessionEnd is always chained, whatever the status.
+    const appCallbacks = config.callbacks;
+    const callbacks: ArSessionCallbacks = {
+      ...appCallbacks,
+      onSessionEnd: (info) => {
+        if (state.status === 'running') {
+          stopWatches();
+          setState({ status: 'ready' });
+        }
+        appCallbacks?.onSessionEnd?.(info);
+      },
+    };
+
     let sessionStarted = false;
     try {
       const permissionError = await requestPermissions(config);
@@ -292,9 +318,14 @@ export function createEnableGpsArController(
       // active watches if initAR rejects — and the retry from the `error` state
       // would start duplicates. Gating the start calls behind the resolved
       // initAR keeps watcher count bounded to one set per running session.
-      await resolved.initAR(config.container, config.isolationOptions, {
-        requestHitTest: config.requestHitTest,
-      });
+      await resolved.initAR(
+        config.container,
+        config.isolationOptions,
+        {
+          requestHitTest: config.requestHitTest,
+        },
+        callbacks
+      );
       sessionStarted = true;
 
       // --- Sensor watches ---
@@ -361,10 +392,8 @@ export function createEnableGpsArController(
     return { ok: false, error };
   }
 
-  async function disable(): Promise<void> {
-    if (state.status !== 'running') return;
-    setState({ status: 'stopping' });
-
+  /** Stop whichever sensor watches this controller started (idempotent). */
+  function stopWatches(): void {
     if (gpsWatchActive) {
       resolved.stopGpsWatch();
       gpsWatchActive = false;
@@ -373,6 +402,13 @@ export function createEnableGpsArController(
       resolved.stopOrientationWatch();
       orientationWatchActive = false;
     }
+  }
+
+  async function disable(): Promise<void> {
+    if (state.status !== 'running') return;
+    setState({ status: 'stopping' });
+
+    stopWatches();
 
     try {
       await resolved.endARSession();
@@ -385,12 +421,7 @@ export function createEnableGpsArController(
 
   return {
     getState: () => state,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe: (listener) => listeners.register(listener),
     refreshSupport,
     enable,
     disable,

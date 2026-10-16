@@ -2,7 +2,7 @@
 /**
  * Integration tests for the four live debug-overlay toggles in handleEnterAR
  * (main.ts) — Finding B / Slice 4 of
- * 2026-06-14-followup-frame-tile-legacy-aspect-and-live-toggle.md.
+ * 2026-06-14-0012-frame-tile-legacy-aspect-and-live-toggle-followup.md.
  *
  * Why these tests matter:
  * The `visualization` recording-options group must gate ONLY what is drawn live
@@ -25,6 +25,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import './test-utils/main-module-stubs';
 
 // ---------- hoisted mocks ----------
 
@@ -145,18 +146,24 @@ const { mockGetArWorldGroup, mockGetScene, mockGetCamera } = vi.hoisted(() => {
 vi.mock('./visualization/frame-tile-visualizer', () => ({
   FrameTileVisualizer: mockFrameTileVisualizerCtor,
 }));
-vi.mock('./visualization/frame-texture-decoder', () => ({
-  decodeFrameTexture: vi.fn(),
-}));
+vi.mock(
+  'gps-plus-slam-app-framework/visualization/frame-texture-decoder',
+  () => ({
+    decodeFrameTexture: vi.fn(),
+  })
+);
 vi.mock('./visualization/wire-frame-tile-subscribers', () => ({
   wireFrameTileSubscribers: mockWireFrameTileSubscribers,
 }));
 vi.mock('gps-plus-slam-app-framework/ar/occupancy-grid', () => ({
   OccupancyGrid: mockOccupancyGridCtor,
 }));
-vi.mock('./visualization/occupancy-cubes-visualizer', () => ({
-  OccupancyCubesVisualizer: mockOccupancyVisualizerCtor,
-}));
+vi.mock(
+  'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer',
+  () => ({
+    OccupancyCubesVisualizer: mockOccupancyVisualizerCtor,
+  })
+);
 vi.mock('./visualization/wire-occupancy-grid-subscribers', () => ({
   wireOccupancyGridSubscribers: mockWireOccupancyGridSubscribers,
 }));
@@ -181,43 +188,21 @@ vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
   isWebXRSupported: vi.fn().mockResolvedValue(true),
   getCurrentArPose: vi.fn().mockReturnValue(null),
   applyAlignmentMatrix: vi.fn(),
-  setImageCaptureCallback: vi.fn(),
   startImageCapture: vi.fn(),
   stopImageCapture: vi.fn(),
-  setDepthCaptureCallback: vi.fn(),
   startDepthCapture: vi.fn(),
   stopDepthCapture: vi.fn(),
-  setFrameCallback: vi.fn(),
-  setTrackingLostCallback: vi.fn(),
-  setTrackingCallbacks: vi.fn(),
-  setTrackingRecoveredCallback: vi.fn(),
-  setTrackingStore: vi.fn(),
-  setSessionEndCallback: vi.fn(),
+  rebindTrackingStore: vi.fn(),
   getScene: mockGetScene,
   getCamera: mockGetCamera,
   getArWorldGroup: mockGetArWorldGroup,
   getImageCaptureFrameCount: vi.fn().mockReturnValue(0),
   getDepthSampleCount: vi.fn().mockReturnValue(0),
 }));
-vi.mock('./utils/sentry', () => ({ initSentry: vi.fn() }));
 vi.mock('gps-plus-slam-js', () => ({
   odometryTrackingRestarted: vi.fn((payload: unknown) => ({
     type: 'gpsData/odometryTrackingRestarted',
     payload,
-  })),
-}));
-vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-vi.mock('./ui/ref-point-view-wiring', () => ({
-  wireRefPointViews: vi.fn(() => ({
-    refreshMapMarkers: vi.fn(),
-    unsubscribe: vi.fn(),
   })),
 }));
 
@@ -234,7 +219,6 @@ vi.mock('./ui/hud', () => ({
   validateEnterButton: vi.fn(),
   updatePermissionStatus: vi.fn(),
   setPermissionsReady: vi.fn(),
-  setFolderSelected: vi.fn(),
   setSaveLocationSelected: vi.fn(),
   setFolderImportExpanded: vi.fn(),
   setFolderImportProgress: vi.fn(),
@@ -253,60 +237,9 @@ vi.mock('./ui/toast', () => ({
   showToast: vi.fn(),
   TOAST_DURATION_ERROR: 5000,
 }));
-vi.mock('./ui/session-summary', () => ({
-  initSessionSummary: vi.fn(),
-  showSessionSummary: vi.fn(),
-  hideSessionSummary: vi.fn(),
-}));
-vi.mock('./ui/log-panel', () => ({
-  initLogPanel: vi.fn(),
-  showLogPanel: vi.fn(),
-  hideLogPanel: vi.fn(),
-  toggleLogPanel: vi.fn(),
-}));
 vi.mock('./ui/confirm-dialog', () => ({
   destroyConfirmDialog: vi.fn(),
   showConfirmDialog: vi.fn(),
-}));
-vi.mock('./ui/ref-point-picker', () => ({
-  showRefPointPicker: vi.fn(),
-  createRefPointPickerHtml: vi.fn().mockReturnValue(''),
-  isRefPointPickerVisible: vi.fn(),
-  cancelRefPointPicker: vi.fn(),
-}));
-vi.mock('./ui/navigation', () => ({
-  initNavigation: vi.fn(),
-  getCurrentScreen: vi.fn(() => 'setup'),
-  enableBeforeUnloadWarning: vi.fn(),
-  disableBeforeUnloadWarning: vi.fn(),
-  pushScreenState: vi.fn(),
-  replaceScreenState: vi.fn(),
-}));
-vi.mock('./ui/settings-modal', () => ({
-  initSettingsModal: vi.fn(),
-}));
-vi.mock('./ui/replay-ui', () => ({
-  initReplayUI: vi.fn(),
-  switchToReplayMode: vi.fn(),
-  populateReplayScenarios: vi.fn(),
-  populateReplaySessions: vi.fn(),
-  updateReplayProgress: vi.fn(),
-  showReplayControls: vi.fn(),
-  hideReplayControls: vi.fn(),
-  updatePlayPauseButton: vi.fn(),
-  updateCameraModeButton: vi.fn(),
-  enableStartReplay: vi.fn(),
-  disableStartReplay: vi.fn(),
-}));
-vi.mock('./ui/session-browser', () => ({
-  DEFAULT_SCENARIO: 'Default Scenario',
-  listScenariosFromFolder: vi.fn(),
-  extractScenarioNamesFromZips: vi.fn(),
-  discoverScenariosFromZipMetadata: vi.fn(),
-  listSessionZipsInScenario: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/ar/xr-error-handler', () => ({
-  getXrErrorMessage: vi.fn(),
 }));
 vi.mock('gps-plus-slam-app-framework/ar/replay-scene', () => ({
   initReplayScene: vi.fn(),
@@ -322,39 +255,8 @@ vi.mock('./storage/scenario-storage', () => ({
   startSession: vi.fn(),
   resetForNewSession: vi.fn(),
 }));
-vi.mock('./storage/external-file-storage', () => ({
-  isExternalStorageSupported: vi.fn().mockReturnValue(true),
-  selectReadFolder: vi.fn(),
-  selectSaveFile: vi.fn(),
-  getSaveFileHandle: vi.fn(),
-  getReadFolderHandle: vi.fn(),
-  resetForNewRecording: vi.fn(),
-  hasReadFolderPermission: vi.fn(),
-}));
 vi.mock('./storage/sync-manager', () => ({
   createSyncManager: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/storage/zip-export', () => ({
-  syncToExternalZip: vi.fn(),
-}));
-vi.mock('./storage/ref-point-loader', () => ({
-  loadAllRefPoints: vi.fn(),
-  saveRefPointObservation: vi.fn(),
-  flattenRefPointsToMarks: vi.fn(),
-  listRefPointIds: vi.fn(),
-}));
-vi.mock('./storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/storage/file-system-utils', () => ({
-  formatTimestamp: vi.fn(),
-  SESSION_IMAGES_DIR: 'images',
-}));
-vi.mock('gps-plus-slam-app-framework/utils/fused-path', () => ({
-  computeFusedPath: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/utils/list-formatter', () => ({
-  listFormatter: { format: vi.fn() },
 }));
 vi.mock('./state/recorder-store', () => ({
   createRecorderStore: vi.fn().mockReturnValue({
@@ -368,9 +270,6 @@ vi.mock('./state/recorder-store', () => ({
   add2dImage: vi.fn(),
   recordDepthSample: vi.fn(),
 }));
-vi.mock('gps-plus-slam-app-framework/state/store-subscribers', () => ({
-  wireStoreSubscribers: vi.fn().mockReturnValue(() => {}),
-}));
 vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   createGpsPositionHandler: vi.fn().mockReturnValue(() => {}),
   updateDeviceOrientation: vi.fn(),
@@ -378,7 +277,10 @@ vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   extractOdomPosition: vi.fn().mockReturnValue([0, 0, 0]),
   extractOdomRotation: vi.fn().mockReturnValue([0, 0, 0, 1]),
 }));
-vi.mock('gps-plus-slam-app-framework/state/recording-options', () => ({
+vi.mock('./state/recording-options', () => ({
+  // main.ts also consumes the pure compassStoreOptions mapping — stubbed
+  // inert here; its real logic is unit-tested in recording-options.test.ts.
+  compassStoreOptions: () => ({}),
   loadRecordingOptions: vi.fn().mockReturnValue(mockRecordingOptions),
 }));
 vi.mock('gps-plus-slam-app-framework/sensors/gps', () => ({
@@ -410,19 +312,6 @@ vi.mock('gps-plus-slam-app-framework/sensors/permission-checker', () => ({
   }),
   subscribePermissionChanges: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
 }));
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {},
-}));
-vi.mock('gps-plus-slam-app-framework/visualization/map-overlay', () => ({
-  MapOverlay: vi.fn().mockImplementation(() => ({
-    isVisible: vi.fn().mockReturnValue(false),
-    toggle: vi.fn(),
-    updatePosition: vi.fn(),
-    setGpsPosition: vi.fn(),
-    getGpsPosition: vi.fn().mockReturnValue(null),
-    dispose: vi.fn(),
-  })),
-}));
 vi.mock(
   'gps-plus-slam-app-framework/visualization/leaflet-map-overlay',
   () => ({
@@ -436,23 +325,11 @@ vi.mock(
     })),
   })
 );
-vi.mock('gps-plus-slam-app-framework/storage/null-storage-backend', () => ({
-  NullStorageBackend: vi.fn(),
-}));
-vi.mock('./storage/write-failure-tracker', () => ({
-  createWriteFailureTracker: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/ar/capture-failure-tracker', () => ({
-  createCaptureFailureTracker: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework', () => ({
-  selectTrackingQuality: vi.fn().mockReturnValue(null),
-}));
 vi.mock('./ui/hud-tracking-quality-subscriber', () => ({
   subscribeHudToTrackingQuality: vi.fn(() => vi.fn()),
 }));
-vi.mock('./ui/stats-overlay', () => ({
-  createStatsOverlay: mockCreateStatsOverlay,
+vi.mock('gps-plus-slam-app-framework/visualization/perf-stats-overlay', () => ({
+  createPerfStatsOverlay: mockCreateStatsOverlay,
 }));
 vi.mock('./replay/replay-handlers', () => ({
   createReplayHandlers: vi.fn().mockReturnValue({

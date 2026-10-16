@@ -1,16 +1,18 @@
 /**
- * App-level memoized selectors for CombinedRootState.
+ * App-level selectors for CombinedRootState.
  *
- * Wraps library getter functions with createSelector (RTK/reselect) for
- * standard memoization. The library getters already return stable references
- * via immutable state, but createSelector adds:
- * - Explicit memoization contract (input comparison → cached output)
+ * The plain property-read selectors return whatever reference the immutable
+ * state holds (or a module-level empty constant), so they are reference-stable
+ * by construction and need no memo. `createSelector` is used only where a
+ * selector MAPS (`selectFrameTilesInWebXR`) and would otherwise allocate on
+ * every call. Until 2026-09-04 all of them were wrapped, which read as a
+ * memoization contract the wrappers did not add anything to (simplify loop).
  * - Consistent select* naming convention matching selectCachedKnownRefPoints
  * - Composition-ready building blocks for derived selectors
  *
  * Used by subscribeToSelector in store-subscribers.ts for change detection.
  *
- * @see docs/2026-04-07-architecture-observations-consolidated.md §1
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-07-architecture-observations-consolidated.md §1
  */
 
 import { createSelector } from '@reduxjs/toolkit';
@@ -35,50 +37,46 @@ const EMPTY_ODOM_POSITIONS: readonly Vector3[] = [];
 const EMPTY_ODOM_ROTATIONS: readonly Quaternion[] = [];
 const EMPTY_FRAME_TILES: readonly ArImageCapture[] = [];
 
-// ---------------------------------------------------------------------------
-// Input selector — shared across all selectors for gpsData-derived values.
-// createSelector compares this by reference; if gpsData hasn't changed,
-// the output selector is skipped and the cached result is returned.
-// ---------------------------------------------------------------------------
+/**
+ * Minimal root these selectors read (quality-review G-2). Typed as a Pick of
+ * the `gpsData` slice ONLY, so ANY consumer store that mounts the library's
+ * gpsData reducer is structurally assignable — the former full
+ * `CombinedRootState` parameter forced `as unknown as` casts (MinimalExample),
+ * a `sel()` helper (AnchorStarter), or a re-declared root type (RecorderApp)
+ * in every consumer, and a renamed slice would have compiled and failed at
+ * runtime.
+ */
+type RootWithGpsData = Pick<CombinedRootState, 'gpsData'>;
 
-const selectGpsData = (state: CombinedRootState) => state.gpsData;
-
 // ---------------------------------------------------------------------------
-// Memoized selectors
+// Property-read selectors (reference-stable without a memo)
 // ---------------------------------------------------------------------------
 
 /** Alignment matrix (4×4), or null if not yet computed. */
-export const selectAlignmentMatrix = createSelector(
-  [selectGpsData],
-  (gpsData): Matrix4 | null => gpsData?.gpsEvents?.alignmentMatrix ?? null
-);
+export const selectAlignmentMatrix = (state: RootWithGpsData): Matrix4 | null =>
+  state.gpsData?.gpsEvents?.alignmentMatrix ?? null;
 
 /** Recorded GPS positions with metadata. */
-export const selectGpsPositions = createSelector(
-  [selectGpsData],
-  (gpsData): readonly GpsPoint[] =>
-    gpsData?.gpsEvents?.gpsPositions ?? EMPTY_GPS_POSITIONS
-);
+export const selectGpsPositions = (
+  state: RootWithGpsData
+): readonly GpsPoint[] =>
+  state.gpsData?.gpsEvents?.gpsPositions ?? EMPTY_GPS_POSITIONS;
 
 /** Recorded odometry positions (AR-local space). */
-export const selectOdometryPositions = createSelector(
-  [selectGpsData],
-  (gpsData): readonly Vector3[] =>
-    gpsData?.gpsEvents?.odometryPositions ?? EMPTY_ODOM_POSITIONS
-);
+export const selectOdometryPositions = (
+  state: RootWithGpsData
+): readonly Vector3[] =>
+  state.gpsData?.gpsEvents?.odometryPositions ?? EMPTY_ODOM_POSITIONS;
 
 /** Recorded odometry rotations (AR-local space). */
-export const selectOdometryRotations = createSelector(
-  [selectGpsData],
-  (gpsData): readonly Quaternion[] =>
-    gpsData?.gpsEvents?.odometryRotations ?? EMPTY_ODOM_ROTATIONS
-);
+export const selectOdometryRotations = (
+  state: RootWithGpsData
+): readonly Quaternion[] =>
+  state.gpsData?.gpsEvents?.odometryRotations ?? EMPTY_ODOM_ROTATIONS;
 
 /** GPS zero reference (origin for coordinate conversion), or null. */
-export const selectZeroReference = createSelector(
-  [selectGpsData],
-  (gpsData): LatLong | null => gpsData?.zero ?? null
-);
+export const selectZeroReference = (state: RootWithGpsData): LatLong | null =>
+  state.gpsData?.zero ?? null;
 
 /** User-defined reference points for ground truth validation. */
 // `selectReferencePoints` removed in 5.7a-3 (Option C); see
@@ -104,7 +102,7 @@ export const selectZeroReference = createSelector(
  * across those dispatches — subscribers like `wireFrameTileSubscribers` only
  * re-run when frames actually change.
  */
-const selectOdometryPathPoints = (state: CombinedRootState) =>
+const selectOdometryPathPoints = (state: RootWithGpsData) =>
   state.gpsData?.odometryPath?.points;
 
 /**
@@ -139,19 +137,17 @@ export const selectFrameTilesInWebXR = createSelector(
   [selectOdometryPathPoints],
   (points): readonly ArImageCapture[] => {
     if (!points || points.length === 0) return EMPTY_FRAME_TILES;
-    return points.map(
-      (p): ArImageCapture => ({
-        imageFile: p.imageFile,
-        position: nueToWebXR(p.position),
-        rotation: nueQuaternionToWebXR(p.rotation),
-        screenRotation: p.screenRotation,
-        capturedAt: p.capturedAt,
-        // Pose-invariant pixel dimensions pass straight through (no coordinate
-        // conversion) so the frame-tile visualizer can size tiles to the true
-        // image aspect ratio (D1 of the 2026-06-13 frame-tile feedback).
-        width: p.width,
-        height: p.height,
-      })
-    );
+    return points.map((p): ArImageCapture => ({
+      imageFile: p.imageFile,
+      position: nueToWebXR(p.position),
+      rotation: nueQuaternionToWebXR(p.rotation),
+      screenRotation: p.screenRotation,
+      capturedAt: p.capturedAt,
+      // Pose-invariant pixel dimensions pass straight through (no coordinate
+      // conversion) so the frame-tile visualizer can size tiles to the true
+      // image aspect ratio (D1 of the 2026-06-13 frame-tile feedback).
+      width: p.width,
+      height: p.height,
+    }));
   }
 );

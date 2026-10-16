@@ -11,6 +11,27 @@
     (4-neighbour kernel) over a single-channel grayscale buffer; the standard
     Pech-Pacheco focus measure. Higher ⇒ sharper. Returns `0` for degenerate
     input (non-integer or `< 3` dimensions, buffer shorter than `width·height`).
+  - `highFrequencyEnergyRatio(gray, width, height, cutoff = 0.3): number` —
+    fraction of non-DC 2D-FFT energy at normalized radial frequency ≥ `cutoff`,
+    over the centered largest power-of-two crop (< 8×8 crop ⇒ `0`). In [0, 1];
+    higher ⇒ sharper; invariant to brightness shift AND contrast scale (a
+    ratio). Same defensive-0 contract as `sharpnessScore`. Ported 2026-07-12
+    from the investigation benchmark where it won "sharp vs degraded"
+    (AUC 0.838) — see the blur-metric-toggle plan below.
+  - `BLUR_METRIC_IDS` (all ids, default first — for consumer validation) and
+    `BlurMetricId`, which is **derived from it**
+    (`(typeof BLUR_METRIC_IDS)[number]`), not declared alongside it. That
+    ordering is load-bearing: the list is a runtime validator here
+    (`validateQualityFilterConfig`) and in the recorder's `settings-modal.ts`,
+    both of which DROP a persisted `blurMetric` that is not a member. While it
+    was a hand-written `readonly BlurMetricId[]`, an incomplete list still
+    type-checked, so a third metric would have compiled everywhere and then
+    been silently discarded from every saved setting. Adding a metric to the
+    const is now the only way to add one.
+  - `blurMetricScorer(metric | undefined)` — resolves an id to its scoring
+    function; `undefined`/unknown ⇒ `sharpnessScore` (pre-toggle behavior).
+    The recorder worker MUST resolve through this (never read
+    `config.blurMetric` directly) so the mapping stays unit-tested.
   - `rgbaToGrayscale(rgba): Uint8ClampedArray` — Rec. 601 luma per pixel; feeds
     `sharpnessScore`. Ignores alpha and any partial trailing pixel.
   - `meanLuminance(rgba): number` — mean Rec. 601 luma on a 0–255 scale.
@@ -21,6 +42,18 @@
   - `QualityFilterConfig` / `DEFAULT_QUALITY_FILTER` — the **shared** config type
     carried by both `ImageCaptureConfig` and `ImageCaptureOptions` (mirrors how
     `MotionFilterConfig` is shared, so the two cannot drift).
+  - `QUALITY_FILTER_CONSTRAINTS` — `{min, max, step}` per threshold, derived
+    from what each number MEANS here: `blurRelativeThreshold` is a fraction of
+    the recent median so it must sit strictly inside (0, 1) (clamped 0.05–0.95);
+    `minMeanLuminance` is a 0–255 luma cutoff clamped to 0–128 (above mid-grey
+    would reject normally-lit frames); `maxWaitMs` mirrors the motion gate's
+    0.5–20 s so the never-good fallback can always fire.
+  - `validateQualityFilterConfig(options): QualityFilterConfig` — normalizes an
+    UNTRUSTED persisted config: `enabled` boolean-or-default (**never**
+    self-enables), thresholds clamped with non-finite values falling back,
+    nullish/missing group default-fills to the DISABLED default, and the
+    OPTIONAL `blurMetric` resolves to `'variance-of-laplacian'` when missing or
+    unknown — the behaviour a pre-toggle config was tuned under.
   - `QualityVerdict` (`{ accept, reason, sharpness, meanLuminance }`),
     `QualityRejectReason` (`'black' | 'blurry'`).
   - `DEFAULT_SHARPNESS_HISTORY_SIZE` (15), `DEFAULT_SHARPNESS_MIN_SAMPLES` (3).
@@ -47,6 +80,10 @@
   - `enabled` is NOT consulted here — the verdict is metric-only. Whether the
     gate runs at all is decided upstream (the recorder injects `analyzeFrame`
     only when `qualityFilter.enabled`; the manager runs it only when present).
+  - `QualityFilterConfig.blurMetric` is **optional** (backward compatibility
+    with persisted pre-toggle configs); the gate's relative rule
+    (`score < k · median(recent)`) is metric-agnostic, and the rolling history
+    resets per recording, so switching metrics never mixes score scales.
   - Default `enabled: false` (plan §10) — a mis-tuned blur threshold silently
     dropping good frames is worse than the motion gate's low-risk default-on.
     Numeric defaults are PLACEHOLDERS pending on-device tuning.
@@ -79,12 +116,17 @@
 - **Tests:** `image-quality.test.ts` (sharp vs blurred ranking, flat ⇒ 0,
   brightness invariance, defensive degenerate input; mean-luminance black/white/
   grey/empty; grayscale luma; gate cold start / relative-blur reject / black
-  reject / black-doesn't-pollute / history cap / reset) and
+  reject / black-doesn't-pollute / history cap / reset; FFT-ratio spectral
+  cases, blur monotonicity, defensive contract, centered crop;
+  `blurMetricScorer` mapping + fallback) and
   `image-quality.property.test.ts` (sharpness non-negativity, offset invariance,
-  s² scaling; mean-luminance bounds + brighten-monotonicity).
+  s² scaling; FFT-ratio [0,1] bounds + offset/contrast invariance;
+  mean-luminance bounds + brighten-monotonicity).
 
 - **Related docs:**
-  `GpsPlusSlamJs_Docs/docs/2026-06-24-image-quality-gate-plan.md`,
+  `GpsPlusSlamJs_Docs/docs/2026-07-12-0823-blur-metric-toggle-plan.md` (the metric
+  toggle: origin, semantics, recorder wiring),
+  `GpsPlusSlamJs_Docs/docs/2026-06-24-1057-image-quality-gate-plan.md`,
   `ar/capture-motion-gate.ts.md` (the motion gate this builds on),
   `ar/image-capture.ts.md` (the manager that consumes the verdict via the
   injected `analyzeFrame` callback).

@@ -27,8 +27,7 @@ import {
 
 function findMesh(parent: THREE.Object3D): THREE.Mesh | undefined {
   return parent.children.find((c) => c instanceof THREE.Mesh) as
-    | THREE.Mesh
-    | undefined;
+    THREE.Mesh | undefined;
 }
 
 function meshes(parent: THREE.Object3D): THREE.Mesh[] {
@@ -98,6 +97,36 @@ describe('OcclusionMesh', () => {
     occluder.dispose();
   });
 
+  it('exposes the underlying mesh via getMesh() for pointer raycasting', () => {
+    // The Part-B pointer-picking layer needs a handle to the real occluder mesh;
+    // getMesh() must return the very object attached to the scene graph.
+    const parent = new THREE.Group();
+    const occluder = new OcclusionMesh(parent);
+    expect(occluder.getMesh()).toBe(findMesh(parent));
+    occluder.dispose();
+  });
+
+  it('setVisible toggles the depth mesh AND active debug skins', () => {
+    // A hidden occluder must stop writing depth so co-located cubes are not
+    // occluded by it (the physics-demo "Show Mesh + Cubes shows nothing" bug).
+    const parent = new THREE.Group();
+    const occluder = new OcclusionMesh(parent);
+    occluder.setDebugStyle('depth-shaded-wireframe'); // adds visible skins
+    const depthMesh = occluder.getMesh();
+    const skins = parent.children.filter((c) => c !== depthMesh);
+    expect(skins.length).toBeGreaterThan(0);
+    expect(depthMesh.visible).toBe(true);
+
+    occluder.setVisible(false);
+    expect(depthMesh.visible).toBe(false);
+    expect(skins.every((s) => !s.visible)).toBe(true);
+
+    occluder.setVisible(true);
+    expect(depthMesh.visible).toBe(true);
+    expect(skins.every((s) => s.visible)).toBe(true);
+    occluder.dispose();
+  });
+
   it('starts empty and meshes a snapshot on update', () => {
     const parent = new THREE.Group();
     const occluder = new OcclusionMesh(parent);
@@ -110,14 +139,14 @@ describe('OcclusionMesh', () => {
     occluder.dispose();
   });
 
-  it('greedy-merges a flat slab (default greedy=true) to fewer triangles', () => {
+  it('greedy-merges a flat slab (the default mode) to fewer triangles', () => {
     const cells: GridCell[] = [];
     for (let x = 0; x < 5; x++)
       for (let y = 0; y < 5; y++) cells.push([x, y, 0]);
 
     const greedy = new OcclusionMesh(new THREE.Group());
     greedy.update(cells, 0.15);
-    const perFace = new OcclusionMesh(new THREE.Group(), { greedy: false });
+    const perFace = new OcclusionMesh(new THREE.Group(), { mode: 'per-face' });
     perFace.update(cells, 0.15);
 
     // 5×5×1 slab: greedy → 6 quads (12 tris); per-face → 70 quads (140 tris).
@@ -130,6 +159,36 @@ describe('OcclusionMesh', () => {
     perFace.dispose();
   });
 
+  it('ignores getCellPoint on the default mesher, which is what lets one field hold the mode', () => {
+    // Why this test matters: `OcclusionMeshOptions` used to carry BOTH a legacy
+    // boolean `greedy` and a newer `mode`, and `update()` chose between them with
+    // a ternary that passed `getCellPoint` down the `mode` branch only. Collapsing
+    // the two into one always-resolved `mode` field means `getCellPoint` is now
+    // passed on the default path too, so the collapse is behaviour-preserving
+    // ONLY IF the default mesher ignores it. That is documented in
+    // `MeshOccupiedCellsOptions` — this pins it, because a future default change
+    // to a centroid-consuming mode would silently alter the no-options occluder.
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 5; x++)
+      for (let y = 0; y < 5; y++) cells.push([x, y, 0]);
+    const wildlyOffset = (c: GridCell): Vector3 => [
+      c[0] * 0.15 + 9,
+      c[1] * 0.15 - 9,
+      c[2] * 0.15 + 9,
+    ];
+
+    const without = new OcclusionMesh(new THREE.Group());
+    without.update(cells, 0.15);
+    const with_ = new OcclusionMesh(new THREE.Group());
+    with_.update(cells, 0.15, wildlyOffset);
+
+    // A centroid 9 m off would be impossible to miss if it were consumed.
+    expect(with_.getTriangleCount()).toBe(without.getTriangleCount());
+    expect(with_.getAabbs()).toEqual(without.getAabbs());
+
+    without.dispose();
+    with_.dispose();
+  });
   it('mode "smooth" builds the surface-nets sheet and consumes getCellPoint (additive opt-in)', () => {
     const cells: GridCell[] = [];
     for (let x = 0; x < 5; x++)
@@ -173,7 +232,7 @@ describe('OcclusionMesh', () => {
     // Geometry is applied → triangle count matches the precomputed buffer…
     expect(occluder.getTriangleCount()).toBe(indices.length / 3);
     // …and equals what a synchronous update() of the same cells would produce.
-    const sync = new OcclusionMesh(new THREE.Group(), { greedy: false });
+    const sync = new OcclusionMesh(new THREE.Group(), { mode: 'per-face' });
     sync.update(cells, 0.15);
     expect(occluder.getTriangleCount()).toBe(sync.getTriangleCount());
     // The worker path does not populate the AABB physics hook (documented).
@@ -347,7 +406,7 @@ describe('OcclusionMesh', () => {
 
       // Worker path (applyMeshData → swapGeometry) — same skins, new geometry.
       const { positions, indices } = meshOccupiedCells([[1, 0, 0]], 0.15, {
-        greedy: true,
+        mode: 'greedy',
       });
       occluder.applyMeshData(positions, indices);
       geometry = occluderMesh(parent)!.geometry;
@@ -475,7 +534,7 @@ describe('OcclusionMesh', () => {
       // original constants (fade 1.5 → 10 m) made depth-shaded visually
       // identical to matcap in a normal room — fade was still at 94%
       // brightness at 3 m, so the whole room sat in the "near" band (see
-      // 2026-07-02-occluder-debug-viz-styles-followups.md §F1). These pins are
+      // 2026-07-02-0800-occluder-debug-viz-styles-followups.md §F1). These pins are
       // the executable form of "must be visibly darker across a room": the
       // fade must engage within arm's reach, bottom out by ~5 m so indoor
       // scenes span the full near→far gradient, and a wall ~3 m away must
@@ -506,18 +565,18 @@ describe('OcclusionMesh', () => {
    * transparent phase after opaque content, which would stop it occluding opaque
    * objects; the additive skin avoids that entirely.)
    *
-   * Since 2026-07-02 `setDebugVisualization` is a deprecated thin wrapper over
-   * `setDebugStyle` (`enabled ? 'matcap' : 'off'`) — these tests double as the
-   * wrapper's regression suite, so existing consumers keep working unchanged.
+   * The deprecated boolean `setDebugVisualization` wrapper was removed 2026-07-10
+   * (quality-review C-4; it had no production callers) — these tests now pin the
+   * equivalent `setDebugStyle('matcap' | 'off')` behaviour directly.
    */
-  describe('setDebugVisualization', () => {
+  describe('matcap debug skin via setDebugStyle', () => {
     it('adds a visible semi-transparent matcap skin while keeping the depth-only occluder', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);
       occluder.update([[0, 0, 0]], 0.15);
 
       expect(debugSkin(parent)).toBeUndefined();
-      occluder.setDebugVisualization(true);
+      occluder.setDebugStyle('matcap');
 
       // The invisible depth-only occluder is still present and still occludes.
       const depthMesh = occluderMesh(parent);
@@ -544,10 +603,10 @@ describe('OcclusionMesh', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);
       occluder.update([[0, 0, 0]], 0.15);
-      occluder.setDebugVisualization(true);
+      occluder.setDebugStyle('matcap');
       expect(debugSkin(parent)).toBeDefined();
 
-      occluder.setDebugVisualization(false);
+      occluder.setDebugStyle('off');
       expect(debugSkin(parent)).toBeUndefined();
       expect(occluderMesh(parent)).toBeDefined();
       occluder.dispose();
@@ -556,7 +615,7 @@ describe('OcclusionMesh', () => {
     it('keeps the skin geometry + normals in sync across re-mesh', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);
-      occluder.setDebugVisualization(true); // enabled before any geometry
+      occluder.setDebugStyle('matcap'); // enabled before any geometry
       occluder.update([[0, 0, 0]], 0.15);
 
       const skin = debugSkin(parent)!;
@@ -569,7 +628,7 @@ describe('OcclusionMesh', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);
       occluder.update([[0, 0, 0]], 0.15);
-      occluder.setDebugVisualization(true);
+      occluder.setDebugStyle('matcap');
 
       // clear() (e.g. a store swap) must keep the visible matcap skin in sync
       // with the depth-only mesh — otherwise the skin keeps rendering the old,
@@ -588,8 +647,8 @@ describe('OcclusionMesh', () => {
       const parent = new THREE.Group();
       const occluder = new OcclusionMesh(parent);
       occluder.update([[0, 0, 0]], 0.15);
-      occluder.setDebugVisualization(true);
-      occluder.setDebugVisualization(true); // no duplicate skin
+      occluder.setDebugStyle('matcap');
+      occluder.setDebugStyle('matcap'); // no duplicate skin
       expect(
         meshes(parent).filter(
           (m) => m.material instanceof THREE.MeshMatcapMaterial
@@ -598,7 +657,7 @@ describe('OcclusionMesh', () => {
 
       occluder.dispose();
       expect(debugSkin(parent)).toBeUndefined();
-      expect(() => occluder.setDebugVisualization(true)).not.toThrow();
+      expect(() => occluder.setDebugStyle('matcap')).not.toThrow();
     });
   });
 });
